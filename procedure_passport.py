@@ -4,7 +4,6 @@ import pandas as pd
 import uuid
 import datetime
 import io
-import base64
 import json
 import html
 import gspread
@@ -57,7 +56,7 @@ for _k, _v in _defaults.items():
 # ─────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────
-ADMINS = ["pjenkins9@gmail.com"]
+ADMINS = ["procedurepassport@gmail.com"]
 
 RATING_OPTIONS = ["Not Assessed", "Shown/Told", "Not Yet", "Steer", "Prompt", "Back up", "Auto"]
 RATING_TO_NUM  = {
@@ -147,9 +146,8 @@ SHEET_SPECIALTY  = "specialties"
 @st.cache_resource(show_spinner=False)
 def get_gs_client():
     """Authorized gspread client — cached for the entire app session."""
-    svc_json = json.loads(base64.b64decode(st.secrets["GOOGLE_SVC_B64"]).decode())
     creds = Credentials.from_service_account_info(
-        svc_json,
+        st.secrets["gcp_service_account"],
         scopes=[
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive",
@@ -785,7 +783,7 @@ elif page == "start":
     if not is_admin:
         _att_match = atnds[atnds["attending_id"].astype(str).str.strip() == str(st.session_state.get("attending_id", "")).strip()]
         safe_att  = _att_match["attending_name"].values[0].replace(" ", "_") if len(_att_match) > 0 else "Unknown"
-        base_url  = "https://procedurepassport.streamlit.app"
+        base_url  = st.secrets.get("APP_BASE_URL", "https://procedurepassport.streamlit.app")
         magic_url = (
             f"{base_url}/?mode=attending"
             f"&resident={st.session_state['resident']}"
