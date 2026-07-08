@@ -450,6 +450,16 @@ st.markdown(
     border: 1px solid var(--secondary-background-color);
     display: inline-block;
 }
+/* Home page cards: keep the three action buttons vertically aligned
+   even when title/description text wraps to different heights. */
+.st-key-home_cards [data-testid="stColumn"] > [data-testid="stVerticalBlock"] {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+.st-key-home_cards [data-testid="stElementContainer"]:has([data-testid="stButton"]) {
+    margin-top: auto;
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -695,30 +705,31 @@ elif page == "home":
     st.markdown("")
     st.info("📱 On mobile: tap the ≡ icon at top left to access navigation and rating legend.")
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown('<div class="pp-card">', unsafe_allow_html=True)
-        st.markdown("### ➕ New Assessment")
-        st.markdown("Start a new procedure case and record step ratings.")
-        if st.button("Start Assessment", width="stretch", type="primary"):
-            go_to("start")
-        st.markdown("</div>", unsafe_allow_html=True)
+    with st.container(key="home_cards"):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown('<div class="pp-card">', unsafe_allow_html=True)
+            st.markdown("### ➕ New Assessment")
+            st.markdown("Start a new procedure case and record step ratings.")
+            if st.button("Start Assessment", width="stretch", type="primary"):
+                go_to("start")
+            st.markdown("</div>", unsafe_allow_html=True)
 
-    with c2:
-        st.markdown('<div class="pp-card">', unsafe_allow_html=True)
-        st.markdown("### 📊 Cumulative Dashboard")
-        st.markdown("View your progress heatmap over time.")
-        if st.button("View Dashboard", width="stretch"):
-            go_to("cumulative")
-        st.markdown("</div>", unsafe_allow_html=True)
+        with c2:
+            st.markdown('<div class="pp-card">', unsafe_allow_html=True)
+            st.markdown("### 📊 Cumulative Dashboard")
+            st.markdown("View your progress heatmap over time.")
+            if st.button("View Dashboard", width="stretch"):
+                go_to("cumulative")
+            st.markdown("</div>", unsafe_allow_html=True)
 
-    with c3:
-        st.markdown('<div class="pp-card">', unsafe_allow_html=True)
-        st.markdown("### 💬 Comments")
-        st.markdown("Browse and export all attending feedback.")
-        if st.button("View Comments", width="stretch"):
-            go_to("comments")
-        st.markdown("</div>", unsafe_allow_html=True)
+        with c3:
+            st.markdown('<div class="pp-card">', unsafe_allow_html=True)
+            st.markdown("### 💬 Comments")
+            st.markdown("Browse and export all attending feedback.")
+            if st.button("View Comments", width="stretch"):
+                go_to("comments")
+            st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ════════════════════════════════════════════════════════════
