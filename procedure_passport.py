@@ -473,6 +473,18 @@ st.markdown(
     font-size: clamp(0.95rem, 12cqw, 1.75rem);
     line-height: 1.2;
 }
+.st-key-home_cards [data-testid="stElementContainer"]:has(p) {
+    height: 3.4rem;
+    overflow: hidden;
+    container-type: inline-size;
+}
+.st-key-home_cards [data-testid="stElementContainer"]:has(p) p {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: clamp(0.7rem, 8.5cqw, 1rem);
+}
 </style>
 """,
     unsafe_allow_html=True,
