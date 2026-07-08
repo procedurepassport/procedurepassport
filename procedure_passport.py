@@ -461,7 +461,17 @@ st.markdown(
     margin-top: auto;
 }
 .st-key-home_cards [data-testid="stElementContainer"]:has(h3) {
-    min-height: 5rem;
+    height: 5.5rem;
+    overflow: hidden;
+    container-type: inline-size;
+}
+.st-key-home_cards [data-testid="stElementContainer"]:has(h3) h3 > span:first-child {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: clamp(0.95rem, 12cqw, 1.75rem);
+    line-height: 1.2;
 }
 </style>
 """,
