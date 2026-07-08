@@ -460,6 +460,9 @@ st.markdown(
 .st-key-home_cards [data-testid="stElementContainer"]:has([data-testid="stButton"]) {
     margin-top: auto;
 }
+.st-key-home_cards [data-testid="stElementContainer"]:has(h3) {
+    min-height: 5rem;
+}
 </style>
 """,
     unsafe_allow_html=True,
