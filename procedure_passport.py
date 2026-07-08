@@ -456,14 +456,22 @@ st.markdown(
     display: flex;
     flex-direction: column;
     height: 100%;
+    gap: 0.3rem;
 }
 .st-key-home_cards [data-testid="stElementContainer"]:has([data-testid="stButton"]) {
     margin-top: auto;
 }
+.st-key-home_cards h3 [data-testid="stHeaderActionElements"] {
+    display: none;
+}
 .st-key-home_cards [data-testid="stElementContainer"]:has(h3) {
-    height: 5.5rem;
+    height: 5rem;
     overflow: hidden;
     container-type: inline-size;
+}
+.st-key-home_cards [data-testid="stElementContainer"]:has(h3) h3 {
+    padding-top: 0.3rem;
+    padding-bottom: 0.2rem;
 }
 .st-key-home_cards [data-testid="stElementContainer"]:has(h3) h3 > span:first-child {
     display: -webkit-box;
@@ -471,19 +479,21 @@ st.markdown(
     -webkit-box-orient: vertical;
     overflow: hidden;
     font-size: clamp(0.95rem, 12cqw, 1.75rem);
-    line-height: 1.2;
+    line-height: 1.25;
 }
-.st-key-home_cards [data-testid="stElementContainer"]:has(p) {
-    height: 3.4rem;
+.st-key-home_cards [data-testid="stElementContainer"]:has(> [data-testid="stMarkdown"] p) {
+    height: 2.4rem;
     overflow: hidden;
     container-type: inline-size;
 }
-.st-key-home_cards [data-testid="stElementContainer"]:has(p) p {
+.st-key-home_cards [data-testid="stElementContainer"]:has(> [data-testid="stMarkdown"] p) p {
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    font-size: clamp(0.7rem, 8.5cqw, 1rem);
+    margin: 0;
+    line-height: 1.3;
+    font-size: clamp(0.7rem, 8.5cqw, 0.875rem);
 }
 </style>
 """,
