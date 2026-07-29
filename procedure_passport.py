@@ -526,15 +526,19 @@ if page == "login":
                         SHEET_RESIDENTS,
                         expected_cols=["email", "name", "specialty_id", "created_at"],
                     )
-                    if email in ADMINS:
+                    email_lower = email.strip().lower()
+                    admins_lower = [a.lower() for a in ADMINS]
+                    residents_lower = residents["email"].str.strip().str.lower()
+                    if email_lower in admins_lower:
+                        canonical = ADMINS[admins_lower.index(email_lower)]
                         st.session_state.update(
-                            resident=email, resident_name="Admin", page="admin"
+                            resident=canonical, resident_name="Admin", page="admin"
                         )
                         st.rerun()
-                    elif email in residents["email"].values:
-                        row = residents.loc[residents["email"] == email].iloc[0]
+                    elif email_lower in residents_lower.values:
+                        row = residents.loc[residents_lower == email_lower].iloc[0]
                         st.session_state.update(
-                            resident=email,
+                            resident=row["email"],
                             resident_name=row["name"],
                             specialty_id=row["specialty_id"],
                             page="home",
