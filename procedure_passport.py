@@ -354,23 +354,44 @@ def go_to(page: str) -> None:
 # ─────────────────────────────────────────────
 # PAGE HEADER HELPER
 # ─────────────────────────────────────────────
-def page_header(text: str) -> None:
-    """Render a page's main H1 header with a font size tuned to its own
-    length, capped at two lines (ellipsized as a last resort) so long
-    procedure names never blow out the layout."""
+def _header_bounds(text: str) -> tuple:
+    """Font-size bounds (min_rem, max_rem) for a header, tuned to text length."""
     length = len(text)
     if length <= 20:
-        min_rem, max_rem = 1.75, 2.25
+        return 1.75, 2.25
     elif length <= 35:
-        min_rem, max_rem = 1.4, 1.9
+        return 1.4, 1.9
     elif length <= 55:
-        min_rem, max_rem = 1.15, 1.6
+        return 1.15, 1.6
     else:
-        min_rem, max_rem = 0.95, 1.35
+        return 0.95, 1.35
+
+
+def page_header(text: str) -> tuple:
+    """Render a page's main H1 header with a font size tuned to its own
+    length, capped at two lines (ellipsized as a last resort) so long
+    procedure names never blow out the layout. Returns the (min_rem, max_rem)
+    bounds used, so callers can size subordinate headers proportionally
+    smaller — see sub_header_style()."""
+    min_rem, max_rem = _header_bounds(text)
     st.markdown(
         f'<div class="pp-page-header-wrap"><h1 class="pp-page-header" '
         f'style="font-size:clamp({min_rem}rem, 4cqw, {max_rem}rem);">'
         f'{html.escape(text)}</h1></div>',
+        unsafe_allow_html=True,
+    )
+    return min_rem, max_rem
+
+
+def sub_header_style(header_bounds: tuple, scale: float = 0.75) -> None:
+    """Set the --pp-substep-font CSS variable so a subordinate header (e.g. the
+    Step-Level Ratings expander label) always renders smaller than the main
+    page header it belongs to, at every viewport width."""
+    min_rem, max_rem = header_bounds
+    cqw = 4 * scale
+    st.markdown(
+        f'<style>:root {{ --pp-substep-font: clamp({min_rem * scale:.3g}rem, '
+        f'{cqw:.3g}cqw, {max_rem * scale:.3g}rem); }}</style>',
         unsafe_allow_html=True,
     )
 
@@ -522,10 +543,12 @@ st.markdown(
     line-height: 1.3;
     font-size: clamp(0.7rem, 8.5cqw, 0.875rem);
 }
-/* Step-Level Ratings expander: label styled like a smaller page header */
+/* Step-Level Ratings expander: label styled like a smaller page header.
+   --pp-substep-font is set per-page by sub_header_style() so this always
+   renders smaller than that page's main header. */
 .st-key-step_ratings_expander_resident summary [data-testid="stMarkdownContainer"] p,
 .st-key-step_ratings_expander_attending summary [data-testid="stMarkdownContainer"] p {
-    font-size: 1.75rem;
+    font-size: var(--pp-substep-font, 1.3125rem);
     font-weight: 600;
 }
 /* Main page headers: size scales with text length (set inline per-header)
@@ -929,7 +952,8 @@ elif page == "assessment":
     # Resolve procedure name for the page title (Fix 3)
     _proc_rows = proc_df.loc[proc_df["procedure_id"] == st.session_state["procedure_id"], "procedure_name"].values
     _proc_name = _proc_rows[0] if len(_proc_rows) else "Assessment"
-    page_header(f"📝 {_proc_name} Assessment")
+    _hdr_bounds = page_header(f"📝 {_proc_name} Assessment")
+    sub_header_style(_hdr_bounds)
 
     # Back button placed at the top, clearly separated from Finish (Fix 7)
     _top_cols_assess = st.columns([1, 1, 4])
@@ -1676,7 +1700,8 @@ elif page == "attending_assessment":
     # Decode URL-safe attending name
     display_attending = attending_name.replace("_", " ")
 
-    page_header("📝 Attending Evaluation")
+    _hdr_bounds = page_header("📝 Attending Evaluation")
+    sub_header_style(_hdr_bounds)
     try:
         _, proc_df_att, steps_df, _ = load_refs()
     except ConnectionError as exc:
