@@ -912,7 +912,7 @@ elif page == "assessment":
     _cp_default = st.session_state.get("case_preparation", "Not Assessed")
     _cp_idx = _cp_opts.index(_cp_default) if _cp_default in _cp_opts else 0
     st.session_state["case_preparation"] = st.selectbox(
-        "Case Preparation",
+        "Preparation",
         _cp_opts,
         index=_cp_idx,
     )
@@ -1016,7 +1016,7 @@ elif page == "dashboard":
     with meta_col1:
         st.markdown(f"**Date:** {fmt_date(st.session_state.get('date', ''))}")
         st.markdown(f"**Case Complexity:** {st.session_state.get('case_complexity', '—')}")
-        st.markdown(f"**Case Preparation:** {st.session_state.get('case_preparation', '—')}")
+        st.markdown(f"**Preparation:** {st.session_state.get('case_preparation', '—')}")
     with meta_col2:
         st.markdown(f"**Overall Performance:** {st.session_state.get('overall_performance', '—')}")
 
@@ -1671,7 +1671,7 @@ elif page == "attending_assessment":
 
     _att_cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
                     "Adequately Prepared", "Well Prepared", "Highly Prepared"]
-    case_preparation = st.selectbox("Case Preparation", _att_cp_opts)
+    case_preparation = st.selectbox("Preparation", _att_cp_opts)
 
     st.markdown("#### Step-Level Ratings")
     scores: dict = {}
@@ -1757,7 +1757,7 @@ elif page == "attending_confirmation":
         f'<b>Procedure:</b> {sub.get("procedure_name", sub["procedure_id"])}<br>'
         f'<b>Date:</b> {fmt_date(sub["date"])}<br>'
         f'<b>Case Complexity:</b> {sub["case_complexity"]}<br>'
-        f'<b>Case Preparation:</b> {sub["case_preparation"]}<br>'
+        f'<b>Preparation:</b> {sub["case_preparation"]}<br>'
         f'<b>Overall Performance:</b> {sub["overall_performance"]}<br>'
         f'<b>Case ID:</b> <code>{sub["case_id"]}</code>'
         f'</div>',
