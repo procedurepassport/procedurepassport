@@ -621,6 +621,12 @@ st.markdown(
 .st-key-assess_top_nav button p {
     white-space: nowrap;
 }
+/* "On mobile: tap the ≡ icon..." tip: half the default alert padding so
+   the blue box takes up less vertical space. */
+.st-key-mobile_tip [data-testid="stAlertContainer"] {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -868,7 +874,8 @@ elif page == "home":
     page_header(f"👋 Welcome back, {st.session_state['resident_name']}")
     st.markdown("_What would you like to do today?_")
     st.markdown("")
-    st.info("📱 On mobile: tap the ≡ icon at top left to access navigation and rating legend.")
+    with st.container(key="mobile_tip"):
+        st.info("📱 On mobile: tap the ≡ icon at top left to access navigation and rating legend.")
 
     with st.container(key="home_cards"):
         c1, c2, c3 = st.columns(3)
@@ -904,7 +911,8 @@ elif page == "start":
     page_header("📋 Start Assessment")
     if st.button("🏠 Back to Home", key="start_home_top"):
         go_to("home")
-    st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.")
+    with st.container(key="mobile_tip"):
+        st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.")
 
     try:
         spec_df, proc_df, steps_df, atnd_df = load_refs()
@@ -1020,7 +1028,8 @@ elif page == "assessment":
             if st.button("🏠 Home", key="assess_home_top"):
                 go_to("home")
     st.markdown("---")
-    st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.", icon=None)
+    with st.container(key="mobile_tip"):
+        st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.", icon=None)
 
     _cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
                 "Adequately Prepared", "Well Prepared", "Highly Prepared"]
@@ -1273,7 +1282,8 @@ elif page == "cumulative":
     page_header("📊 Cumulative Dashboard")
     if st.button("🏠 Back to Home", key="cumulative_home_top"):
         go_to("home")
-    st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.")
+    with st.container(key="mobile_tip"):
+        st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.")
     resident = st.session_state.get("resident")
     if not resident:
         st.error("Not logged in.")
