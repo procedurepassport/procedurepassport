@@ -352,6 +352,30 @@ def go_to(page: str) -> None:
 
 
 # ─────────────────────────────────────────────
+# PAGE HEADER HELPER
+# ─────────────────────────────────────────────
+def page_header(text: str) -> None:
+    """Render a page's main H1 header with a font size tuned to its own
+    length, capped at two lines (ellipsized as a last resort) so long
+    procedure names never blow out the layout."""
+    length = len(text)
+    if length <= 20:
+        min_rem, max_rem = 1.75, 2.25
+    elif length <= 35:
+        min_rem, max_rem = 1.4, 1.9
+    elif length <= 55:
+        min_rem, max_rem = 1.15, 1.6
+    else:
+        min_rem, max_rem = 0.95, 1.35
+    st.markdown(
+        f'<div class="pp-page-header-wrap"><h1 class="pp-page-header" '
+        f'style="font-size:clamp({min_rem}rem, 4cqw, {max_rem}rem);">'
+        f'{html.escape(text)}</h1></div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ─────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────
 st.sidebar.title("🩺 Procedure Passport")
@@ -504,6 +528,20 @@ st.markdown(
     font-size: 1.75rem;
     font-weight: 600;
 }
+/* Main page headers: size scales with text length (set inline per-header)
+   and container width, but never wrap past two lines. */
+.pp-page-header-wrap {
+    container-type: inline-size;
+}
+.pp-page-header {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.25;
+    overflow-wrap: break-word;
+    text-overflow: ellipsis;
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -563,7 +601,7 @@ if page == "login":
 # PAGE: ADMIN PANEL
 # ════════════════════════════════════════════════════════════
 elif page == "admin":
-    st.title("⚙️ Admin Panel")
+    page_header("⚙️ Admin Panel")
     if st.button("🏠 Back to Home", key="admin_home_top"):
         go_to("home")
 
@@ -748,7 +786,7 @@ elif page == "admin":
 # PAGE: HOME
 # ════════════════════════════════════════════════════════════
 elif page == "home":
-    st.title(f"👋 Welcome back, {st.session_state['resident_name']}")
+    page_header(f"👋 Welcome back, {st.session_state['resident_name']}")
     st.markdown("_What would you like to do today?_")
     st.markdown("")
     st.info("📱 On mobile: tap the ≡ icon at top left to access navigation and rating legend.")
@@ -784,7 +822,7 @@ elif page == "home":
 # PAGE: START CASE
 # ════════════════════════════════════════════════════════════
 elif page == "start":
-    st.title("📋 Start Assessment")
+    page_header("📋 Start Assessment")
     if st.button("🏠 Back to Home", key="start_home_top"):
         go_to("home")
     st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.")
@@ -891,7 +929,7 @@ elif page == "assessment":
     # Resolve procedure name for the page title (Fix 3)
     _proc_rows = proc_df.loc[proc_df["procedure_id"] == st.session_state["procedure_id"], "procedure_name"].values
     _proc_name = _proc_rows[0] if len(_proc_rows) else "Assessment"
-    st.title(f"📝 {_proc_name} Assessment")
+    page_header(f"📝 {_proc_name} Assessment")
 
     # Back button placed at the top, clearly separated from Finish (Fix 7)
     _top_cols_assess = st.columns([1, 1, 4])
@@ -1001,7 +1039,7 @@ elif page == "dashboard":
 
     steps = steps_df[steps_df["procedure_id"] == st.session_state["procedure_id"]].sort_values("step_order")
 
-    st.title("✅ Case Saved")
+    page_header("✅ Case Saved")
     st.success(f"Case ID: `{st.session_state.get('current_case_id', '—')}`")
 
     data = [{"Step": row["step_name"],
@@ -1039,7 +1077,7 @@ elif page == "dashboard":
 # PAGE: COMMENTS DASHBOARD
 # ════════════════════════════════════════════════════════════
 elif page == "comments":
-    st.title("💬 Comments Dashboard")
+    page_header("💬 Comments Dashboard")
     if st.button("🏠 Back to Home", key="comments_home_top"):
         go_to("home")
     resident = st.session_state.get("resident")
@@ -1152,7 +1190,7 @@ elif page == "comments":
 # PAGE: CUMULATIVE DASHBOARD
 # ════════════════════════════════════════════════════════════
 elif page == "cumulative":
-    st.title("📊 Cumulative Dashboard")
+    page_header("📊 Cumulative Dashboard")
     if st.button("🏠 Back to Home", key="cumulative_home_top"):
         go_to("home")
     st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.")
@@ -1638,7 +1676,7 @@ elif page == "attending_assessment":
     # Decode URL-safe attending name
     display_attending = attending_name.replace("_", " ")
 
-    st.title("📝 Attending Evaluation")
+    page_header("📝 Attending Evaluation")
     try:
         _, proc_df_att, steps_df, _ = load_refs()
     except ConnectionError as exc:
@@ -1745,7 +1783,7 @@ elif page == "attending_confirmation":
         st.error("No submission data found.")
         st.stop()
 
-    st.title("✅ Evaluation Submitted")
+    page_header("✅ Evaluation Submitted")
     st.success("Thank you! Your evaluation has been recorded.")
 
     st.markdown(
