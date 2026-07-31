@@ -378,11 +378,12 @@ def page_header(text: str) -> tuple:
     resort). Returns (max_rem, coeff) so callers can size subordinate
     headers proportionally smaller — see sub_header_style()."""
     max_rem = _header_max(text)
-    # 210 ≈ the average rendered width (px, per 100px of font-size) of one
-    # character in the app's header font; dividing by length gives a cqw
-    # coefficient that makes the text span ~100% of the container width
-    # whenever that's below this tier's max.
-    coeff = 210 / max(len(text), 1)
+    # ~175 (deliberately under the ~210 measured average character width, as
+    # a safety margin) gives a cqw coefficient that keeps text on one line
+    # below this tier's max — a tighter margin here left longer headers
+    # (e.g. "Robotic Laparoscopic Cholecystectomy Assessment") wrapping to
+    # two lines at everyday window widths once clamped to the max.
+    coeff = 175 / max(len(text), 1)
     st.markdown(
         f'<div class="pp-page-header-wrap"><h1 class="pp-page-header" '
         f'style="font-size:clamp(0rem, {coeff:.3g}cqw, {max_rem}rem);">'
