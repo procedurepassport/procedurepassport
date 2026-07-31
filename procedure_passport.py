@@ -904,15 +904,6 @@ elif page == "assessment":
     st.markdown("---")
     st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.", icon=None)
 
-    _cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
-    _cc_default = st.session_state.get("case_complexity", "— Select complexity —")
-    _cc_idx = _cc_opts.index(_cc_default) if _cc_default in _cc_opts else 0
-    st.session_state["case_complexity"] = st.selectbox(
-        "Case Complexity",
-        _cc_opts,
-        index=_cc_idx,
-    )
-
     _cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
                 "Adequately Prepared", "Well Prepared", "Highly Prepared"]
     _cp_default = st.session_state.get("case_preparation", "Not Assessed")
@@ -921,6 +912,15 @@ elif page == "assessment":
         "Preparation",
         _cp_opts,
         index=_cp_idx,
+    )
+
+    _cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
+    _cc_default = st.session_state.get("case_complexity", "— Select complexity —")
+    _cc_idx = _cc_opts.index(_cc_default) if _cc_default in _cc_opts else 0
+    st.session_state["case_complexity"] = st.selectbox(
+        "Case Complexity",
+        _cc_opts,
+        index=_cc_idx,
     )
 
     with st.expander("Step-Level Ratings", expanded=False, key="step_ratings_expander_resident"):
@@ -1664,12 +1664,12 @@ elif page == "attending_assessment":
         st.stop()
 
     case_date       = st.date_input("Date of Procedure", value=datetime.date.today())
-    _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
-    case_complexity = st.selectbox("Case Complexity", _att_cc_opts)
-
     _att_cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
                     "Adequately Prepared", "Well Prepared", "Highly Prepared"]
     case_preparation = st.selectbox("Preparation", _att_cp_opts)
+
+    _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
+    case_complexity = st.selectbox("Case Complexity", _att_cc_opts)
 
     scores: dict = {}
     with st.expander("Step-Level Ratings", expanded=False, key="step_ratings_expander_attending"):
