@@ -368,30 +368,35 @@ def _header_bounds(text: str) -> tuple:
 
 
 def page_header(text: str) -> tuple:
-    """Render a page's main H1 header with a font size tuned to its own
-    length, capped at two lines (ellipsized as a last resort) so long
-    procedure names never blow out the layout. Returns the (min_rem, max_rem)
-    bounds used, so callers can size subordinate headers proportionally
-    smaller — see sub_header_style()."""
+    """Render a page's main H1 header sized to fill the container's full
+    width — shorter headers get a bigger cqw coefficient than longer ones —
+    while never exceeding this length tier's max (reached sooner on wide
+    screens) and never wrapping past two lines (ellipsized as a last
+    resort). Returns (min_rem, max_rem, coeff) so callers can size
+    subordinate headers proportionally smaller — see sub_header_style()."""
     min_rem, max_rem = _header_bounds(text)
+    # 210 ≈ the average rendered width (px, per 100px of font-size) of one
+    # character in the app's header font; dividing by length gives a cqw
+    # coefficient that makes the text span ~100% of the container width
+    # whenever that's below this tier's max.
+    coeff = 210 / max(len(text), 1)
     st.markdown(
         f'<div class="pp-page-header-wrap"><h1 class="pp-page-header" '
-        f'style="font-size:clamp({min_rem}rem, 4cqw, {max_rem}rem);">'
+        f'style="font-size:clamp({min_rem}rem, {coeff:.3g}cqw, {max_rem}rem);">'
         f'{html.escape(text)}</h1></div>',
         unsafe_allow_html=True,
     )
-    return min_rem, max_rem
+    return min_rem, max_rem, coeff
 
 
 def sub_header_style(header_bounds: tuple, scale: float = 0.75) -> None:
     """Set the --pp-substep-font CSS variable so a subordinate header (e.g. the
     Step-Level Ratings expander label) always renders smaller than the main
     page header it belongs to, at every viewport width."""
-    min_rem, max_rem = header_bounds
-    cqw = 4 * scale
+    min_rem, max_rem, coeff = header_bounds
     st.markdown(
         f'<style>:root {{ --pp-substep-font: clamp({min_rem * scale:.3g}rem, '
-        f'{cqw:.3g}cqw, {max_rem * scale:.3g}rem); }}</style>',
+        f'{coeff * scale:.3g}cqw, {max_rem * scale:.3g}rem); }}</style>',
         unsafe_allow_html=True,
     )
 
