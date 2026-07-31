@@ -358,13 +358,13 @@ def _header_bounds(text: str) -> tuple:
     """Font-size bounds (min_rem, max_rem) for a header, tuned to text length."""
     length = len(text)
     if length <= 20:
-        return 1.75, 2.25
+        return 1.75, 2.75
     elif length <= 35:
-        return 1.4, 1.9
+        return 1.4, 2.3
     elif length <= 55:
-        return 1.15, 1.6
+        return 1.15, 1.9
     else:
-        return 0.95, 1.35
+        return 0.95, 1.6
 
 
 def page_header(text: str) -> tuple:
