@@ -612,6 +612,9 @@ st.markdown(
 .st-key-assess_top_nav [data-testid="stColumn"] {
     min-width: 0 !important;
 }
+.st-key-assess_top_nav button p {
+    white-space: nowrap;
+}
 </style>
 """,
     unsafe_allow_html=True,
