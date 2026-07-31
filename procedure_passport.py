@@ -354,17 +354,20 @@ def go_to(page: str) -> None:
 # ─────────────────────────────────────────────
 # PAGE HEADER HELPER
 # ─────────────────────────────────────────────
-def _header_bounds(text: str) -> tuple:
-    """Font-size bounds (min_rem, max_rem) for a header, tuned to text length."""
+def _header_max(text: str) -> float:
+    """Font-size ceiling (rem) for a header, tuned to text length. There is
+    deliberately no floor — on skinny windows the font should keep shrinking
+    (down to whatever -webkit-line-clamp: 2 and ellipsis allow) rather than
+    being held at a minimum size and forced to wrap or truncate."""
     length = len(text)
     if length <= 20:
-        return 1.75, 2.75
+        return 2.75
     elif length <= 35:
-        return 1.4, 2.3
+        return 2.3
     elif length <= 55:
-        return 1.15, 1.9
+        return 1.9
     else:
-        return 0.95, 1.6
+        return 1.6
 
 
 def page_header(text: str) -> tuple:
@@ -372,9 +375,9 @@ def page_header(text: str) -> tuple:
     width — shorter headers get a bigger cqw coefficient than longer ones —
     while never exceeding this length tier's max (reached sooner on wide
     screens) and never wrapping past two lines (ellipsized as a last
-    resort). Returns (min_rem, max_rem, coeff) so callers can size
-    subordinate headers proportionally smaller — see sub_header_style()."""
-    min_rem, max_rem = _header_bounds(text)
+    resort). Returns (max_rem, coeff) so callers can size subordinate
+    headers proportionally smaller — see sub_header_style()."""
+    max_rem = _header_max(text)
     # 210 ≈ the average rendered width (px, per 100px of font-size) of one
     # character in the app's header font; dividing by length gives a cqw
     # coefficient that makes the text span ~100% of the container width
@@ -382,20 +385,20 @@ def page_header(text: str) -> tuple:
     coeff = 210 / max(len(text), 1)
     st.markdown(
         f'<div class="pp-page-header-wrap"><h1 class="pp-page-header" '
-        f'style="font-size:clamp({min_rem}rem, {coeff:.3g}cqw, {max_rem}rem);">'
+        f'style="font-size:clamp(0rem, {coeff:.3g}cqw, {max_rem}rem);">'
         f'{html.escape(text)}</h1></div>',
         unsafe_allow_html=True,
     )
-    return min_rem, max_rem, coeff
+    return max_rem, coeff
 
 
 def sub_header_style(header_bounds: tuple, scale: float = 0.75) -> None:
     """Set the --pp-substep-font CSS variable so a subordinate header (e.g. the
     Step-Level Ratings expander label) always renders smaller than the main
     page header it belongs to, at every viewport width."""
-    min_rem, max_rem, coeff = header_bounds
+    max_rem, coeff = header_bounds
     st.markdown(
-        f'<style>:root {{ --pp-substep-font: clamp({min_rem * scale:.3g}rem, '
+        f'<style>:root {{ --pp-substep-font: clamp(0rem, '
         f'{coeff * scale:.3g}cqw, {max_rem * scale:.3g}rem); }}</style>',
         unsafe_allow_html=True,
     )
