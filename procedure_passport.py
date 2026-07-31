@@ -603,6 +603,15 @@ st.markdown(
     overflow-wrap: break-word;
     text-overflow: ellipsis;
 }
+/* Assessment page top nav: Streamlit stacks columns onto separate rows
+   below a width breakpoint (each stColumn gets min-width: ~100%). Force
+   the Back/Home buttons to stay side by side at any width instead. */
+.st-key-assess_top_nav [data-testid="stHorizontalBlock"] {
+    flex-wrap: nowrap !important;
+}
+.st-key-assess_top_nav [data-testid="stColumn"] {
+    min-width: 0 !important;
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -993,13 +1002,14 @@ elif page == "assessment":
     page_header(f"📝 {_proc_name} Assessment")
 
     # Back button placed at the top, clearly separated from Finish (Fix 7)
-    _top_cols_assess = st.columns([1, 1, 4])
-    with _top_cols_assess[0]:
-        if st.button("⬅️ Back to Start", key="back_top"):
-            go_to("start")
-    with _top_cols_assess[1]:
-        if st.button("🏠 Home", key="assess_home_top"):
-            go_to("home")
+    with st.container(key="assess_top_nav"):
+        _top_cols_assess = st.columns([1, 1, 4])
+        with _top_cols_assess[0]:
+            if st.button("⬅️ Back to Start", key="back_top"):
+                go_to("start")
+        with _top_cols_assess[1]:
+            if st.button("🏠 Home", key="assess_home_top"):
+                go_to("home")
     st.markdown("---")
     st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.", icon=None)
 
