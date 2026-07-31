@@ -498,6 +498,12 @@ st.markdown(
     line-height: 1.3;
     font-size: clamp(0.7rem, 8.5cqw, 0.875rem);
 }
+/* Step-Level Ratings expander: label styled like a smaller page header */
+.st-key-step_ratings_expander_resident summary [data-testid="stMarkdownContainer"] p,
+.st-key-step_ratings_expander_attending summary [data-testid="stMarkdownContainer"] p {
+    font-size: 1.75rem;
+    font-weight: 600;
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -917,7 +923,7 @@ elif page == "assessment":
         index=_cp_idx,
     )
 
-    with st.expander("Step-Level Ratings", expanded=False):
+    with st.expander("Step-Level Ratings", expanded=False, key="step_ratings_expander_resident"):
         # Fix 6: reverting to "Not Assessed" is supported — "Not Assessed" is index 0
         # in RATING_OPTIONS so the user can always select it from the dropdown.
         for _, row in steps.iterrows():
@@ -1666,7 +1672,7 @@ elif page == "attending_assessment":
     case_preparation = st.selectbox("Preparation", _att_cp_opts)
 
     scores: dict = {}
-    with st.expander("Step-Level Ratings", expanded=False):
+    with st.expander("Step-Level Ratings", expanded=False, key="step_ratings_expander_attending"):
         for _, row in steps.iterrows():
             step_id   = row["step_id"]
             step_name = row["step_name"]
