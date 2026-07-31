@@ -919,13 +919,6 @@ elif page == "assessment":
 
     st.markdown("#### Step-Level Ratings")
 
-    # Fix 5: also reset the widget key state so selectboxes visually update
-    if st.button("↺ Mark All as 'Not Assessed'"):
-        for _, row in steps.iterrows():
-            st.session_state["scores"][row["step_id"]] = "Not Assessed"
-            st.session_state[f"score_{row['step_id']}"] = "Not Assessed"
-        st.rerun()
-
     # Fix 6: reverting to "Not Assessed" is supported — "Not Assessed" is index 0
     # in RATING_OPTIONS so the user can always select it from the dropdown.
     for _, row in steps.iterrows():
