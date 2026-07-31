@@ -273,6 +273,7 @@ def save_case(
     scores_dict: dict,
     notes: str = "",
     case_complexity=None,
+    case_preparation=None,
     overall_performance=None,
 ) -> str:
     """Persist a case + its step scores; returns the new case_id."""
@@ -280,7 +281,7 @@ def save_case(
 
     case_cols = ["case_id", "resident_email", "date", "specialty_id",
                  "procedure_id", "attending_id", "notes",
-                 "case_complexity", "overall_performance"]
+                 "case_complexity", "case_preparation", "overall_performance"]
     cases_df  = read_sheet_df(SHEET_CASES, expected_cols=case_cols)
     cases_df  = pd.concat([cases_df, pd.DataFrame([{
         "case_id":             case_id,
@@ -291,12 +292,13 @@ def save_case(
         "attending_id":        attending_id,
         "notes":               notes,
         "case_complexity":     case_complexity,
+        "case_preparation":    case_preparation,
         "overall_performance": overall_performance,
     }])], ignore_index=True)
     write_sheet_df(SHEET_CASES, cases_df)  # clears cache
 
     score_cols = ["case_id", "step_id", "rating", "rating_num",
-                  "case_complexity", "overall_performance"]
+                  "case_complexity", "case_preparation", "overall_performance"]
     scores_df  = read_sheet_df(SHEET_SCORES, expected_cols=score_cols)
     # Normalise existing case_ids before concat so the written sheet is consistent.
     if not scores_df.empty:
@@ -307,6 +309,7 @@ def save_case(
         "rating":              rating,
         "rating_num":          RATING_TO_NUM.get(rating),
         "case_complexity":     case_complexity,
+        "case_preparation":    case_preparation,
         "overall_performance": overall_performance,
     } for step_id, rating in scores_dict.items()]
     scores_df  = pd.concat([scores_df, pd.DataFrame(new_rows)], ignore_index=True)
@@ -904,6 +907,16 @@ elif page == "assessment":
         index=_cc_idx,
     )
 
+    _cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
+                "Adequately Prepared", "Well Prepared", "Highly Prepared"]
+    _cp_default = st.session_state.get("case_preparation", "Not Assessed")
+    _cp_idx = _cp_opts.index(_cp_default) if _cp_default in _cp_opts else 0
+    st.session_state["case_preparation"] = st.selectbox(
+        "Case Preparation",
+        _cp_opts,
+        index=_cp_idx,
+    )
+
     st.markdown("#### Step-Level Ratings")
 
     # Fix 5: also reset the widget key state so selectboxes visually update
@@ -964,6 +977,7 @@ elif page == "assessment":
                     attending_id=st.session_state["attending_id"],
                     scores_dict=st.session_state["scores"],
                     case_complexity=st.session_state["case_complexity"],
+                    case_preparation=st.session_state["case_preparation"],
                     overall_performance=st.session_state["overall_performance"],
                     notes=st.session_state.get("notes", ""),
                 )
@@ -997,6 +1011,7 @@ elif page == "dashboard":
     with meta_col1:
         st.markdown(f"**Date:** {fmt_date(st.session_state.get('date', ''))}")
         st.markdown(f"**Case Complexity:** {st.session_state.get('case_complexity', '—')}")
+        st.markdown(f"**Case Preparation:** {st.session_state.get('case_preparation', '—')}")
     with meta_col2:
         st.markdown(f"**Overall Performance:** {st.session_state.get('overall_performance', '—')}")
 
@@ -1649,6 +1664,10 @@ elif page == "attending_assessment":
     _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
     case_complexity = st.selectbox("Case Complexity", _att_cc_opts)
 
+    _att_cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
+                    "Adequately Prepared", "Well Prepared", "Highly Prepared"]
+    case_preparation = st.selectbox("Case Preparation", _att_cp_opts)
+
     st.markdown("#### Step-Level Ratings")
     scores: dict = {}
     for _, row in steps.iterrows():
@@ -1686,6 +1705,7 @@ elif page == "attending_assessment":
                     scores_dict=scores,
                     notes=notes,
                     case_complexity=case_complexity,
+                    case_preparation=case_preparation,
                     overall_performance=o_score,
                 )
                 # Store submission summary for the confirmation page
@@ -1697,6 +1717,7 @@ elif page == "attending_assessment":
                     "attending_name":      display_attending,
                     "date":                str(case_date),
                     "case_complexity":     case_complexity,
+                    "case_preparation":    case_preparation,
                     "overall_performance": o_score,
                     "notes":               notes,
                     "scores":              scores,
@@ -1726,6 +1747,7 @@ elif page == "attending_confirmation":
         f'<b>Procedure:</b> {sub.get("procedure_name", sub["procedure_id"])}<br>'
         f'<b>Date:</b> {fmt_date(sub["date"])}<br>'
         f'<b>Case Complexity:</b> {sub["case_complexity"]}<br>'
+        f'<b>Case Preparation:</b> {sub["case_preparation"]}<br>'
         f'<b>Overall Performance:</b> {sub["overall_performance"]}<br>'
         f'<b>Case ID:</b> <code>{sub["case_id"]}</code>'
         f'</div>',
