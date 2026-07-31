@@ -923,7 +923,7 @@ elif page == "assessment":
         index=_cc_idx,
     )
 
-    with st.expander("Step-Level Ratings", expanded=False, key="step_ratings_expander_resident"):
+    with st.expander(f"Step-Level Ratings for {_proc_name}", expanded=False, key="step_ratings_expander_resident"):
         # Fix 6: reverting to "Not Assessed" is supported — "Not Assessed" is index 0
         # in RATING_OPTIONS so the user can always select it from the dropdown.
         for _, row in steps.iterrows():
@@ -1672,7 +1672,7 @@ elif page == "attending_assessment":
     case_complexity = st.selectbox("Case Complexity", _att_cc_opts)
 
     scores: dict = {}
-    with st.expander("Step-Level Ratings", expanded=False, key="step_ratings_expander_attending"):
+    with st.expander(f"Step-Level Ratings for {_att_proc_name}", expanded=False, key="step_ratings_expander_attending"):
         for _, row in steps.iterrows():
             step_id   = row["step_id"]
             step_name = row["step_name"]
