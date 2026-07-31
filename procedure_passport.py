@@ -370,38 +370,60 @@ def _header_max(text: str) -> float:
         return 1.6
 
 
-def page_header(text: str) -> tuple:
-    """Render a page's main H1 header sized to fill the container's full
-    width — shorter headers get a bigger cqw coefficient than longer ones —
-    while never exceeding this length tier's max (reached sooner on wide
-    screens) and never wrapping past two lines (ellipsized as a last
-    resort). Returns (max_rem, coeff) so callers can size subordinate
-    headers proportionally smaller — see sub_header_style()."""
+def page_header(text: str) -> None:
+    """Render a page's main H1 header, then measure its actual rendered
+    width in the browser and scale the font to exactly fill the
+    container — no leftover right-hand margin — while never exceeding
+    this length tier's max and never wrapping past two lines (a CSS
+    safety net in case the measurement can't run, e.g. scripts disabled).
+    A per-character cqw estimate can't do this precisely: real text
+    width depends on which letters are in it, not just how many, so a
+    constant safe enough to avoid ever wrapping always left a visible
+    gap for shorter/narrower strings. Measuring the actual rendered
+    width removes that guesswork entirely, and also sets
+    --pp-substep-font so the Step-Level Ratings expander label (see the
+    CSS rule using it) stays proportionally smaller than this header."""
     max_rem = _header_max(text)
-    # ~175 (deliberately under the ~210 measured average character width, as
-    # a safety margin) gives a cqw coefficient that keeps text on one line
-    # below this tier's max — a tighter margin here left longer headers
-    # (e.g. "Robotic Laparoscopic Cholecystectomy Assessment") wrapping to
-    # two lines at everyday window widths once clamped to the max.
-    coeff = 175 / max(len(text), 1)
+    escaped = html.escape(text)
     st.markdown(
-        f'<div class="pp-page-header-wrap"><h1 class="pp-page-header" '
-        f'style="font-size:clamp(0rem, {coeff:.3g}cqw, {max_rem}rem);">'
-        f'{html.escape(text)}</h1></div>',
+        f'<div class="pp-page-header-wrap"><h1 class="pp-page-header">'
+        f'{escaped}</h1></div>',
         unsafe_allow_html=True,
     )
-    return max_rem, coeff
-
-
-def sub_header_style(header_bounds: tuple, scale: float = 0.75) -> None:
-    """Set the --pp-substep-font CSS variable so a subordinate header (e.g. the
-    Step-Level Ratings expander label) always renders smaller than the main
-    page header it belongs to, at every viewport width."""
-    max_rem, coeff = header_bounds
-    st.markdown(
-        f'<style>:root {{ --pp-substep-font: clamp(0rem, '
-        f'{coeff * scale:.3g}cqw, {max_rem * scale:.3g}rem); }}</style>',
-        unsafe_allow_html=True,
+    st.iframe(
+        f"""
+        <script>
+        (function() {{
+            var doc = window.parent.document;
+            var wraps = doc.querySelectorAll('.pp-page-header-wrap');
+            var wrap = wraps[wraps.length - 1];
+            if (!wrap) return;
+            var el = wrap.querySelector('.pp-page-header');
+            if (!el) return;
+            var maxPx = {max_rem} * 16;
+            function fit() {{
+                var containerWidth = wrap.clientWidth;
+                if (!containerWidth) return;
+                el.style.whiteSpace = 'nowrap';
+                el.style.display = 'inline-block';
+                el.style.fontSize = maxPx + 'px';
+                var natural = el.scrollWidth;
+                el.style.display = '';
+                el.style.whiteSpace = '';
+                var finalPx = natural <= containerWidth
+                    ? maxPx
+                    : Math.max(1, maxPx * (containerWidth / natural) * 0.96);
+                el.style.fontSize = finalPx + 'px';
+                doc.documentElement.style.setProperty(
+                    '--pp-substep-font', (finalPx * 0.75) + 'px'
+                );
+            }}
+            fit();
+            window.parent.addEventListener('resize', fit);
+        }})();
+        </script>
+        """,
+        height=1,
     )
 
 
@@ -553,18 +575,18 @@ st.markdown(
     font-size: clamp(0.7rem, 8.5cqw, 0.875rem);
 }
 /* Step-Level Ratings expander: label styled like a smaller page header.
-   --pp-substep-font is set per-page by sub_header_style() so this always
-   renders smaller than that page's main header. */
+   --pp-substep-font is set by page_header()'s injected script (0.75x the
+   main header's actual measured font-size) so this always renders
+   smaller than that page's main header. */
 .st-key-step_ratings_expander_resident summary [data-testid="stMarkdownContainer"] p,
 .st-key-step_ratings_expander_attending summary [data-testid="stMarkdownContainer"] p {
     font-size: var(--pp-substep-font, 1.3125rem);
     font-weight: 600;
 }
-/* Main page headers: size scales with text length (set inline per-header)
-   and container width, but never wrap past two lines. */
-.pp-page-header-wrap {
-    container-type: inline-size;
-}
+/* Main page headers: font-size is set by page_header()'s injected script
+   after measuring the real rendered text width, so it exactly fills the
+   container. This is the CSS-only fallback/safety net (script disabled,
+   or before the script's first paint): still capped at two lines. */
 .pp-page-header {
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -961,8 +983,7 @@ elif page == "assessment":
     # Resolve procedure name for the page title (Fix 3)
     _proc_rows = proc_df.loc[proc_df["procedure_id"] == st.session_state["procedure_id"], "procedure_name"].values
     _proc_name = _proc_rows[0] if len(_proc_rows) else "Assessment"
-    _hdr_bounds = page_header(f"📝 {_proc_name} Assessment")
-    sub_header_style(_hdr_bounds)
+    page_header(f"📝 {_proc_name} Assessment")
 
     # Back button placed at the top, clearly separated from Finish (Fix 7)
     _top_cols_assess = st.columns([1, 1, 4])
@@ -1709,8 +1730,7 @@ elif page == "attending_assessment":
     # Decode URL-safe attending name
     display_attending = attending_name.replace("_", " ")
 
-    _hdr_bounds = page_header("📝 Attending Evaluation")
-    sub_header_style(_hdr_bounds)
+    page_header("📝 Attending Evaluation")
     try:
         _, proc_df_att, steps_df, _ = load_refs()
     except ConnectionError as exc:
