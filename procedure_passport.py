@@ -605,12 +605,18 @@ st.markdown(
 }
 /* Assessment page top nav: Streamlit stacks columns onto separate rows
    below a width breakpoint (each stColumn gets min-width: ~100%). Force
-   the Back/Home buttons to stay side by side at any width instead. */
+   the Back/Home buttons to stay side by side at any width instead. Columns
+   don't shrink past their button's natural (nowrap) width, so on very
+   narrow screens the row scrolls horizontally rather than the two
+   buttons shrinking into each other and overlapping. */
 .st-key-assess_top_nav [data-testid="stHorizontalBlock"] {
     flex-wrap: nowrap !important;
+    overflow-x: auto;
 }
 .st-key-assess_top_nav [data-testid="stColumn"] {
     min-width: 0 !important;
+    flex: 0 0 auto !important;
+    width: auto !important;
 }
 .st-key-assess_top_nav button p {
     white-space: nowrap;
