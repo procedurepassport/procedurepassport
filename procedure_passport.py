@@ -963,9 +963,7 @@ elif page == "assessment":
     st.markdown("---")
     st.caption("✅ The case is saved automatically when you click Finish & Save.")
     if st.button("🏁 Finish & Save →", type="primary", width="stretch"):
-        if st.session_state.get("case_complexity", "— Select complexity —") == "— Select complexity —":
-            st.warning("Please select a Case Complexity.")
-        elif st.session_state["overall_performance"] == O_SCORE_OPTIONS[0]:
+        if st.session_state["overall_performance"] == O_SCORE_OPTIONS[0]:
             st.warning("Please select an Overall Performance rating.")
         else:
             try:
@@ -1690,9 +1688,7 @@ elif page == "attending_assessment":
 
     st.markdown("---")
     if st.button("✅ Submit Evaluation", type="primary", width="stretch"):
-        if case_complexity == "— Select complexity —":
-            st.warning("Please select a Case Complexity before submitting.")
-        elif o_score == O_SCORE_OPTIONS[0]:
+        if o_score == O_SCORE_OPTIONS[0]:
             st.warning("Please select an Overall Performance rating before submitting.")
         else:
             try:
