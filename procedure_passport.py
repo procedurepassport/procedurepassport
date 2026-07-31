@@ -621,11 +621,16 @@ st.markdown(
 .st-key-assess_top_nav button p {
     white-space: nowrap;
 }
-/* "On mobile: tap the ≡ icon..." tip: half the default alert padding so
-   the blue box takes up less vertical space. */
+/* "On mobile: tap the ≡ icon..." tip: shrink padding and text together
+   so the box lands close to half its original ~56px height (measured at
+   ~29.5px), rather than the ~40px a padding-only cut could reach. */
 .st-key-mobile_tip [data-testid="stAlertContainer"] {
-    padding-top: 0.5rem;
-    padding-bottom: 0.5rem;
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+}
+.st-key-mobile_tip [data-testid="stAlertContainer"] p {
+    font-size: 0.85rem;
+    line-height: 1.3;
 }
 </style>
 """,
