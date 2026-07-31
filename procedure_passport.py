@@ -963,22 +963,32 @@ elif page == "assessment":
     st.markdown("---")
     st.caption("✅ The case is saved automatically when you click Finish & Save.")
     if st.button("🏁 Finish & Save →", type="primary", width="stretch"):
-        try:
-            st.session_state["current_case_id"] = save_case(
-                resident_email=st.session_state["resident"],
-                date=st.session_state["date"],
-                specialty_id=st.session_state["specialty_id"],
-                procedure_id=st.session_state["procedure_id"],
-                attending_id=st.session_state["attending_id"],
-                scores_dict=st.session_state["scores"],
-                case_complexity=st.session_state["case_complexity"],
-                case_preparation=st.session_state["case_preparation"],
-                overall_performance=st.session_state["overall_performance"],
-                notes=st.session_state.get("notes", ""),
-            )
-            go_to("dashboard")
-        except ConnectionError as exc:
-            show_gs_error(exc)
+        _has_value = (
+            st.session_state["case_complexity"] != "— Select complexity —"
+            or st.session_state["case_preparation"] != "Not Assessed"
+            or st.session_state["overall_performance"] != O_SCORE_OPTIONS[0]
+            or any(v != "Not Assessed" for v in st.session_state["scores"].values())
+            or st.session_state.get("notes", "").strip() != ""
+        )
+        if not _has_value:
+            st.warning("Please provide at least one rating or comment before submitting.")
+        else:
+            try:
+                st.session_state["current_case_id"] = save_case(
+                    resident_email=st.session_state["resident"],
+                    date=st.session_state["date"],
+                    specialty_id=st.session_state["specialty_id"],
+                    procedure_id=st.session_state["procedure_id"],
+                    attending_id=st.session_state["attending_id"],
+                    scores_dict=st.session_state["scores"],
+                    case_complexity=st.session_state["case_complexity"],
+                    case_preparation=st.session_state["case_preparation"],
+                    overall_performance=st.session_state["overall_performance"],
+                    notes=st.session_state.get("notes", ""),
+                )
+                go_to("dashboard")
+            except ConnectionError as exc:
+                show_gs_error(exc)
 
 
 # ════════════════════════════════════════════════════════════
@@ -1685,37 +1695,47 @@ elif page == "attending_assessment":
 
     st.markdown("---")
     if st.button("✅ Submit Evaluation", type="primary", width="stretch"):
-        try:
-            case_id = save_case(
-                resident_email=resident_email,
-                date=case_date,
-                specialty_id=specialty_id,
-                procedure_id=procedure_id,
-                attending_id=f"magic_{attending_name}",   # magic_ prefix; decoded on display
-                scores_dict=scores,
-                notes=notes,
-                case_complexity=case_complexity,
-                case_preparation=case_preparation,
-                overall_performance=o_score,
-            )
-            # Store submission summary for the confirmation page
-            st.session_state["attending_submission"] = {
-                "case_id":             case_id,
-                "resident_email":      resident_email,
-                "procedure_id":        procedure_id,
-                "procedure_name":      _att_proc_name,
-                "attending_name":      display_attending,
-                "date":                str(case_date),
-                "case_complexity":     case_complexity,
-                "case_preparation":    case_preparation,
-                "overall_performance": o_score,
-                "notes":               notes,
-                "scores":              scores,
-                "steps":               steps[["step_id", "step_name"]].to_dict("records"),
-            }
-            go_to("attending_confirmation")
-        except ConnectionError as exc:
-            show_gs_error(exc)
+        _has_value = (
+            case_complexity != "— Select complexity —"
+            or case_preparation != "Not Assessed"
+            or o_score != O_SCORE_OPTIONS[0]
+            or any(v != "Not Assessed" for v in scores.values())
+            or notes.strip() != ""
+        )
+        if not _has_value:
+            st.warning("Please provide at least one rating or comment before submitting.")
+        else:
+            try:
+                case_id = save_case(
+                    resident_email=resident_email,
+                    date=case_date,
+                    specialty_id=specialty_id,
+                    procedure_id=procedure_id,
+                    attending_id=f"magic_{attending_name}",   # magic_ prefix; decoded on display
+                    scores_dict=scores,
+                    notes=notes,
+                    case_complexity=case_complexity,
+                    case_preparation=case_preparation,
+                    overall_performance=o_score,
+                )
+                # Store submission summary for the confirmation page
+                st.session_state["attending_submission"] = {
+                    "case_id":             case_id,
+                    "resident_email":      resident_email,
+                    "procedure_id":        procedure_id,
+                    "procedure_name":      _att_proc_name,
+                    "attending_name":      display_attending,
+                    "date":                str(case_date),
+                    "case_complexity":     case_complexity,
+                    "case_preparation":    case_preparation,
+                    "overall_performance": o_score,
+                    "notes":               notes,
+                    "scores":              scores,
+                    "steps":               steps[["step_id", "step_name"]].to_dict("records"),
+                }
+                go_to("attending_confirmation")
+            except ConnectionError as exc:
+                show_gs_error(exc)
 
 
 # ════════════════════════════════════════════════════════════
