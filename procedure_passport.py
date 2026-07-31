@@ -917,20 +917,19 @@ elif page == "assessment":
         index=_cp_idx,
     )
 
-    st.markdown("#### Step-Level Ratings")
-
-    # Fix 6: reverting to "Not Assessed" is supported — "Not Assessed" is index 0
-    # in RATING_OPTIONS so the user can always select it from the dropdown.
-    for _, row in steps.iterrows():
-        step_id   = row["step_id"]
-        step_name = row["step_name"]
-        current   = st.session_state["scores"].get(step_id, "Not Assessed")
-        st.session_state["scores"][step_id] = st.selectbox(
-            step_name,
-            RATING_OPTIONS,
-            index=RATING_OPTIONS.index(current) if current in RATING_OPTIONS else 0,
-            key=f"score_{step_id}",
-        )
+    with st.expander("Step-Level Ratings", expanded=False):
+        # Fix 6: reverting to "Not Assessed" is supported — "Not Assessed" is index 0
+        # in RATING_OPTIONS so the user can always select it from the dropdown.
+        for _, row in steps.iterrows():
+            step_id   = row["step_id"]
+            step_name = row["step_name"]
+            current   = st.session_state["scores"].get(step_id, "Not Assessed")
+            st.session_state["scores"][step_id] = st.selectbox(
+                step_name,
+                RATING_OPTIONS,
+                index=RATING_OPTIONS.index(current) if current in RATING_OPTIONS else 0,
+                key=f"score_{step_id}",
+            )
 
     current_o = st.session_state.get("overall_performance", O_SCORE_OPTIONS[0])
     st.session_state["overall_performance"] = st.selectbox(
@@ -1666,14 +1665,14 @@ elif page == "attending_assessment":
                     "Adequately Prepared", "Well Prepared", "Highly Prepared"]
     case_preparation = st.selectbox("Preparation", _att_cp_opts)
 
-    st.markdown("#### Step-Level Ratings")
     scores: dict = {}
-    for _, row in steps.iterrows():
-        step_id   = row["step_id"]
-        step_name = row["step_name"]
-        scores[step_id] = st.selectbox(
-            step_name, RATING_OPTIONS, key=f"att_score_{step_id}"
-        )
+    with st.expander("Step-Level Ratings", expanded=False):
+        for _, row in steps.iterrows():
+            step_id   = row["step_id"]
+            step_name = row["step_name"]
+            scores[step_id] = st.selectbox(
+                step_name, RATING_OPTIONS, key=f"att_score_{step_id}"
+            )
 
     o_score = st.selectbox("Overall Performance Rating", O_SCORE_OPTIONS)
     with st.expander("💬 Comment guide (tap to expand)", expanded=False):
