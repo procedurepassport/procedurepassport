@@ -420,6 +420,13 @@ def page_header(text: str) -> None:
             }}
             fit();
             window.parent.addEventListener('resize', fit);
+            // Also watch the container itself: Streamlit's own column/
+            // layout reflow can change its width slightly after this
+            // script's first run, with no window 'resize' event to catch
+            // it — a plain fixed-width guess would miss that follow-up.
+            if (window.parent.ResizeObserver) {{
+                new window.parent.ResizeObserver(fit).observe(wrap);
+            }}
         }})();
         </script>
         """,
@@ -613,7 +620,7 @@ page = st.session_state["page"]
 if page == "login":
     col_c, col_r = st.columns([1, 1])
     with col_c:
-        st.markdown("# 🩺 Procedure Passport")
+        page_header("🩺 Procedure Passport")
         st.markdown("_Track your surgical skills journey, one procedure at a time._")
         st.markdown("---")
         email = st.text_input("Email address", placeholder="you@hospital.org")
