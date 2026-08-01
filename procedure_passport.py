@@ -654,6 +654,18 @@ st.markdown(
 .st-key-step_ratings_expander_attending [data-testid="stWidgetLabel"] p {
     font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.75);
 }
+/* Dropdown value text (Preparation, Case Complexity, Overall Performance
+   Rating, and every Step-Level Ratings step): 0.8x its own label's size
+   above, i.e. 0.6x --pp-substep-font overall. The options popup itself
+   renders in a portal under <body>, outside these scoped containers, so
+   it isn't reachable here and keeps its default size. */
+.st-key-assess_preparation [data-testid="stSelectbox"] input,
+.st-key-assess_case_complexity [data-testid="stSelectbox"] input,
+.st-key-assess_overall_performance [data-testid="stSelectbox"] input,
+.st-key-step_ratings_expander_resident [data-testid="stSelectbox"] input,
+.st-key-step_ratings_expander_attending [data-testid="stSelectbox"] input {
+    font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.6);
+}
 </style>
 """,
     unsafe_allow_html=True,
