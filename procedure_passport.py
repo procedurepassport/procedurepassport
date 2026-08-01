@@ -641,6 +641,19 @@ st.markdown(
     align-items: center !important;
     align-self: center !important;
 }
+/* Assessment page field labels (Preparation, Case Complexity, Overall
+   Performance Rating, Comments/Feedback) and every step label inside the
+   Step-Level Ratings expander: sized relative to that expander's own
+   header (--pp-substep-font, itself 0.75x the page's main header), so
+   the whole page scales together as one hierarchy with window width. */
+.st-key-assess_preparation [data-testid="stWidgetLabel"] p,
+.st-key-assess_case_complexity [data-testid="stWidgetLabel"] p,
+.st-key-assess_overall_performance [data-testid="stWidgetLabel"] p,
+.st-key-assess_notes [data-testid="stWidgetLabel"] p,
+.st-key-step_ratings_expander_resident [data-testid="stWidgetLabel"] p,
+.st-key-step_ratings_expander_attending [data-testid="stWidgetLabel"] p {
+    font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.75);
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -1053,6 +1066,7 @@ elif page == "assessment":
         "Preparation",
         _cp_opts,
         index=_cp_idx,
+        key="assess_preparation",
     )
 
     _cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
@@ -1062,6 +1076,7 @@ elif page == "assessment":
         "Case Complexity",
         _cc_opts,
         index=_cc_idx,
+        key="assess_case_complexity",
     )
 
     with st.expander(f"Step-Level Ratings for {_proc_name}", expanded=False, key="step_ratings_expander_resident"):
@@ -1083,6 +1098,7 @@ elif page == "assessment":
         "Overall Performance Rating",
         O_SCORE_OPTIONS,
         index=O_SCORE_OPTIONS.index(current_o) if current_o in O_SCORE_OPTIONS else 0,
+        key="assess_overall_performance",
     )
 
     with st.expander("💬 Comment guide (tap to expand)", expanded=False):
@@ -1093,7 +1109,9 @@ elif page == "assessment":
             "- Still working on ___\n"
             "- Next steps/improvements expected ___"
         )
-    st.session_state["notes"] = st.text_area("Comments / Feedback", st.session_state.get("notes", ""))
+    st.session_state["notes"] = st.text_area(
+        "Comments / Feedback", st.session_state.get("notes", ""), key="assess_notes"
+    )
 
     if all(v == "Not Assessed" for v in st.session_state["scores"].values()):
         st.warning("⚠️ All steps are marked 'Not Assessed'.")
@@ -1808,10 +1826,10 @@ elif page == "attending_assessment":
     case_date       = st.date_input("Date of Procedure", value=datetime.date.today())
     _att_cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
                     "Adequately Prepared", "Well Prepared", "Highly Prepared"]
-    case_preparation = st.selectbox("Preparation", _att_cp_opts)
+    case_preparation = st.selectbox("Preparation", _att_cp_opts, key="assess_preparation")
 
     _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
-    case_complexity = st.selectbox("Case Complexity", _att_cc_opts)
+    case_complexity = st.selectbox("Case Complexity", _att_cc_opts, key="assess_case_complexity")
 
     scores: dict = {}
     with st.expander(f"Step-Level Ratings for {_att_proc_name}", expanded=False, key="step_ratings_expander_attending"):
@@ -1822,7 +1840,7 @@ elif page == "attending_assessment":
                 step_name, RATING_OPTIONS, key=f"att_score_{step_id}"
             )
 
-    o_score = st.selectbox("Overall Performance Rating", O_SCORE_OPTIONS)
+    o_score = st.selectbox("Overall Performance Rating", O_SCORE_OPTIONS, key="assess_overall_performance")
     with st.expander("💬 Comment guide (tap to expand)", expanded=False):
         st.markdown(
             "_Use these prompts to structure your feedback:_\n\n"
@@ -1831,7 +1849,7 @@ elif page == "attending_assessment":
             "- Still working on ___\n"
             "- Next steps/improvements expected ___"
         )
-    notes   = st.text_area("Comments / Feedback (optional)")
+    notes   = st.text_area("Comments / Feedback (optional)", key="assess_notes")
 
     st.markdown("---")
     if st.button("✅ Submit Evaluation", type="primary", width="stretch"):
