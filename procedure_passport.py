@@ -627,10 +627,19 @@ st.markdown(
 .st-key-mobile_tip [data-testid="stAlertContainer"] {
     padding-top: 0.35rem;
     padding-bottom: 0.35rem;
+    display: flex;
+    align-items: center;
 }
 .st-key-mobile_tip [data-testid="stAlertContainer"] p {
     font-size: 0.85rem;
     line-height: 1.3;
+}
+/* Streamlit's alert internals are several nested flex/block layers deep,
+   each defaulting to top/stretch alignment, which left the text sitting
+   above center within our shorter box. Force every level to center. */
+.st-key-mobile_tip [data-testid="stAlertContainer"] * {
+    align-items: center !important;
+    align-self: center !important;
 }
 </style>
 """,
