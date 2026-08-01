@@ -621,9 +621,10 @@ st.markdown(
 .st-key-assess_top_nav button p {
     white-space: nowrap;
 }
-/* "On mobile: tap the ≡ icon..." tip: shrink padding and text together
-   so the box lands close to half its original ~56px height (measured at
-   ~29.5px), rather than the ~40px a padding-only cut could reach. */
+/* "On mobile: tap the ≡ icon..." tip: shrink padding, and match the text
+   size to "Preparation" and similar field labels (0.75x --pp-substep-font)
+   so it's part of the same live, width-responsive size hierarchy instead
+   of a fixed size of its own. */
 .st-key-mobile_tip [data-testid="stAlertContainer"] {
     padding-top: 0.35rem;
     padding-bottom: 0.35rem;
@@ -631,7 +632,7 @@ st.markdown(
     align-items: center;
 }
 .st-key-mobile_tip [data-testid="stAlertContainer"] p {
-    font-size: 0.85rem;
+    font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.75);
     line-height: 1.3;
 }
 /* Streamlit's alert internals are several nested flex/block layers deep,
