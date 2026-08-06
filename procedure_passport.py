@@ -1461,13 +1461,11 @@ elif page == "cumulative":
         .tolist()
     )
 
-    # Build display names for step column headers.
-    # With writing-mode: vertical-rl + rotate(180deg) + justify-content: flex-end,
-    # text is anchored at the visual bottom. Overflow clips the visual top (end of name).
-    # Truncate from the end so the beginning is always visible at visual bottom.
-    def _fmt_step_hdr(name, max_len=18):
-        if isinstance(name, str) and len(name) > max_len:
-            return name[:max_len - 1] + "\u2026"
+    # Build display names for step column headers. Full names are kept
+    # untruncated \u2014 the header cell CSS (writing-mode: vertical-rl +
+    # rotate(180deg)) lets the header row grow tall enough to fit the
+    # longest label instead of clipping it with an ellipsis.
+    def _fmt_step_hdr(name):
         return name if isinstance(name, str) else name
 
     _step_display        = {s: _fmt_step_hdr(s) for s in ordered_steps}
@@ -1702,10 +1700,7 @@ elif page == "cumulative":
                         ("vertical-align", "bottom"),
                         ("text-align", "left"),
                         ("white-space", "nowrap"),
-                        ("overflow", "hidden"),
-                        ("text-overflow", "ellipsis"),
-                        ("max-height", "180px"),
-                        ("height", "180px"),
+                        ("min-height", "180px"),
                         ("font-size", "0.75rem"),
                         ("padding", "4px 2px"),
                         ("width", "36px"),
