@@ -1686,9 +1686,9 @@ elif page == "cumulative":
              "props": [("text-align", "right"), ("font-weight", "600"),
                        ("padding-right", "6px"), ("border-left", "none")]},
         ]
-        # Vertical step headers: writing-mode + rotate(180deg) makes text read bottom-to-top.
-        # vertical-align: bottom anchors text to the visual bottom of the header cell.
-        # text-align: left means the start of each step name is visible.
+        # Vertical step headers: writing-mode + rotate(180deg) makes text read
+        # bottom-to-top; see the flex properties below for how each label is
+        # centered horizontally and anchored to the visual bottom.
         #
         # Header row height is capped so at least half of these vertical labels fit
         # on one line at the base font size. Labels that don't fit wrap onto a
@@ -1719,8 +1719,18 @@ elif page == "cumulative":
                 _props = [
                     ("writing-mode", "vertical-rl"),
                     ("transform", "rotate(180deg)"),
-                    ("vertical-align", "bottom"),
-                    ("text-align", "left"),
+                    # display:flex + align-items:center centers the label
+                    # horizontally in the (fixed-width) column — text-align
+                    # only affects position along the vertical reading axis
+                    # here, not the horizontal one. justify-content:flex-start
+                    # keeps the same bottom-anchored vertical position that
+                    # vertical-align:bottom gave the plain table-cell before
+                    # (the outer box still lays out as a table-cell; only the
+                    # inner content becomes a flex box, so column widths and
+                    # row height are unaffected).
+                    ("display", "flex"),
+                    ("align-items", "center"),
+                    ("justify-content", "flex-start"),
                     ("padding", "4px 2px"),
                     ("width", "36px"),
                     ("min-width", "36px"),
