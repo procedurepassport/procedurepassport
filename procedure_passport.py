@@ -1688,25 +1688,69 @@ elif page == "cumulative":
         ]
         # Vertical step headers: writing-mode + rotate(180deg) makes text read bottom-to-top.
         # vertical-align: bottom anchors text to the visual bottom of the header cell.
-        # text-align: left means the start of each step name is visible; overflow: hidden
-        # clips the end. No flex — flex collapses columns into one.
+        # text-align: left means the start of each step name is visible.
+        #
+        # Header row height is capped so at least half of these vertical labels fit
+        # on one line at the base font size. Labels that don't fit wrap onto a
+        # second line and, only if that's still not enough, shrink their font —
+        # the column's width (36px) never changes either way, only the header
+        # row's height and that column's own font-size adapt.
+        _vheader_cols  = [c for c in all_cols
+                           if c in ordered_steps_display or c in ("Case Complexity", "Overall Performance")]
+        _BASE_FONT_PX  = 12   # 0.75rem
+        _PX_PER_CHAR   = 7    # rough vertical advance per character at base font size
+        _CELL_PAD_PX   = 12   # vertical padding/slack allowance
+        _MIN_HEADER_PX = 180  # never shrink the row below this, even if every label is short
+        _MIN_FONT_PX   = 7    # never shrink a wrapped label's font below this
+
+        def _label_len(c):
+            return len(c) if isinstance(c, str) else 0
+
+        if _vheader_cols:
+            _estimates = sorted(_label_len(c) * _PX_PER_CHAR + _CELL_PAD_PX for c in _vheader_cols)
+            _half_idx = -(-len(_estimates) // 2) - 1  # index of the value s.t. >= half the labels are <= it
+            _max_header_px = max(_estimates[_half_idx], _MIN_HEADER_PX)
+        else:
+            _max_header_px = _MIN_HEADER_PX
+
         for idx, col_name in enumerate(all_cols):
-            if col_name in ordered_steps_display or col_name in ("Case Complexity", "Overall Performance"):
+            if col_name in _vheader_cols:
+                _need_px = _label_len(col_name) * _PX_PER_CHAR + _CELL_PAD_PX
+                _props = [
+                    ("writing-mode", "vertical-rl"),
+                    ("transform", "rotate(180deg)"),
+                    ("vertical-align", "bottom"),
+                    ("text-align", "left"),
+                    ("padding", "4px 2px"),
+                    ("width", "36px"),
+                    ("min-width", "36px"),
+                    ("max-width", "36px"),
+                    ("max-height", f"{_max_header_px}px"),
+                    ("height", f"{_max_header_px}px"),
+                ]
+                if _need_px <= _max_header_px:
+                    # Fits on one line at the base font size — leave it alone.
+                    _props += [
+                        ("white-space", "nowrap"),
+                        ("font-size", "0.75rem"),
+                    ]
+                else:
+                    # Doesn't fit on one line: wrap onto a second line first,
+                    # and only shrink the font as far as still needed to make
+                    # that second line fit within the capped row height.
+                    _per_line_px = _need_px / 2
+                    _scale = min(1.0, _max_header_px / _per_line_px) if _per_line_px else 1.0
+                    _font_px = max(_MIN_FONT_PX, round(_BASE_FONT_PX * _scale))
+                    _props += [
+                        ("white-space", "normal"),
+                        ("overflow-wrap", "break-word"),
+                        ("word-break", "break-word"),
+                        ("line-height", "1.05"),
+                        ("font-size", f"{_font_px}px"),
+                    ]
                 table_styles.append({
                     "selector": f"th.col_heading.level0.col{idx}",
-                    "props": [
-                        ("writing-mode", "vertical-rl"),
-                        ("transform", "rotate(180deg)"),
-                        ("vertical-align", "bottom"),
-                        ("text-align", "left"),
-                        ("white-space", "nowrap"),
-                        ("min-height", "180px"),
-                        ("font-size", "0.75rem"),
-                        ("padding", "4px 2px"),
-                        ("width", "36px"),
-                        ("min-width", "36px"),
-                        ("max-width", "36px"),
-                    ],
+                    "props": _props,
                 })
 
         styled = styled.set_table_styles(table_styles)
