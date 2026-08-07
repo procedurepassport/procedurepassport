@@ -6,6 +6,7 @@ import datetime
 import io
 import json
 import html
+import re
 import gspread
 from gspread_dataframe import get_as_dataframe, set_with_dataframe
 from google.oauth2.service_account import Credentials
@@ -1687,8 +1688,13 @@ elif page == "cumulative":
                        ("padding-right", "6px"), ("border-left", "none")]},
         ]
         # Vertical step headers: writing-mode + rotate(180deg) makes text read
-        # bottom-to-top; see the flex properties below for how each label is
-        # centered horizontally and anchored to the visual bottom.
+        # bottom-to-top. vertical-align: bottom anchors text to the visual
+        # bottom of the header cell. Horizontal centering is done via an
+        # inner <div> (see _wrap_vheader_labels below) rather than
+        # display:flex directly on the <th> — overriding a table cell's own
+        # display to flex makes browsers drop it out of normal table column
+        # layout, which collapsed every such header onto the same column
+        # position instead of keeping them side by side.
         #
         # Header row height is capped so at least half of these vertical labels fit
         # on one line at the base font size. Labels that don't fit wrap onto a
@@ -1719,18 +1725,8 @@ elif page == "cumulative":
                 _props = [
                     ("writing-mode", "vertical-rl"),
                     ("transform", "rotate(180deg)"),
-                    # display:flex + align-items:center centers the label
-                    # horizontally in the (fixed-width) column — text-align
-                    # only affects position along the vertical reading axis
-                    # here, not the horizontal one. justify-content:flex-start
-                    # keeps the same bottom-anchored vertical position that
-                    # vertical-align:bottom gave the plain table-cell before
-                    # (the outer box still lays out as a table-cell; only the
-                    # inner content becomes a flex box, so column widths and
-                    # row height are unaffected).
-                    ("display", "flex"),
-                    ("align-items", "center"),
-                    ("justify-content", "flex-start"),
+                    ("vertical-align", "bottom"),
+                    ("text-align", "left"),
                     ("padding", "4px 2px"),
                     ("width", "36px"),
                     ("min-width", "36px"),
@@ -1763,8 +1759,49 @@ elif page == "cumulative":
                     "props": _props,
                 })
 
+        # Horizontal centering for the vertical headers: wrap each one's text
+        # in an inner <div> and center it with flexbox, rather than touching
+        # the <th>'s own display (see comment above). Note plain margin:auto
+        # centering doesn't work here — margin-left/right on a block resolve
+        # to 0 rather than splitting the leftover space when its ancestor
+        # chain is in this vertical writing mode, so flex (on the div, which
+        # isn't a table-structural element and is therefore safe) is used
+        # instead: align-items:center centers along the header's physical
+        # width, and justify-content:flex-start reproduces the same
+        # bottom-anchored vertical position th's vertical-align:bottom gives.
+        table_styles.append({
+            "selector": "th.col_heading .pp-vhdr-inner",
+            "props": [
+                ("display", "flex"),
+                ("align-items", "center"),
+                ("justify-content", "flex-start"),
+                ("width", "100%"),
+                ("height", "100%"),
+            ],
+        })
+
+        def _wrap_vheader_labels(html_str, vheader_indices):
+            """Wrap the text of each vertical-header <th> (by column index) in
+            a .pp-vhdr-inner <div> so it can be centered independently of the
+            <th>'s own table-cell layout. Leaves every other <th>/<td> as-is."""
+            if not vheader_indices:
+                return html_str
+            _col_idx_re = re.compile(r"\bcol(\d+)\b")
+
+            def _wrap(m):
+                open_tag, inner, close_tag = m.group(1), m.group(2), m.group(3)
+                if "col_heading" not in open_tag:
+                    return m.group(0)
+                idx_match = _col_idx_re.search(open_tag)
+                if not idx_match or int(idx_match.group(1)) not in vheader_indices:
+                    return m.group(0)
+                return f'{open_tag}<div class="pp-vhdr-inner">{inner}</div>{close_tag}'
+
+            return re.sub(r"(<th\b[^>]*>)(.*?)(</th>)", _wrap, html_str, flags=re.DOTALL)
+
         styled = styled.set_table_styles(table_styles)
-        st.markdown(styled.to_html(), unsafe_allow_html=True)
+        _vheader_idx = {idx for idx, c in enumerate(all_cols) if c in _vheader_cols}
+        st.markdown(_wrap_vheader_labels(styled.to_html(), _vheader_idx), unsafe_allow_html=True)
 
     except Exception as _heatmap_err:
         st.warning(
