@@ -625,7 +625,13 @@ st.markdown(
 /* "On mobile: tap the ≡ icon..." tip: shrink padding, and match the text
    size to "Preparation" and similar field labels (0.75x --pp-substep-font)
    so it's part of the same live, width-responsive size hierarchy instead
-   of a fixed size of its own. */
+   of a fixed size of its own. It's now the first element on its page, so
+   pull it up out of Streamlit's default ~96px block-container top padding
+   (reserved so content clears the sticky header) — scoped to this
+   container only, so it doesn't touch top spacing on any other page. */
+.st-key-mobile_tip {
+    margin-top: -36px;
+}
 .st-key-mobile_tip [data-testid="stAlertContainer"] {
     padding-top: 0.35rem;
     padding-bottom: 0.35rem;
