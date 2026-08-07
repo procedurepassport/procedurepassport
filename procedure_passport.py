@@ -912,11 +912,11 @@ elif page == "admin":
 # PAGE: HOME
 # ════════════════════════════════════════════════════════════
 elif page == "home":
+    with st.container(key="mobile_tip"):
+        st.info("📱 On mobile: tap the ≡ icon at top left to access navigation and rating legend.")
     page_header(f"👋 Welcome back, {st.session_state['resident_name']}")
     st.markdown("_What would you like to do today?_")
     st.markdown("")
-    with st.container(key="mobile_tip"):
-        st.info("📱 On mobile: tap the ≡ icon at top left to access navigation and rating legend.")
 
     with st.container(key="home_cards"):
         c1, c2, c3 = st.columns(3)
@@ -949,11 +949,11 @@ elif page == "home":
 # PAGE: START CASE
 # ════════════════════════════════════════════════════════════
 elif page == "start":
+    with st.container(key="mobile_tip"):
+        st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.")
     page_header("📋 Start Assessment")
     if st.button("🏠 Back to Home", key="start_home_top"):
         go_to("home")
-    with st.container(key="mobile_tip"):
-        st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.")
 
     try:
         spec_df, proc_df, steps_df, atnd_df = load_refs()
@@ -1057,6 +1057,8 @@ elif page == "assessment":
     # Resolve procedure name for the page title (Fix 3)
     _proc_rows = proc_df.loc[proc_df["procedure_id"] == st.session_state["procedure_id"], "procedure_name"].values
     _proc_name = _proc_rows[0] if len(_proc_rows) else "Assessment"
+    with st.container(key="mobile_tip"):
+        st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.", icon=None)
     page_header(f"📝 {_proc_name} Assessment")
 
     # Back button placed at the top, clearly separated from Finish (Fix 7)
@@ -1069,8 +1071,6 @@ elif page == "assessment":
             if st.button("🏠 Home", key="assess_home_top"):
                 go_to("home")
     st.markdown("---")
-    with st.container(key="mobile_tip"):
-        st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.", icon=None)
 
     _cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
                 "Adequately Prepared", "Well Prepared", "Highly Prepared"]
@@ -1325,11 +1325,11 @@ elif page == "comments":
 # PAGE: CUMULATIVE DASHBOARD
 # ════════════════════════════════════════════════════════════
 elif page == "cumulative":
+    with st.container(key="mobile_tip"):
+        st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.")
     page_header("📊 Cumulative Dashboard")
     if st.button("🏠 Back to Home", key="cumulative_home_top"):
         go_to("home")
-    with st.container(key="mobile_tip"):
-        st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.")
     resident = st.session_state.get("resident")
     if not resident:
         st.error("Not logged in.")
