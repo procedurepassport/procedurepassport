@@ -668,7 +668,7 @@ st.markdown(
 .st-key-assess_top_nav button p {
     white-space: nowrap;
 }
-/* "On mobile: tap the ≡ icon..." tip: shrink padding, and match the text
+/* "On mobile: tap the >> icon..." tip: shrink padding, and match the text
    size to "Preparation" and similar field labels (0.75x --pp-substep-font)
    so it's part of the same live, width-responsive size hierarchy instead
    of a fixed size of its own. It's now the first element on its page, so
@@ -980,7 +980,7 @@ elif page == "admin":
 # PAGE: HOME
 # ════════════════════════════════════════════════════════════
 elif page == "home":
-    mobile_tip("📱 On mobile: tap the ≡ icon at top left to access navigation and rating legend.")
+    mobile_tip("📱 On mobile: tap the >> icon at top left to access navigation and rating legend.")
     page_header(f"👋 Welcome back, {st.session_state['resident_name']}")
     st.markdown("_What would you like to do today?_")
     st.markdown("")
@@ -1016,7 +1016,7 @@ elif page == "home":
 # PAGE: START CASE
 # ════════════════════════════════════════════════════════════
 elif page == "start":
-    mobile_tip("📱 On mobile: tap the ≡ icon at top left to view the sidebar.")
+    mobile_tip("📱 On mobile: tap the >> icon at top left to view the sidebar.")
     page_header("📋 Start Assessment")
     if st.button("🏠 Back to Home", key="start_home_top"):
         go_to("home")
@@ -1123,7 +1123,7 @@ elif page == "assessment":
     # Resolve procedure name for the page title (Fix 3)
     _proc_rows = proc_df.loc[proc_df["procedure_id"] == st.session_state["procedure_id"], "procedure_name"].values
     _proc_name = _proc_rows[0] if len(_proc_rows) else "Assessment"
-    mobile_tip("📱 On mobile: tap the ≡ icon at top left to view the sidebar.")
+    mobile_tip("📱 On mobile: tap the >> icon at top left to view the sidebar.")
     page_header(f"📝 {_proc_name} Assessment")
 
     # Back button placed at the top, clearly separated from Finish (Fix 7)
@@ -1390,7 +1390,7 @@ elif page == "comments":
 # PAGE: CUMULATIVE DASHBOARD
 # ════════════════════════════════════════════════════════════
 elif page == "cumulative":
-    mobile_tip("📱 On mobile: tap the ≡ icon at top left to view the sidebar.")
+    mobile_tip("📱 On mobile: tap the >> icon at top left to view the sidebar.")
     page_header("📊 Cumulative Dashboard")
     if st.button("🏠 Back to Home", key="cumulative_home_top"):
         go_to("home")
