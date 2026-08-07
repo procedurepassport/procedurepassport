@@ -435,6 +435,52 @@ def page_header(text: str) -> None:
     )
 
 
+def mobile_tip(text: str) -> None:
+    """Render the "On mobile: ..." tip, then shrink its font (down from the
+    CSS-defined base size in the .st-key-mobile_tip rule) just enough that
+    the label never wraps past one line — same measure-and-fit approach as
+    page_header. white-space:nowrap + text-overflow:ellipsis in the CSS is
+    the fallback if the measurement can't run (scripts disabled)."""
+    with st.container(key="mobile_tip"):
+        st.info(text)
+    st.iframe(
+        """
+        <script>
+        (function() {
+            var doc = window.parent.document;
+            var ps = doc.querySelectorAll('.st-key-mobile_tip [data-testid="stAlertContainer"] p');
+            var el = ps[ps.length - 1];
+            if (!el) return;
+            // el's own clientWidth is unreliable here: with white-space:nowrap
+            // forced (from the CSS fallback), the <p> won't shrink below its
+            // own unwrapped content size, so el.clientWidth just reports that
+            // same overflowing size instead of the space actually available.
+            // Streamlit's stMarkdownContainer wrapper div, one level up,
+            // already gets an explicit width (accounting for the icon) that
+            // isn't affected by the <p>'s own sizing — measure against that.
+            var avail = el.parentElement;
+            function fit() {
+                el.style.fontSize = '';
+                var availWidth = avail.clientWidth;
+                if (!availWidth) return;
+                var natural = el.scrollWidth;
+                if (natural > availWidth) {
+                    var baseSize = parseFloat(window.getComputedStyle(el).fontSize);
+                    el.style.fontSize = Math.max(1, baseSize * (availWidth / natural) * 0.98) + 'px';
+                }
+            }
+            fit();
+            window.parent.addEventListener('resize', fit);
+            if (window.parent.ResizeObserver) {
+                new window.parent.ResizeObserver(fit).observe(avail);
+            }
+        })();
+        </script>
+        """,
+        height=1,
+    )
+
+
 # ─────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────
@@ -638,9 +684,25 @@ st.markdown(
     display: flex;
     align-items: center;
 }
+/* Flex items default to min-width:auto, which refuses to shrink below the
+   text's own unwrapped intrinsic width — with white-space:nowrap forced
+   below, that let the icon+text row (and everything measuring against it,
+   including mobile_tip()'s own fit script) balloon past the real available
+   width instead of being constrained by it. min-width:0 at each flex level
+   here lets it actually shrink to fit like normal content. */
+.st-key-mobile_tip [data-testid="stAlertContainer"],
+.st-key-mobile_tip [data-testid="stAlertContentInfo"],
+.st-key-mobile_tip [data-testid="stMarkdownContainer"] {
+    min-width: 0;
+}
 .st-key-mobile_tip [data-testid="stAlertContainer"] p {
     font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.75);
     line-height: 1.3;
+    /* mobile_tip()'s script shrinks this further so the label never wraps
+       past one line; this is the CSS-only fallback if it can't run. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 /* Streamlit's alert internals are several nested flex/block layers deep,
    each defaulting to top/stretch alignment, which left the text sitting
@@ -918,8 +980,7 @@ elif page == "admin":
 # PAGE: HOME
 # ════════════════════════════════════════════════════════════
 elif page == "home":
-    with st.container(key="mobile_tip"):
-        st.info("📱 On mobile: tap the ≡ icon at top left to access navigation and rating legend.")
+    mobile_tip("📱 On mobile: tap the ≡ icon at top left to access navigation and rating legend.")
     page_header(f"👋 Welcome back, {st.session_state['resident_name']}")
     st.markdown("_What would you like to do today?_")
     st.markdown("")
@@ -955,8 +1016,7 @@ elif page == "home":
 # PAGE: START CASE
 # ════════════════════════════════════════════════════════════
 elif page == "start":
-    with st.container(key="mobile_tip"):
-        st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.")
+    mobile_tip("📱 On mobile: tap the ≡ icon at top left to view the sidebar.")
     page_header("📋 Start Assessment")
     if st.button("🏠 Back to Home", key="start_home_top"):
         go_to("home")
@@ -1063,8 +1123,7 @@ elif page == "assessment":
     # Resolve procedure name for the page title (Fix 3)
     _proc_rows = proc_df.loc[proc_df["procedure_id"] == st.session_state["procedure_id"], "procedure_name"].values
     _proc_name = _proc_rows[0] if len(_proc_rows) else "Assessment"
-    with st.container(key="mobile_tip"):
-        st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.", icon=None)
+    mobile_tip("📱 On mobile: tap the ≡ icon at top left to view the sidebar.")
     page_header(f"📝 {_proc_name} Assessment")
 
     # Back button placed at the top, clearly separated from Finish (Fix 7)
@@ -1331,8 +1390,7 @@ elif page == "comments":
 # PAGE: CUMULATIVE DASHBOARD
 # ════════════════════════════════════════════════════════════
 elif page == "cumulative":
-    with st.container(key="mobile_tip"):
-        st.info("📱 On mobile: tap the ≡ icon at top left to view the sidebar.")
+    mobile_tip("📱 On mobile: tap the ≡ icon at top left to view the sidebar.")
     page_header("📊 Cumulative Dashboard")
     if st.button("🏠 Back to Home", key="cumulative_home_top"):
         go_to("home")
