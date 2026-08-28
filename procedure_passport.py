@@ -1137,26 +1137,28 @@ elif page == "assessment":
                 go_to("home")
     st.markdown("---")
 
-    _cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
-                "Adequately Prepared", "Well Prepared", "Highly Prepared"]
-    _cp_default = st.session_state.get("case_preparation", "Not Assessed")
-    _cp_idx = _cp_opts.index(_cp_default) if _cp_default in _cp_opts else 0
-    st.session_state["case_preparation"] = st.selectbox(
-        "Preparation",
-        _cp_opts,
-        index=_cp_idx,
-        key="assess_preparation",
-    )
-
-    _cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
-    _cc_default = st.session_state.get("case_complexity", "— Select complexity —")
-    _cc_idx = _cc_opts.index(_cc_default) if _cc_default in _cc_opts else 0
-    st.session_state["case_complexity"] = st.selectbox(
-        "Case Complexity",
-        _cc_opts,
-        index=_cc_idx,
-        key="assess_case_complexity",
-    )
+    _prep_col, _complexity_col = st.columns(2)
+    with _prep_col:
+        _cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
+                    "Adequately Prepared", "Well Prepared", "Highly Prepared"]
+        _cp_default = st.session_state.get("case_preparation", "Not Assessed")
+        _cp_idx = _cp_opts.index(_cp_default) if _cp_default in _cp_opts else 0
+        st.session_state["case_preparation"] = st.selectbox(
+            "Preparation",
+            _cp_opts,
+            index=_cp_idx,
+            key="assess_preparation",
+        )
+    with _complexity_col:
+        _cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
+        _cc_default = st.session_state.get("case_complexity", "— Select complexity —")
+        _cc_idx = _cc_opts.index(_cc_default) if _cc_default in _cc_opts else 0
+        st.session_state["case_complexity"] = st.selectbox(
+            "Case Complexity",
+            _cc_opts,
+            index=_cc_idx,
+            key="assess_case_complexity",
+        )
 
     with st.expander(f"Step-Level Ratings for {_proc_name}", expanded=False, key="step_ratings_expander_resident"):
         # Fix 6: reverting to "Not Assessed" is supported — "Not Assessed" is index 0
@@ -1987,12 +1989,14 @@ elif page == "attending_assessment":
         st.stop()
 
     case_date       = st.date_input("Date of Procedure", value=datetime.date.today())
-    _att_cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
-                    "Adequately Prepared", "Well Prepared", "Highly Prepared"]
-    case_preparation = st.selectbox("Preparation", _att_cp_opts, key="assess_preparation")
-
-    _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
-    case_complexity = st.selectbox("Case Complexity", _att_cc_opts, key="assess_case_complexity")
+    _att_prep_col, _att_complexity_col = st.columns(2)
+    with _att_prep_col:
+        _att_cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
+                        "Adequately Prepared", "Well Prepared", "Highly Prepared"]
+        case_preparation = st.selectbox("Preparation", _att_cp_opts, key="assess_preparation")
+    with _att_complexity_col:
+        _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
+        case_complexity = st.selectbox("Case Complexity", _att_cc_opts, key="assess_case_complexity")
 
     scores: dict = {}
     with st.expander(f"Step-Level Ratings for {_att_proc_name}", expanded=False, key="step_ratings_expander_attending"):
