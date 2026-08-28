@@ -47,6 +47,8 @@ _defaults: dict = {
     "scores":                  {},
     "date":                    datetime.date.today(),
     "notes":                   "",
+    "improve":                 "",
+    "how":                     "",
     "current_case_id":         None,
     "attending_submission":    None,   # filled after magic-link submit
 }
@@ -276,13 +278,16 @@ def save_case(
     case_complexity=None,
     case_preparation=None,
     overall_performance=None,
+    improve: str = "",
+    how: str = "",
 ) -> str:
     """Persist a case + its step scores; returns the new case_id."""
     case_id   = uuid.uuid4().hex[:12]
 
     case_cols = ["case_id", "resident_email", "date", "specialty_id",
                  "procedure_id", "attending_id", "notes",
-                 "case_complexity", "case_preparation", "overall_performance"]
+                 "case_complexity", "case_preparation", "overall_performance",
+                 "improve", "how"]
     cases_df  = read_sheet_df(SHEET_CASES, expected_cols=case_cols)
     cases_df  = pd.concat([cases_df, pd.DataFrame([{
         "case_id":             case_id,
@@ -295,6 +300,8 @@ def save_case(
         "case_complexity":     case_complexity,
         "case_preparation":    case_preparation,
         "overall_performance": overall_performance,
+        "improve":             improve,
+        "how":                 how,
     }])], ignore_index=True)
     write_sheet_df(SHEET_CASES, cases_df)  # clears cache
 
@@ -736,6 +743,22 @@ st.markdown(
 .st-key-step_ratings_expander_attending [data-testid="stSelectbox"] input {
     font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.6);
 }
+/* "In order to improve ___, do ___." sentence (feeds the Improve/How
+   columns): flex-align the static text fragments with the two inline
+   text inputs so they sit on one line like a real sentence, and size
+   them to match the Comments/Feedback label just below. */
+.st-key-assess_improve_how [data-testid="stHorizontalBlock"] {
+    align-items: center;
+    row-gap: 0.25rem;
+}
+.st-key-assess_improve_how [data-testid="stMarkdownContainer"] p {
+    margin: 0;
+    white-space: nowrap;
+    font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.75);
+}
+.st-key-assess_improve_how [data-testid="stTextInput"] input {
+    font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.6);
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -1096,8 +1119,10 @@ elif page == "start":
             go_to("home")
     with col3:
         if st.button("Start Assessment →", type="primary", width="stretch"):
-            st.session_state["scores"] = {}
-            st.session_state["notes"]  = ""
+            st.session_state["scores"]  = {}
+            st.session_state["notes"]   = ""
+            st.session_state["improve"] = ""
+            st.session_state["how"]     = ""
             go_to("assessment")
 
 
@@ -1182,6 +1207,31 @@ elif page == "assessment":
                 key=f"score_{step_id}",
             )
 
+    with st.container(key="assess_improve_how"):
+        _imp_cols = st.columns([1.7, 3.1, 0.7, 3.1, 0.3])
+        with _imp_cols[0]:
+            st.markdown("In order to improve")
+        with _imp_cols[1]:
+            st.session_state["improve"] = st.text_input(
+                "What to improve",
+                value=st.session_state.get("improve", ""),
+                key="assess_improve",
+                label_visibility="collapsed",
+                placeholder="e.g., suture technique",
+            )
+        with _imp_cols[2]:
+            st.markdown(", do")
+        with _imp_cols[3]:
+            st.session_state["how"] = st.text_input(
+                "How to improve it",
+                value=st.session_state.get("how", ""),
+                key="assess_how",
+                label_visibility="collapsed",
+                placeholder="e.g., practice two-handed knots",
+            )
+        with _imp_cols[4]:
+            st.markdown(".")
+
     st.session_state["notes"] = st.text_area(
         "Comments / Feedback", st.session_state.get("notes", ""), key="assess_notes"
     )
@@ -1199,6 +1249,8 @@ elif page == "assessment":
             or st.session_state["overall_performance"] != O_SCORE_OPTIONS[0]
             or any(v != "Not Assessed" for v in st.session_state["scores"].values())
             or st.session_state.get("notes", "").strip() != ""
+            or st.session_state.get("improve", "").strip() != ""
+            or st.session_state.get("how", "").strip() != ""
         )
         if not _has_value:
             st.warning("Please provide at least one rating or comment before submitting.")
@@ -1215,6 +1267,8 @@ elif page == "assessment":
                     case_preparation=st.session_state["case_preparation"],
                     overall_performance=st.session_state["overall_performance"],
                     notes=st.session_state.get("notes", ""),
+                    improve=st.session_state.get("improve", ""),
+                    how=st.session_state.get("how", ""),
                 )
                 go_to("dashboard")
             except ConnectionError as exc:
@@ -1249,6 +1303,12 @@ elif page == "dashboard":
         st.markdown(f"**Preparation:** {st.session_state.get('case_preparation', '—')}")
     with meta_col2:
         st.markdown(f"**Overall Performance:** {st.session_state.get('overall_performance', '—')}")
+
+    if st.session_state.get("improve", "").strip() or st.session_state.get("how", "").strip():
+        st.markdown(
+            f"**In order to improve** {st.session_state.get('improve', '') or '_(blank)_'}, "
+            f"**do** {st.session_state.get('how', '') or '_(blank)_'}."
+        )
 
     if st.session_state.get("notes", "").strip():
         st.markdown("**Comments:**")
@@ -2001,6 +2061,29 @@ elif page == "attending_assessment":
                 step_name, RATING_OPTIONS, key=f"att_score_{step_id}"
             )
 
+    with st.container(key="assess_improve_how"):
+        _att_imp_cols = st.columns([1.7, 3.1, 0.7, 3.1, 0.3])
+        with _att_imp_cols[0]:
+            st.markdown("In order to improve")
+        with _att_imp_cols[1]:
+            improve = st.text_input(
+                "What to improve",
+                key="assess_improve",
+                label_visibility="collapsed",
+                placeholder="e.g., suture technique",
+            )
+        with _att_imp_cols[2]:
+            st.markdown(", do")
+        with _att_imp_cols[3]:
+            how = st.text_input(
+                "How to improve it",
+                key="assess_how",
+                label_visibility="collapsed",
+                placeholder="e.g., practice two-handed knots",
+            )
+        with _att_imp_cols[4]:
+            st.markdown(".")
+
     notes   = st.text_area("Comments / Feedback (optional)", key="assess_notes")
 
     st.markdown("---")
@@ -2011,6 +2094,8 @@ elif page == "attending_assessment":
             or o_score != O_SCORE_OPTIONS[0]
             or any(v != "Not Assessed" for v in scores.values())
             or notes.strip() != ""
+            or improve.strip() != ""
+            or how.strip() != ""
         )
         if not _has_value:
             st.warning("Please provide at least one rating or comment before submitting.")
@@ -2027,6 +2112,8 @@ elif page == "attending_assessment":
                     case_complexity=case_complexity,
                     case_preparation=case_preparation,
                     overall_performance=o_score,
+                    improve=improve,
+                    how=how,
                 )
                 # Store submission summary for the confirmation page
                 st.session_state["attending_submission"] = {
@@ -2040,6 +2127,8 @@ elif page == "attending_assessment":
                     "case_preparation":    case_preparation,
                     "overall_performance": o_score,
                     "notes":               notes,
+                    "improve":             improve,
+                    "how":                 how,
                     "scores":              scores,
                     "steps":               steps[["step_id", "step_name"]].to_dict("records"),
                 }
@@ -2073,6 +2162,12 @@ elif page == "attending_confirmation":
         f'</div>',
         unsafe_allow_html=True,
     )
+
+    if sub.get("improve", "").strip() or sub.get("how", "").strip():
+        st.markdown(
+            f"**In order to improve** {sub.get('improve', '') or '_(blank)_'}, "
+            f"**do** {sub.get('how', '') or '_(blank)_'}."
+        )
 
     if sub["notes"].strip():
         st.markdown("**Comments submitted:**")
