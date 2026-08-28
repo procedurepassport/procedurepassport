@@ -1182,14 +1182,6 @@ elif page == "assessment":
                 key=f"score_{step_id}",
             )
 
-    with st.expander("💬 Comment guide (tap to expand)", expanded=False):
-        st.markdown(
-            "_Use these prompts to structure your feedback:_\n\n"
-            "- The resident demonstrated ___\n"
-            "- Improvements made on ___\n"
-            "- Still working on ___\n"
-            "- Next steps/improvements expected ___"
-        )
     st.session_state["notes"] = st.text_area(
         "Comments / Feedback", st.session_state.get("notes", ""), key="assess_notes"
     )
@@ -2009,14 +2001,6 @@ elif page == "attending_assessment":
                 step_name, RATING_OPTIONS, key=f"att_score_{step_id}"
             )
 
-    with st.expander("💬 Comment guide (tap to expand)", expanded=False):
-        st.markdown(
-            "_Use these prompts to structure your feedback:_\n\n"
-            "- The resident demonstrated ___\n"
-            "- Improvements made on ___\n"
-            "- Still working on ___\n"
-            "- Next steps/improvements expected ___"
-        )
     notes   = st.text_area("Comments / Feedback (optional)", key="assess_notes")
 
     st.markdown("---")
