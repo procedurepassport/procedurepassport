@@ -1137,7 +1137,7 @@ elif page == "assessment":
                 go_to("home")
     st.markdown("---")
 
-    _prep_col, _complexity_col = st.columns(2)
+    _prep_col, _complexity_col, _overall_col = st.columns(3)
     with _prep_col:
         _cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
                     "Adequately Prepared", "Well Prepared", "Highly Prepared"]
@@ -1159,6 +1159,14 @@ elif page == "assessment":
             index=_cc_idx,
             key="assess_case_complexity",
         )
+    with _overall_col:
+        current_o = st.session_state.get("overall_performance", O_SCORE_OPTIONS[0])
+        st.session_state["overall_performance"] = st.selectbox(
+            "Overall Performance Rating",
+            O_SCORE_OPTIONS,
+            index=O_SCORE_OPTIONS.index(current_o) if current_o in O_SCORE_OPTIONS else 0,
+            key="assess_overall_performance",
+        )
 
     with st.expander(f"Step-Level Ratings for {_proc_name}", expanded=False, key="step_ratings_expander_resident"):
         # Fix 6: reverting to "Not Assessed" is supported — "Not Assessed" is index 0
@@ -1173,14 +1181,6 @@ elif page == "assessment":
                 index=RATING_OPTIONS.index(current) if current in RATING_OPTIONS else 0,
                 key=f"score_{step_id}",
             )
-
-    current_o = st.session_state.get("overall_performance", O_SCORE_OPTIONS[0])
-    st.session_state["overall_performance"] = st.selectbox(
-        "Overall Performance Rating",
-        O_SCORE_OPTIONS,
-        index=O_SCORE_OPTIONS.index(current_o) if current_o in O_SCORE_OPTIONS else 0,
-        key="assess_overall_performance",
-    )
 
     with st.expander("💬 Comment guide (tap to expand)", expanded=False):
         st.markdown(
@@ -1989,7 +1989,7 @@ elif page == "attending_assessment":
         st.stop()
 
     case_date       = st.date_input("Date of Procedure", value=datetime.date.today())
-    _att_prep_col, _att_complexity_col = st.columns(2)
+    _att_prep_col, _att_complexity_col, _att_overall_col = st.columns(3)
     with _att_prep_col:
         _att_cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
                         "Adequately Prepared", "Well Prepared", "Highly Prepared"]
@@ -1997,6 +1997,8 @@ elif page == "attending_assessment":
     with _att_complexity_col:
         _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
         case_complexity = st.selectbox("Case Complexity", _att_cc_opts, key="assess_case_complexity")
+    with _att_overall_col:
+        o_score = st.selectbox("Overall Performance Rating", O_SCORE_OPTIONS, key="assess_overall_performance")
 
     scores: dict = {}
     with st.expander(f"Step-Level Ratings for {_att_proc_name}", expanded=False, key="step_ratings_expander_attending"):
@@ -2007,7 +2009,6 @@ elif page == "attending_assessment":
                 step_name, RATING_OPTIONS, key=f"att_score_{step_id}"
             )
 
-    o_score = st.selectbox("Overall Performance Rating", O_SCORE_OPTIONS, key="assess_overall_performance")
     with st.expander("💬 Comment guide (tap to expand)", expanded=False):
         st.markdown(
             "_Use these prompts to structure your feedback:_\n\n"
