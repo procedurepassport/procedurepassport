@@ -746,10 +746,31 @@ st.markdown(
 /* "In order to improve ___, do ___." sentence (feeds the Improve/How
    columns): flex-align the static text fragments with the two inline
    text inputs so they sit on one line like a real sentence, and size
-   them to match the Comments/Feedback label just below. */
+   them to match the Comments/Feedback label just below. The label
+   columns (text fragments) are ratio-sized by st.columns(), which
+   leaves them wider than their actual text — shrink them to their
+   content here so the boxes sit right up against the words instead
+   of floating in leftover column width, and hand that reclaimed
+   space to the two input columns. A small fixed gap (not Streamlit's
+   larger column default) keeps the remaining spacing tight too. */
 .st-key-assess_improve_how [data-testid="stHorizontalBlock"] {
     align-items: center;
-    row-gap: 0.25rem;
+    gap: 0.4rem;
+}
+.st-key-assess_improve_how [data-testid="stColumn"]:has([data-testid="stMarkdownContainer"]) {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+}
+.st-key-assess_improve_how [data-testid="stColumn"]:has([data-testid="stTextInput"]) {
+    flex: 1 1 0 !important;
+    width: auto !important;
+    min-width: 100px !important;
+}
+.st-key-assess_improve_how [data-testid="stMarkdownContainer"] {
+    display: flex;
+    align-items: center;
+    height: 100%;
 }
 .st-key-assess_improve_how [data-testid="stMarkdownContainer"] p {
     margin: 0;
