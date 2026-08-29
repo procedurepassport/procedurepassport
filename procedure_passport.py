@@ -719,7 +719,7 @@ st.markdown(
     align-self: center !important;
 }
 /* Assessment page field labels (Preparation, Case Complexity, Overall
-   Performance Rating, Development/Improvements/Feed-Forward) and every
+   Performance Rating, Development/Improvement/Feed-Forward) and every
    step label inside the Step-Level Ratings expander: sized relative to
    that expander's own header (--pp-substep-font, itself 0.75x the
    page's main header), so the whole page scales together as one
@@ -747,7 +747,7 @@ st.markdown(
 /* "In order to improve ___, do ___." sentence (feeds the Improve/How
    columns): flex-align the static text fragments with the two inline
    text inputs so they sit on one line like a real sentence, and size
-   them to match the Development/Improvements/Feed-Forward label
+   them to match the Development/Improvement/Feed-Forward label
    further down the page. The label columns (text fragments) are
    ratio-sized by st.columns(), which
    leaves them wider than their actual text — shrink them to their
@@ -1273,7 +1273,7 @@ elif page == "assessment":
             )
 
     st.session_state["notes"] = st.text_area(
-        "Development / Improvements / Feed-Forward", st.session_state.get("notes", ""), key="assess_notes"
+        "Development / Improvement / Feed-Forward", st.session_state.get("notes", ""), key="assess_notes"
     )
 
     if all(v == "Not Assessed" for v in st.session_state["scores"].values()):
@@ -2127,7 +2127,7 @@ elif page == "attending_assessment":
                 step_name, RATING_OPTIONS, key=f"att_score_{step_id}"
             )
 
-    notes   = st.text_area("Development / Improvements / Feed-Forward (optional)", key="assess_notes")
+    notes   = st.text_area("Development / Improvement / Feed-Forward (optional)", key="assess_notes")
 
     st.markdown("---")
     if st.button("✅ Submit Evaluation", type="primary", width="stretch"):
