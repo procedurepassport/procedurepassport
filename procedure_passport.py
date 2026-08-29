@@ -1227,7 +1227,15 @@ elif page == "assessment":
 
     st.markdown("---")
 
-    _prep_col, _complexity_col, _overall_col = st.columns(3)
+    _overall_col, _prep_col, _complexity_col = st.columns(3)
+    with _overall_col:
+        current_o = st.session_state.get("overall_performance", O_SCORE_OPTIONS[0])
+        st.session_state["overall_performance"] = st.selectbox(
+            "Overall Performance Rating",
+            O_SCORE_OPTIONS,
+            index=O_SCORE_OPTIONS.index(current_o) if current_o in O_SCORE_OPTIONS else 0,
+            key="assess_overall_performance",
+        )
     with _prep_col:
         _cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
                     "Adequately Prepared", "Well Prepared", "Highly Prepared"]
@@ -1248,14 +1256,6 @@ elif page == "assessment":
             _cc_opts,
             index=_cc_idx,
             key="assess_case_complexity",
-        )
-    with _overall_col:
-        current_o = st.session_state.get("overall_performance", O_SCORE_OPTIONS[0])
-        st.session_state["overall_performance"] = st.selectbox(
-            "Overall Performance Rating",
-            O_SCORE_OPTIONS,
-            index=O_SCORE_OPTIONS.index(current_o) if current_o in O_SCORE_OPTIONS else 0,
-            key="assess_overall_performance",
         )
 
     with st.expander(f"Step-Level Ratings for {_proc_name}", expanded=False, key="step_ratings_expander_resident"):
@@ -2107,7 +2107,9 @@ elif page == "attending_assessment":
 
     st.markdown("---")
 
-    _att_prep_col, _att_complexity_col, _att_overall_col = st.columns(3)
+    _att_overall_col, _att_prep_col, _att_complexity_col = st.columns(3)
+    with _att_overall_col:
+        o_score = st.selectbox("Overall Performance Rating", O_SCORE_OPTIONS, key="assess_overall_performance")
     with _att_prep_col:
         _att_cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
                         "Adequately Prepared", "Well Prepared", "Highly Prepared"]
@@ -2115,8 +2117,6 @@ elif page == "attending_assessment":
     with _att_complexity_col:
         _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
         case_complexity = st.selectbox("Case Complexity", _att_cc_opts, key="assess_case_complexity")
-    with _att_overall_col:
-        o_score = st.selectbox("Overall Performance Rating", O_SCORE_OPTIONS, key="assess_overall_performance")
 
     scores: dict = {}
     with st.expander(f"Step-Level Ratings for {_att_proc_name}", expanded=False, key="step_ratings_expander_attending"):
