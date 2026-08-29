@@ -786,6 +786,15 @@ st.markdown(
 .st-key-assess_improve_how [data-testid="stTextInput"] input {
     font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.6);
 }
+/* The two dividers around this row still carry Streamlit's normal
+   ~32px/48px vertical rhythm above/below (each element's own default
+   spacing plus the page's inter-element gap) — pull the row's outer
+   wrapper up/down with negative margins so it sits snug and centered
+   between the two lines instead of floating with mismatched gaps. */
+[data-testid="stLayoutWrapper"]:has(> .st-key-assess_improve_how) {
+    margin-top: -24px !important;
+    margin-bottom: -40px !important;
+}
 </style>
 """,
     unsafe_allow_html=True,
