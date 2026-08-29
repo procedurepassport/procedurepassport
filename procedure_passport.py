@@ -1214,6 +1214,8 @@ elif page == "assessment":
         with _imp_cols[4]:
             st.markdown(".")
 
+    st.markdown("---")
+
     _prep_col, _complexity_col, _overall_col = st.columns(3)
     with _prep_col:
         _cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
@@ -2091,6 +2093,8 @@ elif page == "attending_assessment":
             )
         with _att_imp_cols[4]:
             st.markdown(".")
+
+    st.markdown("---")
 
     _att_prep_col, _att_complexity_col, _att_overall_col = st.columns(3)
     with _att_prep_col:
