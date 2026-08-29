@@ -797,6 +797,14 @@ st.markdown(
     margin-top: -24px !important;
     margin-bottom: -40px !important;
 }
+/* Same idea for the Overall/Preparation/Case Complexity row: its
+   default gaps to the divider above (32px) and the Step-Level
+   Ratings expander below (16px) weren't equal — pull its wrapper so
+   both land on a matching, tight 8px, centering it between them. */
+[data-testid="stLayoutWrapper"]:has(> .st-key-assess_ratings_row) {
+    margin-top: -24px !important;
+    margin-bottom: -8px !important;
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -1227,36 +1235,37 @@ elif page == "assessment":
 
     st.markdown("---")
 
-    _overall_col, _prep_col, _complexity_col = st.columns(3)
-    with _overall_col:
-        current_o = st.session_state.get("overall_performance", O_SCORE_OPTIONS[0])
-        st.session_state["overall_performance"] = st.selectbox(
-            "Overall Performance Rating",
-            O_SCORE_OPTIONS,
-            index=O_SCORE_OPTIONS.index(current_o) if current_o in O_SCORE_OPTIONS else 0,
-            key="assess_overall_performance",
-        )
-    with _prep_col:
-        _cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
-                    "Adequately Prepared", "Well Prepared", "Highly Prepared"]
-        _cp_default = st.session_state.get("case_preparation", "Not Assessed")
-        _cp_idx = _cp_opts.index(_cp_default) if _cp_default in _cp_opts else 0
-        st.session_state["case_preparation"] = st.selectbox(
-            "Preparation",
-            _cp_opts,
-            index=_cp_idx,
-            key="assess_preparation",
-        )
-    with _complexity_col:
-        _cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
-        _cc_default = st.session_state.get("case_complexity", "— Select complexity —")
-        _cc_idx = _cc_opts.index(_cc_default) if _cc_default in _cc_opts else 0
-        st.session_state["case_complexity"] = st.selectbox(
-            "Case Complexity",
-            _cc_opts,
-            index=_cc_idx,
-            key="assess_case_complexity",
-        )
+    with st.container(key="assess_ratings_row"):
+        _overall_col, _prep_col, _complexity_col = st.columns(3)
+        with _overall_col:
+            current_o = st.session_state.get("overall_performance", O_SCORE_OPTIONS[0])
+            st.session_state["overall_performance"] = st.selectbox(
+                "Overall Performance Rating",
+                O_SCORE_OPTIONS,
+                index=O_SCORE_OPTIONS.index(current_o) if current_o in O_SCORE_OPTIONS else 0,
+                key="assess_overall_performance",
+            )
+        with _prep_col:
+            _cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
+                        "Adequately Prepared", "Well Prepared", "Highly Prepared"]
+            _cp_default = st.session_state.get("case_preparation", "Not Assessed")
+            _cp_idx = _cp_opts.index(_cp_default) if _cp_default in _cp_opts else 0
+            st.session_state["case_preparation"] = st.selectbox(
+                "Preparation",
+                _cp_opts,
+                index=_cp_idx,
+                key="assess_preparation",
+            )
+        with _complexity_col:
+            _cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
+            _cc_default = st.session_state.get("case_complexity", "— Select complexity —")
+            _cc_idx = _cc_opts.index(_cc_default) if _cc_default in _cc_opts else 0
+            st.session_state["case_complexity"] = st.selectbox(
+                "Case Complexity",
+                _cc_opts,
+                index=_cc_idx,
+                key="assess_case_complexity",
+            )
 
     with st.expander(f"Step-Level Ratings for {_proc_name}", expanded=False, key="step_ratings_expander_resident"):
         # Fix 6: reverting to "Not Assessed" is supported — "Not Assessed" is index 0
@@ -2107,16 +2116,17 @@ elif page == "attending_assessment":
 
     st.markdown("---")
 
-    _att_overall_col, _att_prep_col, _att_complexity_col = st.columns(3)
-    with _att_overall_col:
-        o_score = st.selectbox("Overall Performance Rating", O_SCORE_OPTIONS, key="assess_overall_performance")
-    with _att_prep_col:
-        _att_cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
-                        "Adequately Prepared", "Well Prepared", "Highly Prepared"]
-        case_preparation = st.selectbox("Preparation", _att_cp_opts, key="assess_preparation")
-    with _att_complexity_col:
-        _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
-        case_complexity = st.selectbox("Case Complexity", _att_cc_opts, key="assess_case_complexity")
+    with st.container(key="assess_ratings_row"):
+        _att_overall_col, _att_prep_col, _att_complexity_col = st.columns(3)
+        with _att_overall_col:
+            o_score = st.selectbox("Overall Performance Rating", O_SCORE_OPTIONS, key="assess_overall_performance")
+        with _att_prep_col:
+            _att_cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
+                            "Adequately Prepared", "Well Prepared", "Highly Prepared"]
+            case_preparation = st.selectbox("Preparation", _att_cp_opts, key="assess_preparation")
+        with _att_complexity_col:
+            _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
+            case_complexity = st.selectbox("Case Complexity", _att_cc_opts, key="assess_case_complexity")
 
     scores: dict = {}
     with st.expander(f"Step-Level Ratings for {_att_proc_name}", expanded=False, key="step_ratings_expander_attending"):
