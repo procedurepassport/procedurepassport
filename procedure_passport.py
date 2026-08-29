@@ -767,10 +767,16 @@ st.markdown(
     width: auto !important;
     min-width: 100px !important;
 }
+/* Streamlit gives stMarkdownContainer a built-in -16px bottom margin
+   (its own vertical-rhythm spacing trick). That negative margin
+   collapses this whole column's layout height down to ~10px even
+   though the text still renders at its full ~26px, so the text
+   visually overflows out the bottom of its (collapsed) box — which
+   is what made it look bottom-aligned against the input next to it.
+   Cancel it so the column's box actually matches its text, and the
+   row's align-items:center above can center it correctly. */
 .st-key-assess_improve_how [data-testid="stMarkdownContainer"] {
-    display: flex;
-    align-items: center;
-    height: 100%;
+    margin-bottom: 0 !important;
 }
 .st-key-assess_improve_how [data-testid="stMarkdownContainer"] p {
     margin: 0;
