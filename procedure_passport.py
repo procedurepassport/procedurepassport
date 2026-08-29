@@ -1189,6 +1189,31 @@ elif page == "assessment":
                 go_to("home")
     st.markdown("---")
 
+    with st.container(key="assess_improve_how"):
+        _imp_cols = st.columns([1.7, 3.1, 0.7, 3.1, 0.3])
+        with _imp_cols[0]:
+            st.markdown("In order to improve")
+        with _imp_cols[1]:
+            st.session_state["improve"] = st.text_input(
+                "What to improve",
+                value=st.session_state.get("improve", ""),
+                key="assess_improve",
+                label_visibility="collapsed",
+                placeholder="e.g., suture technique",
+            )
+        with _imp_cols[2]:
+            st.markdown(", do this:")
+        with _imp_cols[3]:
+            st.session_state["how"] = st.text_input(
+                "How to improve it",
+                value=st.session_state.get("how", ""),
+                key="assess_how",
+                label_visibility="collapsed",
+                placeholder="e.g., practice two-handed knots",
+            )
+        with _imp_cols[4]:
+            st.markdown(".")
+
     _prep_col, _complexity_col, _overall_col = st.columns(3)
     with _prep_col:
         _cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
@@ -1233,31 +1258,6 @@ elif page == "assessment":
                 index=RATING_OPTIONS.index(current) if current in RATING_OPTIONS else 0,
                 key=f"score_{step_id}",
             )
-
-    with st.container(key="assess_improve_how"):
-        _imp_cols = st.columns([1.7, 3.1, 0.7, 3.1, 0.3])
-        with _imp_cols[0]:
-            st.markdown("In order to improve")
-        with _imp_cols[1]:
-            st.session_state["improve"] = st.text_input(
-                "What to improve",
-                value=st.session_state.get("improve", ""),
-                key="assess_improve",
-                label_visibility="collapsed",
-                placeholder="e.g., suture technique",
-            )
-        with _imp_cols[2]:
-            st.markdown(", do this:")
-        with _imp_cols[3]:
-            st.session_state["how"] = st.text_input(
-                "How to improve it",
-                value=st.session_state.get("how", ""),
-                key="assess_how",
-                label_visibility="collapsed",
-                placeholder="e.g., practice two-handed knots",
-            )
-        with _imp_cols[4]:
-            st.markdown(".")
 
     st.session_state["notes"] = st.text_area(
         "Comments / Feedback", st.session_state.get("notes", ""), key="assess_notes"
@@ -2068,25 +2068,6 @@ elif page == "attending_assessment":
         st.stop()
 
     case_date       = st.date_input("Date of Procedure", value=datetime.date.today())
-    _att_prep_col, _att_complexity_col, _att_overall_col = st.columns(3)
-    with _att_prep_col:
-        _att_cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
-                        "Adequately Prepared", "Well Prepared", "Highly Prepared"]
-        case_preparation = st.selectbox("Preparation", _att_cp_opts, key="assess_preparation")
-    with _att_complexity_col:
-        _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
-        case_complexity = st.selectbox("Case Complexity", _att_cc_opts, key="assess_case_complexity")
-    with _att_overall_col:
-        o_score = st.selectbox("Overall Performance Rating", O_SCORE_OPTIONS, key="assess_overall_performance")
-
-    scores: dict = {}
-    with st.expander(f"Step-Level Ratings for {_att_proc_name}", expanded=False, key="step_ratings_expander_attending"):
-        for _, row in steps.iterrows():
-            step_id   = row["step_id"]
-            step_name = row["step_name"]
-            scores[step_id] = st.selectbox(
-                step_name, RATING_OPTIONS, key=f"att_score_{step_id}"
-            )
 
     with st.container(key="assess_improve_how"):
         _att_imp_cols = st.columns([1.7, 3.1, 0.7, 3.1, 0.3])
@@ -2110,6 +2091,26 @@ elif page == "attending_assessment":
             )
         with _att_imp_cols[4]:
             st.markdown(".")
+
+    _att_prep_col, _att_complexity_col, _att_overall_col = st.columns(3)
+    with _att_prep_col:
+        _att_cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
+                        "Adequately Prepared", "Well Prepared", "Highly Prepared"]
+        case_preparation = st.selectbox("Preparation", _att_cp_opts, key="assess_preparation")
+    with _att_complexity_col:
+        _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
+        case_complexity = st.selectbox("Case Complexity", _att_cc_opts, key="assess_case_complexity")
+    with _att_overall_col:
+        o_score = st.selectbox("Overall Performance Rating", O_SCORE_OPTIONS, key="assess_overall_performance")
+
+    scores: dict = {}
+    with st.expander(f"Step-Level Ratings for {_att_proc_name}", expanded=False, key="step_ratings_expander_attending"):
+        for _, row in steps.iterrows():
+            step_id   = row["step_id"]
+            step_name = row["step_name"]
+            scores[step_id] = st.selectbox(
+                step_name, RATING_OPTIONS, key=f"att_score_{step_id}"
+            )
 
     notes   = st.text_area("Comments / Feedback (optional)", key="assess_notes")
 
