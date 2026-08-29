@@ -1241,7 +1241,7 @@ elif page == "assessment":
                 placeholder="e.g., suture technique",
             )
         with _imp_cols[2]:
-            st.markdown(", do")
+            st.markdown(", do this:")
         with _imp_cols[3]:
             st.session_state["how"] = st.text_input(
                 "How to improve it",
@@ -1328,7 +1328,7 @@ elif page == "dashboard":
     if st.session_state.get("improve", "").strip() or st.session_state.get("how", "").strip():
         st.markdown(
             f"**In order to improve** {st.session_state.get('improve', '') or '_(blank)_'}, "
-            f"**do** {st.session_state.get('how', '') or '_(blank)_'}."
+            f"**do this:** {st.session_state.get('how', '') or '_(blank)_'}."
         )
 
     if st.session_state.get("notes", "").strip():
@@ -2094,7 +2094,7 @@ elif page == "attending_assessment":
                 placeholder="e.g., suture technique",
             )
         with _att_imp_cols[2]:
-            st.markdown(", do")
+            st.markdown(", do this:")
         with _att_imp_cols[3]:
             how = st.text_input(
                 "How to improve it",
@@ -2187,7 +2187,7 @@ elif page == "attending_confirmation":
     if sub.get("improve", "").strip() or sub.get("how", "").strip():
         st.markdown(
             f"**In order to improve** {sub.get('improve', '') or '_(blank)_'}, "
-            f"**do** {sub.get('how', '') or '_(blank)_'}."
+            f"**do this:** {sub.get('how', '') or '_(blank)_'}."
         )
 
     if sub["notes"].strip():
