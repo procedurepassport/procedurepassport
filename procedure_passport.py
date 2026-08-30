@@ -7,6 +7,8 @@ import io
 import json
 import html
 import re
+import hashlib
+import secrets
 import gspread
 from gspread_dataframe import get_as_dataframe, set_with_dataframe
 from google.oauth2.service_account import Credentials
@@ -57,6 +59,8 @@ _defaults: dict = {
     "assessment_mode":         "together",  # "together" or "self", set from Start
     "blank_magic_link":        None,   # filled after Generate a Blank Magic Link
     "last_assessment_type":    None,   # "Assessed Together" or "Self-Assessment"
+    "login_stage":             "email",  # "email" | "create_password" | "check_password"
+    "login_email":             "",
 }
 for _k, _v in _defaults.items():
     if _k not in st.session_state:
@@ -148,6 +152,14 @@ SHEET_CASES      = "cases"
 SHEET_SCORES     = "scores"
 SHEET_SPECIALTY  = "specialties"
 SHEET_DRAFTS     = "drafts"
+SHEET_AUTH       = "auth"
+
+# Password auth, one row per email (resident or admin) that has ever set a
+# password. Deliberately its own sheet, not columns on `residents` — the
+# admin account isn't a residents-sheet row at all, and keeping credential
+# material out of the general roster is good hygiene regardless.
+AUTH_COLS = ["email", "password_hash", "password_salt", "created_at"]
+PBKDF2_ITERATIONS = 200_000
 
 # Pre-filled magic-link drafts: a resident's in-progress assessment, saved
 # so the attending's link can carry a short draft_id instead of embedding
@@ -232,6 +244,66 @@ def load_refs():
 # ─────────────────────────────────────────────
 # DATA MUTATION HELPERS
 # ─────────────────────────────────────────────
+
+def _hash_password(password: str, salt_hex: str) -> str:
+    """PBKDF2-HMAC-SHA256, hex-encoded. salt_hex is a hex string (not raw
+    bytes) so it round-trips through Google Sheets as plain text."""
+    return hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), bytes.fromhex(salt_hex), PBKDF2_ITERATIONS
+    ).hex()
+
+
+def get_password_row(email: str):
+    """Return the auth row dict for this email, or None if no password has
+    ever been set for it."""
+    auth_df = read_sheet_df(SHEET_AUTH, expected_cols=AUTH_COLS)
+    if auth_df.empty:
+        return None
+    email_norm = email.strip().lower()
+    match = auth_df[auth_df["email"].astype(str).str.strip().str.lower() == email_norm]
+    if match.empty:
+        return None
+    row = match.iloc[0]
+    if pd.isna(row.get("password_hash")) or not str(row.get("password_hash", "")).strip():
+        return None
+    return {"password_hash": str(row["password_hash"]), "password_salt": str(row["password_salt"])}
+
+
+def set_password(email: str, password: str) -> None:
+    """Create or overwrite the stored password for this email."""
+    auth_df = read_sheet_df(SHEET_AUTH, expected_cols=AUTH_COLS)
+    email_norm = email.strip().lower()
+    salt_hex = secrets.token_bytes(16).hex()
+    password_hash = _hash_password(password, salt_hex)
+    auth_df = auth_df[auth_df["email"].astype(str).str.strip().str.lower() != email_norm]
+    auth_df = pd.concat([auth_df, pd.DataFrame([{
+        "email":         email.strip(),
+        "password_hash": password_hash,
+        "password_salt": salt_hex,
+        "created_at":    datetime.datetime.utcnow().isoformat(),
+    }])], ignore_index=True)
+    write_sheet_df(SHEET_AUTH, auth_df)
+
+
+def verify_password(email: str, password: str) -> bool:
+    row = get_password_row(email)
+    if row is None:
+        return False
+    candidate = _hash_password(password, row["password_salt"])
+    return secrets.compare_digest(candidate, row["password_hash"])
+
+
+def clear_password(email: str) -> None:
+    """Remove the stored password for this email — their next login will
+    prompt them to set a new one. Silently no-ops if none is on file."""
+    auth_df = read_sheet_df(SHEET_AUTH, expected_cols=AUTH_COLS)
+    if auth_df.empty:
+        return
+    email_norm = email.strip().lower()
+    remaining = auth_df[auth_df["email"].astype(str).str.strip().str.lower() != email_norm]
+    if len(remaining) != len(auth_df):
+        write_sheet_df(SHEET_AUTH, remaining)
+
 
 def ensure_resident(email: str, name: str = "", specialty_id=None) -> None:
     cols = ["email", "name", "specialty_id", "created_at"]
@@ -1031,44 +1103,107 @@ page = st.session_state["page"]
 # PAGE: LOGIN
 # ════════════════════════════════════════════════════════════
 if page == "login":
+
+    def _complete_login(canonical_email: str) -> None:
+        """Password verified (or just created) — resolve the account and
+        drop into the app proper, resetting the login flow's own state."""
+        residents = read_sheet_df(
+            SHEET_RESIDENTS, expected_cols=["email", "name", "specialty_id", "created_at"]
+        )
+        admins_lower = [a.lower() for a in ADMINS]
+        if canonical_email.strip().lower() in admins_lower:
+            st.session_state.update(resident=canonical_email, resident_name="Admin", page="admin")
+        else:
+            residents_lower = residents["email"].str.strip().str.lower()
+            row = residents.loc[residents_lower == canonical_email.strip().lower()].iloc[0]
+            st.session_state.update(
+                resident=row["email"], resident_name=row["name"],
+                specialty_id=row["specialty_id"], page="home",
+            )
+        st.session_state["login_stage"] = "email"
+        st.session_state["login_email"] = ""
+        st.rerun()
+
     col_c, col_r = st.columns([1, 1])
     with col_c:
         page_header("🩺 Procedure Passport")
         st.markdown("_Track your surgical skills journey, one procedure at a time._")
         st.markdown("---")
-        email = st.text_input("Email address", placeholder="you@hospital.org")
 
-        if st.button("Login →", width="stretch", type="primary"):
-            if not email.strip():
-                st.error("Please enter your email address.")
-            else:
-                try:
-                    residents = read_sheet_df(
-                        SHEET_RESIDENTS,
-                        expected_cols=["email", "name", "specialty_id", "created_at"],
-                    )
-                    email_lower = email.strip().lower()
-                    admins_lower = [a.lower() for a in ADMINS]
-                    residents_lower = residents["email"].str.strip().str.lower()
-                    if email_lower in admins_lower:
-                        canonical = ADMINS[admins_lower.index(email_lower)]
-                        st.session_state.update(
-                            resident=canonical, resident_name="Admin", page="admin"
+        _login_stage = st.session_state.get("login_stage", "email")
+
+        if _login_stage == "email":
+            email = st.text_input("Email address", placeholder="you@hospital.org")
+            if st.button("Continue →", width="stretch", type="primary"):
+                if not email.strip():
+                    st.error("Please enter your email address.")
+                else:
+                    try:
+                        residents = read_sheet_df(
+                            SHEET_RESIDENTS,
+                            expected_cols=["email", "name", "specialty_id", "created_at"],
                         )
-                        st.rerun()
-                    elif email_lower in residents_lower.values:
-                        row = residents.loc[residents_lower == email_lower].iloc[0]
-                        st.session_state.update(
-                            resident=row["email"],
-                            resident_name=row["name"],
-                            specialty_id=row["specialty_id"],
-                            page="home",
-                        )
-                        st.rerun()
+                        email_lower = email.strip().lower()
+                        admins_lower = [a.lower() for a in ADMINS]
+                        residents_lower = residents["email"].str.strip().str.lower()
+                        if email_lower in admins_lower:
+                            canonical = ADMINS[admins_lower.index(email_lower)]
+                        elif email_lower in residents_lower.values:
+                            canonical = residents.loc[residents_lower == email_lower].iloc[0]["email"]
+                        else:
+                            canonical = None
+                        if canonical is None:
+                            st.error("❌ Email not recognised. Ask an admin to add you.")
+                        else:
+                            st.session_state["login_email"] = canonical
+                            has_password = get_password_row(canonical) is not None
+                            st.session_state["login_stage"] = "check_password" if has_password else "create_password"
+                            st.rerun()
+                    except ConnectionError as exc:
+                        show_gs_error(exc)
+
+        elif _login_stage == "create_password":
+            st.info(
+                f"👋 First time logging in as **{st.session_state['login_email']}** — "
+                "set a password for future logins."
+            )
+            pw1 = st.text_input("Create a password", type="password", key="login_new_pw")
+            pw2 = st.text_input("Confirm password", type="password", key="login_new_pw2")
+            _back_col, _go_col = st.columns(2)
+            with _back_col:
+                if st.button("⬅️ Back", width="stretch"):
+                    st.session_state["login_stage"] = "email"
+                    st.rerun()
+            with _go_col:
+                if st.button("Set Password & Log In →", type="primary", width="stretch"):
+                    if len(pw1) < 8:
+                        st.error("Password must be at least 8 characters.")
+                    elif pw1 != pw2:
+                        st.error("Passwords don't match.")
                     else:
-                        st.error("❌ Email not recognised. Ask an admin to add you.")
-                except ConnectionError as exc:
-                    show_gs_error(exc)
+                        try:
+                            set_password(st.session_state["login_email"], pw1)
+                            _complete_login(st.session_state["login_email"])
+                        except ConnectionError as exc:
+                            show_gs_error(exc)
+
+        elif _login_stage == "check_password":
+            st.markdown(f"**{st.session_state['login_email']}**")
+            pw = st.text_input("Password", type="password", key="login_check_pw")
+            _back_col, _go_col = st.columns(2)
+            with _back_col:
+                if st.button("⬅️ Back", width="stretch"):
+                    st.session_state["login_stage"] = "email"
+                    st.rerun()
+            with _go_col:
+                if st.button("Log In →", type="primary", width="stretch"):
+                    try:
+                        if verify_password(st.session_state["login_email"], pw):
+                            _complete_login(st.session_state["login_email"])
+                        else:
+                            st.error("❌ Incorrect password.")
+                    except ConnectionError as exc:
+                        show_gs_error(exc)
 
 
 # ════════════════════════════════════════════════════════════
@@ -1139,16 +1274,42 @@ elif page == "admin":
                     st.warning("Please fill in all fields.")
 
         if not residents.empty:
+            with st.expander("🔑 Reset Password"):
+                st.caption("Clears their stored password — their next login will prompt them to set a new one.")
+                reset_email = st.selectbox("Select resident", residents["email"], key="reset_res_pw")
+                if st.button("Reset Password", key="btn_reset_res_pw"):
+                    clear_password(reset_email)
+                    st.success(f"✅ Password cleared for {reset_email}")
+                    time.sleep(0.5)
+                    st.rerun()
+
             with st.expander("🗑️ Delete Resident"):
                 del_email = st.selectbox("Select resident to delete", residents["email"], key="del_res")
                 if st.button("Delete", key="btn_del_res"):
                     updated = residents[residents["email"] != del_email].reset_index(drop=True)
                     write_sheet_df(SHEET_RESIDENTS, updated)
+                    clear_password(del_email)
                     st.success(f"Deleted {del_email}")
                     time.sleep(0.5)
                     st.rerun()
     except ConnectionError as exc:
         show_gs_error(exc)
+
+    st.markdown("---")
+
+    # ── My Account ─────────────────────────────────────────
+    st.subheader("My Account")
+    with st.expander("🔑 Reset My Password"):
+        st.caption(
+            "Clears your own stored password — you'll set a new one the next time you log in. "
+            "You'll stay logged in for this session."
+        )
+        if st.button("Reset My Password", key="btn_reset_own_pw"):
+            try:
+                clear_password(st.session_state["resident"])
+                st.success("✅ Your password has been cleared. You'll set a new one next time you log in.")
+            except ConnectionError as exc:
+                show_gs_error(exc)
 
     st.markdown("---")
 
