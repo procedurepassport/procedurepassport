@@ -610,6 +610,52 @@ def mobile_tip(text: str) -> None:
     )
 
 
+def fit_all_button_labels() -> None:
+    """Shrink any button's label just enough that it never wraps past one
+    line — same measure-and-fit approach as page_header/mobile_tip, just
+    applied to every button on the currently rendered page at once.
+    white-space:nowrap in the global CSS is the fallback if the
+    measurement can't run (scripts disabled) — it clips with an ellipsis
+    instead of wrapping to a second line."""
+    st.iframe(
+        """
+        <script>
+        (function() {
+            var doc = window.parent.document;
+            function fit(p) {
+                var btn = p.closest('button');
+                if (!btn) return;
+                p.style.fontSize = '';
+                // Measure against the <p>'s own box, not the button's —
+                // the button is wider than its label (padding), so
+                // comparing against btn.clientWidth let text through
+                // that still overflowed the <p>'s own narrower box and
+                // got silently clipped by its ellipsis fallback instead
+                // of actually being shrunk to fit.
+                var availWidth = p.clientWidth;
+                if (!availWidth) return;
+                var natural = p.scrollWidth;
+                if (natural > availWidth) {
+                    var baseSize = parseFloat(window.getComputedStyle(p).fontSize);
+                    var target = baseSize * (availWidth / natural) * 0.9;
+                    p.style.fontSize = Math.max(target, baseSize * 0.55, 9) + 'px';
+                }
+            }
+            function fitAll() {
+                doc.querySelectorAll('button p').forEach(fit);
+            }
+            fitAll();
+            window.parent.addEventListener('resize', fitAll);
+            if (window.parent.ResizeObserver) {
+                new window.parent.ResizeObserver(fitAll).observe(doc.body);
+            }
+        })();
+        </script>
+        """,
+        height=1,
+    )
+
+
 # ─────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────
@@ -675,6 +721,14 @@ if st.session_state.get("page") in ("start", "assessment", "dashboard", "cumulat
 st.markdown(
     """
 <style>
+/* Every button's label stays on one line — fit_all_button_labels()
+   shrinks the font to make it fit; this is the no-JS fallback (clips
+   with an ellipsis instead of wrapping to a second line). */
+button p {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 /* Card-style sections */
 .pp-card {
     background: var(--secondary-background-color);
@@ -2527,3 +2581,8 @@ elif page == "attending_confirmation":
 
     st.markdown("---")
     st.markdown("_You may now close this window. The resident can view the evaluation in their dashboard._")
+
+
+# Runs after every page render, regardless of which page/branch above
+# executed, so it always fits whatever buttons ended up on screen.
+fit_all_button_labels()
