@@ -1930,7 +1930,9 @@ elif page == "comments":
 .comments-tbl th {background:var(--secondary-background-color);padding:8px 10px;
     text-align:left;border-bottom:2px solid #ccc;font-weight:600;}
 .comments-tbl td {padding:8px 10px;vertical-align:top;border-bottom:1px solid var(--secondary-background-color);}
-.comments-tbl td.date-col, .comments-tbl td.attending-col, .comments-tbl td.procedure-col {white-space:nowrap;}
+.comments-tbl td.date-col, .comments-tbl td.attending-col, .comments-tbl td.procedure-col {
+    white-space:nowrap;font-size:var(--cmts-sync-font, inherit);
+}
 .comments-tbl td.comments-col {white-space:pre-wrap;word-break:break-word;min-width:260px;}
 </style>""", unsafe_allow_html=True)
 
@@ -1949,6 +1951,56 @@ elif page == "comments":
             "<thead><tr><th>Date</th><th>Procedure</th><th>Attending</th><th>Comments</th></tr></thead>"
             f"<tbody>{_rows_html}</tbody></table>",
             unsafe_allow_html=True,
+        )
+        # Date, Procedure, and Attending default to the table's normal font
+        # size (the CSS above just falls back to `inherit`) and Comments
+        # absorbs the squeeze down to its own min-width first. Only if that
+        # still isn't enough room does this shrink Date/Procedure/Attending
+        # — together, to the same size as each other via one shared CSS
+        # var — just enough to fit without wrapping.
+        st.iframe(
+            """
+            <script>
+            (function() {
+                var doc = window.parent.document;
+                var tables = doc.querySelectorAll('.comments-tbl');
+                var table = tables[tables.length - 1];
+                if (!table) return;
+                function fit() {
+                    table.style.removeProperty('--cmts-sync-font');
+                    var container = table.parentElement;
+                    if (!container) return;
+                    var containerWidth = container.clientWidth;
+                    if (!containerWidth) return;
+                    var natural = table.scrollWidth;
+                    if (natural <= containerWidth) return;
+                    var dateCells = table.querySelectorAll('td.date-col');
+                    var procCells = table.querySelectorAll('td.procedure-col');
+                    var attCells = table.querySelectorAll('td.attending-col');
+                    if (!dateCells.length) return;
+                    function maxWidth(cells) {
+                        var m = 0;
+                        cells.forEach(function(c) { m = Math.max(m, c.scrollWidth); });
+                        return m;
+                    }
+                    var threeW = maxWidth(dateCells) + maxWidth(procCells) + maxWidth(attCells);
+                    if (threeW <= 0) return;
+                    var otherW = natural - threeW;
+                    var availableForThree = containerWidth - otherW;
+                    var baseSize = parseFloat(window.getComputedStyle(dateCells[0]).fontSize);
+                    var ratio = Math.min(1, availableForThree / threeW) * 0.98;
+                    var newSize = Math.max(baseSize * ratio, 9);
+                    table.style.setProperty('--cmts-sync-font', newSize + 'px');
+                }
+                fit();
+                window.parent.addEventListener('resize', fit);
+                if (window.parent.ResizeObserver) {
+                    new window.parent.ResizeObserver(fit).observe(table.parentElement);
+                }
+            })();
+            </script>
+            """,
+            height=1,
         )
 
         output = io.BytesIO()
