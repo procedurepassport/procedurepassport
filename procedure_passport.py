@@ -2448,14 +2448,26 @@ elif page == "attending_assessment":
             _att_cc_idx = _att_cc_opts.index(_att_cc_default) if _att_cc_default in _att_cc_opts else 0
             case_complexity = st.selectbox("Case Complexity", _att_cc_opts, index=_att_cc_idx, key="assess_case_complexity")
 
+    # The resolved (index-0-fallback-aware) starting value for each field —
+    # used below to check whether "Changes As Made Above" is actually true,
+    # not just checked. Comparing against these instead of the raw draft
+    # dict avoids false "changed" positives from e.g. a blank/NaN draft
+    # value resolving to the same displayed default the widget already
+    # falls back to on its own.
+    _draft_resolved_o           = O_SCORE_OPTIONS[_att_o_idx]
+    _draft_resolved_preparation = _att_cp_opts[_att_cp_idx]
+    _draft_resolved_complexity  = _att_cc_opts[_att_cc_idx]
+
     scores: dict = {}
     _draft_scores = _d.get("scores") or {}
+    _draft_resolved_scores: dict = {}
     with st.expander(f"Step-Level Ratings for {_att_proc_name}", expanded=False, key="step_ratings_expander_attending"):
         for _, row in steps.iterrows():
             step_id   = row["step_id"]
             step_name = row["step_name"]
             _step_default = _draft_scores.get(step_id, "Not Assessed")
             _step_idx = RATING_OPTIONS.index(_step_default) if _step_default in RATING_OPTIONS else 0
+            _draft_resolved_scores[step_id] = RATING_OPTIONS[_step_idx]
             scores[step_id] = st.selectbox(
                 step_name, RATING_OPTIONS, index=_step_idx, key=f"att_score_{step_id}"
             )
@@ -2489,12 +2501,25 @@ elif page == "attending_assessment":
             or improve.strip() != ""
             or how.strip() != ""
         )
+        _matches_draft = (
+            case_complexity == _draft_resolved_complexity
+            and case_preparation == _draft_resolved_preparation
+            and o_score == _draft_resolved_o
+            and notes == _d.get("notes", "")
+            and improve == _d.get("improve", "")
+            and how == _d.get("how", "")
+            and all(scores.get(sid) == _draft_resolved_scores.get(sid) for sid in scores)
+        )
         if not _has_value:
             st.warning("Please provide at least one rating or comment before submitting.")
         elif _draft and not (_accept_no_changes or _accept_with_changes):
             st.warning("Please check one of the two boxes above before submitting.")
         elif _draft and _accept_no_changes and _accept_with_changes:
             st.warning("Please check only one of the two boxes above, not both.")
+        elif _draft and _accept_with_changes and _matches_draft:
+            st.warning("You checked “Changes As Made Above,” but nothing was actually "
+                       "changed from the resident's self-assessment. Please make a change, "
+                       "or check “No changes. Accept Resident Self-Assessment” instead.")
         else:
             if _draft:
                 _assessment_type = ("Attending Evaluation (Accepted Self-Assessment, No Changes)"
