@@ -1891,7 +1891,12 @@ elif page == "cumulative":
             "step_order":          step_meta.get("step_order", 0),
         })
 
-
+    # Case-level filter: omit any case where every step rating is
+    # "Not Assessed" — no real signal for the heatmap, same condition the
+    # assessment page itself flags with "⚠️ All steps are marked 'Not
+    # Assessed'.".
+    _meaningful_case_ids = {r["case_id"] for r in merged_rows if r["rating"] != "Not Assessed"}
+    merged_rows = [r for r in merged_rows if r["case_id"] in _meaningful_case_ids]
 
     if not merged_rows:
         st.info("No assessment data yet.")
