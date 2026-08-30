@@ -1928,13 +1928,31 @@ elif page == "comments":
 
         st.caption("💡 Tip: To screenshot the full table — on mobile use print preview; on desktop use File > Print (Cmd+P / Ctrl+P), then adjust the scale percentage down until all columns fit on one page before screenshotting.")
 
-        # Fix 8: procedure filter dropdown
+        # Fix 8: procedure/attending filter dropdowns — each one's options
+        # are narrowed by the OTHER dropdown's current selection, so e.g.
+        # filtering to a procedure leaves only the attendings who have
+        # entries for it in the Attending dropdown.
+        _proc_selected = st.session_state.get("comments_proc_filter", "All Procedures")
+        _att_selected = st.session_state.get("comments_att_filter", "All Attendings")
+
+        _proc_pool = merged if _att_selected == "All Attendings" else merged[merged["Attending"] == _att_selected]
+        _proc_opts = ["All Procedures"] + sorted(_proc_pool["Procedure"].dropna().unique().tolist())
+        _att_pool = merged if _proc_selected == "All Procedures" else merged[merged["Procedure"] == _proc_selected]
+        _att_opts = ["All Attendings"] + sorted(_att_pool["Attending"].dropna().unique().tolist())
+
+        # A previously-selected filter value can fall out of the newly
+        # narrowed options (because the other filter now excludes it) —
+        # reset it to "All ..." before the widget renders, rather than
+        # letting st.selectbox raise on a default no longer in its options.
+        if _proc_selected not in _proc_opts:
+            st.session_state["comments_proc_filter"] = "All Procedures"
+        if _att_selected not in _att_opts:
+            st.session_state["comments_att_filter"] = "All Attendings"
+
         _filter_col1, _filter_col2 = st.columns(2)
         with _filter_col1:
-            _proc_opts = ["All Procedures"] + sorted(merged["Procedure"].dropna().unique().tolist())
             _proc_filter = st.selectbox("Filter by Procedure", _proc_opts, key="comments_proc_filter")
         with _filter_col2:
-            _att_opts = ["All Attendings"] + sorted(merged["Attending"].dropna().unique().tolist())
             _att_filter = st.selectbox("Filter by Attending", _att_opts, key="comments_att_filter")
         if _proc_filter != "All Procedures":
             merged = merged[merged["Procedure"] == _proc_filter]
