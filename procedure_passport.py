@@ -937,6 +937,31 @@ st.markdown(
 .st-key-step_ratings_expander_attending {
     margin-bottom: 16px !important;
 }
+/* Start page: "Assess Together", "Self-Assessment", and "Blank
+   Magic-Link for Attending" all get the same white background /
+   bold red border look, overriding whichever primary/secondary
+   button type each one otherwise renders as. Label text stays
+   plain black, not red/bold, so only the border carries the color. */
+.st-key-start_together_btn button,
+.st-key-start_self_btn button,
+.st-key-start_blank_link_btn button {
+    background-color: #FFFFFF !important;
+    border: 3px solid #FF4B4B !important;
+    color: #000000 !important;
+}
+.st-key-start_together_btn button p,
+.st-key-start_self_btn button p,
+.st-key-start_blank_link_btn button p {
+    color: #000000 !important;
+    font-weight: normal !important;
+}
+.st-key-start_together_btn button:hover,
+.st-key-start_self_btn button:hover,
+.st-key-start_blank_link_btn button:hover {
+    background-color: #FFF0F0 !important;
+    border-color: #E63946 !important;
+    color: #000000 !important;
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -1284,15 +1309,15 @@ elif page == "start":
 
     _start_cols = st.columns(1 if is_admin else 3)
     with _start_cols[0]:
-        if st.button("Assess Together (Resident + Attending)", type="primary", width="stretch"):
+        if st.button("Assess Together (Resident + Attending)", type="primary", width="stretch", key="start_together_btn"):
             _reset_and_start("together")
 
     if not is_admin:
         with _start_cols[1]:
-            if st.button("Self-Assessment", width="stretch"):
+            if st.button("Self-Assessment", width="stretch", key="start_self_btn"):
                 _reset_and_start("self")
         with _start_cols[2]:
-            if st.button("🔗 Blank Magic-Link for Attending", width="stretch"):
+            if st.button("🔗 Blank Magic-Link for Attending", width="stretch", key="start_blank_link_btn"):
                 _att_match = atnds[atnds["attending_id"].astype(str).str.strip()
                                     == str(st.session_state.get("attending_id", "")).strip()]
                 safe_att = _att_match["attending_name"].values[0].replace(" ", "_") if len(_att_match) > 0 else "Unknown"
