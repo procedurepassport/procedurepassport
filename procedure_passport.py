@@ -1839,7 +1839,8 @@ elif page == "comments":
             SHEET_CASES,
             expected_cols=["case_id", "resident_email", "date", "specialty_id",
                            "procedure_id", "attending_id", "notes",
-                           "case_complexity", "overall_performance", "assessment_type"],
+                           "case_complexity", "overall_performance", "assessment_type",
+                           "improve", "how"],
         )
         procs_df = read_sheet_df(SHEET_PROCEDURES, expected_cols=["procedure_id", "procedure_name", "specialty_id"])
         atnds_df = read_sheet_df(SHEET_ATTENDINGS, expected_cols=["attending_id", "attending_name", "specialty_id", "email"])
@@ -1858,8 +1859,28 @@ elif page == "comments":
     # attending-confirmed one — keep them out of this dashboard, same as
     # the cumulative heatmap.
     res_cases = res_cases[res_cases["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment"]
-    res_cases["notes"] = res_cases["notes"].fillna("").astype(str)
-    res_cases = res_cases[res_cases["notes"].str.strip() != ""]
+    res_cases["notes"]   = res_cases["notes"].fillna("").astype(str)
+    res_cases["improve"] = res_cases["improve"].fillna("").astype(str)
+    res_cases["how"]     = res_cases["how"].fillna("").astype(str)
+    res_cases = res_cases[
+        (res_cases["notes"].str.strip() != "")
+        | (res_cases["improve"].str.strip() != "")
+        | (res_cases["how"].str.strip() != "")
+    ]
+
+    def _build_comments(row) -> str:
+        """The Comments column: the "In order to improve..." sentence (if
+        either field was answered), followed by the free-text notes."""
+        imp = row["improve"].strip()
+        how = row["how"].strip()
+        parts = []
+        if imp or how:
+            parts.append(f"In order to improve {imp or '(blank)'}, do this: {how or '(blank)'}.")
+        if row["notes"].strip():
+            parts.append(row["notes"].strip())
+        return "\n\n".join(parts)
+
+    res_cases["notes"] = res_cases.apply(_build_comments, axis=1)
 
     if res_cases.empty:
         st.info("No comments recorded yet.")
