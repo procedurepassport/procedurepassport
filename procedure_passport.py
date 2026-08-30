@@ -806,6 +806,15 @@ st.markdown(
     margin-top: -8px !important;
     margin-bottom: 16px !important;
 }
+/* Step-Level Ratings expander: its default gap to the next field
+   below (Development/Improvement/Feed-Forward) was a tight 16px —
+   bump it to a full 32px. The key class lands directly on this
+   expander's own wrapper (unlike a plain st.container), so no
+   :has() indirection is needed here. */
+.st-key-step_ratings_expander_resident,
+.st-key-step_ratings_expander_attending {
+    margin-bottom: 16px !important;
+}
 </style>
 """,
     unsafe_allow_html=True,
