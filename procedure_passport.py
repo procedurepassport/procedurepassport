@@ -1890,10 +1890,17 @@ elif page == "comments":
         st.caption("💡 Tip: To screenshot the full table — on mobile use print preview; on desktop use File > Print (Cmd+P / Ctrl+P), then adjust the scale percentage down until all columns fit on one page before screenshotting.")
 
         # Fix 8: procedure filter dropdown
-        _proc_opts = ["All Procedures"] + sorted(merged["Procedure"].dropna().unique().tolist())
-        _proc_filter = st.selectbox("Filter by Procedure", _proc_opts, key="comments_proc_filter")
+        _filter_col1, _filter_col2 = st.columns(2)
+        with _filter_col1:
+            _proc_opts = ["All Procedures"] + sorted(merged["Procedure"].dropna().unique().tolist())
+            _proc_filter = st.selectbox("Filter by Procedure", _proc_opts, key="comments_proc_filter")
+        with _filter_col2:
+            _att_opts = ["All Attendings"] + sorted(merged["Attending"].dropna().unique().tolist())
+            _att_filter = st.selectbox("Filter by Attending", _att_opts, key="comments_att_filter")
         if _proc_filter != "All Procedures":
             merged = merged[merged["Procedure"] == _proc_filter]
+        if _att_filter != "All Attendings":
+            merged = merged[merged["Attending"] == _att_filter]
 
         # Fix 8: render with wrapped Comments column using HTML table
         st.markdown("""
