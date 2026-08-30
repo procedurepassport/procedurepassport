@@ -1931,7 +1931,6 @@ elif page == "comments":
     text-align:left;border-bottom:2px solid #ccc;font-weight:600;}
 .comments-tbl td {padding:8px 10px;vertical-align:top;border-bottom:1px solid var(--secondary-background-color);}
 .comments-tbl td.date-col, .comments-tbl td.attending-col, .comments-tbl td.procedure-col {white-space:nowrap;}
-.comments-tbl td.procedure-col {overflow:hidden;text-overflow:ellipsis;max-width:0;}
 .comments-tbl td.comments-col {white-space:pre-wrap;word-break:break-word;min-width:260px;}
 </style>""", unsafe_allow_html=True)
 
@@ -1950,41 +1949,6 @@ elif page == "comments":
             "<thead><tr><th>Date</th><th>Procedure</th><th>Attending</th><th>Comments</th></tr></thead>"
             f"<tbody>{_rows_html}</tbody></table>",
             unsafe_allow_html=True,
-        )
-        st.iframe(
-            """
-            <script>
-            (function() {
-                var doc = window.parent.document;
-                var cells = doc.querySelectorAll('.comments-tbl td.procedure-col');
-                if (!cells.length) return;
-                // One shared font-size for the whole column, not a per-cell
-                // fit: all cells in a column share one rendered width in an
-                // HTML table, and shrinking cells independently would fight
-                // over what that width even is. Reset first so a stale
-                // shrink from a previous run doesn't feed into this one.
-                function fit() {
-                    cells.forEach(function(c) { c.style.fontSize = ''; });
-                    var avail = cells[0].clientWidth;
-                    if (!avail) return;
-                    var maxNatural = 0;
-                    cells.forEach(function(c) { maxNatural = Math.max(maxNatural, c.scrollWidth); });
-                    if (maxNatural > avail) {
-                        var baseSize = parseFloat(window.getComputedStyle(cells[0]).fontSize);
-                        var target = baseSize * (avail / maxNatural) * 0.92;
-                        var finalSize = Math.max(target, baseSize * 0.55, 8) + 'px';
-                        cells.forEach(function(c) { c.style.fontSize = finalSize; });
-                    }
-                }
-                fit();
-                window.parent.addEventListener('resize', fit);
-                if (window.parent.ResizeObserver) {
-                    new window.parent.ResizeObserver(fit).observe(doc.body);
-                }
-            })();
-            </script>
-            """,
-            height=1,
         )
 
         output = io.BytesIO()
