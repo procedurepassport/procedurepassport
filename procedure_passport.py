@@ -1791,7 +1791,8 @@ elif page == "cumulative":
         cases_df  = read_sheet_df(SHEET_CASES,  expected_cols=["case_id", "resident_email", "date",
                                                                 "specialty_id", "procedure_id",
                                                                 "attending_id", "notes",
-                                                                "case_complexity", "overall_performance"])
+                                                                "case_complexity", "overall_performance",
+                                                                "assessment_type"])
         scores_df = read_sheet_df(SHEET_SCORES, expected_cols=["case_id", "step_id", "rating", "rating_num",
                                                                 "case_complexity", "overall_performance"])
         steps_df  = read_sheet_df(SHEET_STEPS,  expected_cols=["step_id", "procedure_id", "step_order", "step_name"])
@@ -1826,6 +1827,12 @@ elif page == "cumulative":
     resident_cases: dict = {}  # clean_case_id → metadata dict
     for _, row in cases_df.iterrows():
         if str(row.get("resident_email", "")).strip() != str(resident).strip():
+            continue
+        # Self-assessments are the resident's own unverified entry, not an
+        # attending-confirmed one — keep them out of the heatmap. Everything
+        # else (Assessed Together, and every Attending Evaluation variant —
+        # accepted as-is, changed, or from a blank link) still counts.
+        if str(row.get("assessment_type", "")).strip() == "Self-Assessment":
             continue
         cid = _clean_id(row.get("case_id", ""))
         if not cid or cid == "nan":
