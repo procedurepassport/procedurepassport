@@ -1292,7 +1292,7 @@ elif page == "start":
             if st.button("Self-Assessment", width="stretch"):
                 _reset_and_start("self")
         with _start_cols[2]:
-            if st.button("🔗 Generate a Blank Magic Link for Attending", width="stretch"):
+            if st.button("🔗 Blank Magic-Link for Attending", width="stretch"):
                 _att_match = atnds[atnds["attending_id"].astype(str).str.strip()
                                     == str(st.session_state.get("attending_id", "")).strip()]
                 safe_att = _att_match["attending_name"].values[0].replace(" ", "_") if len(_att_match) > 0 else "Unknown"
