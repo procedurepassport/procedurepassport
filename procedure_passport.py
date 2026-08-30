@@ -800,11 +800,11 @@ st.markdown(
 /* Same idea for the Overall/Preparation/Case Complexity row: its
    default gaps to the divider above (32px) and the Step-Level
    Ratings expander below (16px) weren't equal — pull/push its
-   wrapper so both land on a matching 24px (3x the original tight
-   8px), centering it between them with more breathing room. */
+   wrapper so the gap above lands at 24px and the gap below (bumped
+   an extra 8px per feedback that it still looked tighter) at 32px. */
 [data-testid="stLayoutWrapper"]:has(> .st-key-assess_ratings_row) {
     margin-top: -8px !important;
-    margin-bottom: 8px !important;
+    margin-bottom: 16px !important;
 }
 </style>
 """,
