@@ -1368,7 +1368,7 @@ elif page == "start":
 
     if not is_admin:
         with _start_cols[1]:
-            if st.button("Self-Assessment", width="stretch", key="start_self_btn"):
+            if st.button("Self-Assess (🔗 Pre-Filled Magic Link)", width="stretch", key="start_self_btn"):
                 _reset_and_start("self")
         with _start_cols[2]:
             if st.button("🔗 Blank Magic-Link for Attending", width="stretch", key="start_blank_link_btn"):
