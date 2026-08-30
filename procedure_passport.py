@@ -1941,6 +1941,12 @@ elif page == "comments":
         if _att_filter != "All Attendings":
             merged = merged[merged["Attending"] == _att_filter]
 
+        # Filtering down to a single procedure/attending makes that column
+        # redundant (every row shows the same value) — drop it from the
+        # on-screen table while filtered.
+        _show_proc = _proc_filter == "All Procedures"
+        _show_att = _att_filter == "All Attendings"
+
         # Fix 8: render with wrapped Comments column using HTML table
         st.markdown("""
 <style>
@@ -1959,14 +1965,20 @@ elif page == "comments":
             _rows_html += (
                 f"<tr>"
                 f"<td class='date-col'>{html.escape(str(r['Date']))}</td>"
-                f"<td class='procedure-col'>{html.escape(str(r['Procedure']))}</td>"
-                f"<td class='attending-col'>{html.escape(str(r['Attending']))}</td>"
-                f"<td class='comments-col'>{r['Comments_html']}</td>"
+                + (f"<td class='procedure-col'>{html.escape(str(r['Procedure']))}</td>" if _show_proc else "")
+                + (f"<td class='attending-col'>{html.escape(str(r['Attending']))}</td>" if _show_att else "")
+                + f"<td class='comments-col'>{r['Comments_html']}</td>"
                 f"</tr>"
             )
+        _header_html = (
+            "<th>Date</th>"
+            + ("<th>Procedure</th>" if _show_proc else "")
+            + ("<th>Attending</th>" if _show_att else "")
+            + "<th>Comments</th>"
+        )
         st.markdown(
             "<table class='comments-tbl'>"
-            "<thead><tr><th>Date</th><th>Procedure</th><th>Attending</th><th>Comments</th></tr></thead>"
+            f"<thead><tr>{_header_html}</tr></thead>"
             f"<tbody>{_rows_html}</tbody></table>",
             unsafe_allow_html=True,
         )
