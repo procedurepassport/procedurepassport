@@ -1839,7 +1839,7 @@ elif page == "comments":
             SHEET_CASES,
             expected_cols=["case_id", "resident_email", "date", "specialty_id",
                            "procedure_id", "attending_id", "notes",
-                           "case_complexity", "overall_performance"],
+                           "case_complexity", "overall_performance", "assessment_type"],
         )
         procs_df = read_sheet_df(SHEET_PROCEDURES, expected_cols=["procedure_id", "procedure_name", "specialty_id"])
         atnds_df = read_sheet_df(SHEET_ATTENDINGS, expected_cols=["attending_id", "attending_name", "specialty_id", "email"])
@@ -1854,6 +1854,10 @@ elif page == "comments":
     cases_df = cases_df.drop_duplicates(subset=["case_id"])
 
     res_cases = cases_df[cases_df["resident_email"] == resident].copy()
+    # Self-assessments are the resident's own unverified entry, not an
+    # attending-confirmed one — keep them out of this dashboard, same as
+    # the cumulative heatmap.
+    res_cases = res_cases[res_cases["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment"]
     res_cases["notes"] = res_cases["notes"].fillna("").astype(str)
     res_cases = res_cases[res_cases["notes"].str.strip() != ""]
 
