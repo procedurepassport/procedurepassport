@@ -35,6 +35,7 @@ if (
     st.session_state["procedure_id"]   = query_params.get("procedure_id", "")
     st.session_state["specialty_id"]   = query_params.get("specialty_id", "")
     st.session_state["attending_name"] = query_params.get("attending_name", "")
+    st.session_state["draft_id"]       = query_params.get("draft_id", "")
     st.session_state["_magic_routed"]  = True
 
 # ─────────────────────────────────────────────
@@ -51,6 +52,8 @@ _defaults: dict = {
     "how":                     "",
     "current_case_id":         None,
     "attending_submission":    None,   # filled after magic-link submit
+    "generated_magic_link":    None,   # filled after Generate Magic Link
+    "draft_id":                "",
 }
 for _k, _v in _defaults.items():
     if _k not in st.session_state:
@@ -141,6 +144,17 @@ SHEET_STEPS      = "steps"
 SHEET_CASES      = "cases"
 SHEET_SCORES     = "scores"
 SHEET_SPECIALTY  = "specialties"
+SHEET_DRAFTS     = "drafts"
+
+# Pre-filled magic-link drafts: a resident's in-progress assessment, saved
+# so the attending's link can carry a short draft_id instead of embedding
+# every field's value in the URL itself.
+DRAFT_COLS = [
+    "draft_id", "resident_email", "date", "specialty_id", "procedure_id",
+    "attending_id", "case_complexity", "case_preparation",
+    "overall_performance", "improve", "how", "notes", "scores_json",
+    "created_at",
+]
 
 # ─────────────────────────────────────────────
 # GOOGLE SHEETS HELPERS
@@ -280,14 +294,21 @@ def save_case(
     overall_performance=None,
     improve: str = "",
     how: str = "",
+    assessment_type: str = "",
 ) -> str:
-    """Persist a case + its step scores; returns the new case_id."""
+    """Persist a case + its step scores; returns the new case_id.
+
+    assessment_type distinguishes who the case record represents:
+    "Self-Assessment" for a resident's own entry (Finish & Save, or the
+    dual-save that happens when generating a pre-filled magic link) vs
+    "Attending Evaluation" for the attending's magic-link submission.
+    """
     case_id   = uuid.uuid4().hex[:12]
 
     case_cols = ["case_id", "resident_email", "date", "specialty_id",
                  "procedure_id", "attending_id", "notes",
                  "case_complexity", "case_preparation", "overall_performance",
-                 "improve", "how"]
+                 "improve", "how", "assessment_type"]
     cases_df  = read_sheet_df(SHEET_CASES, expected_cols=case_cols)
     cases_df  = pd.concat([cases_df, pd.DataFrame([{
         "case_id":             case_id,
@@ -302,6 +323,7 @@ def save_case(
         "overall_performance": overall_performance,
         "improve":             improve,
         "how":                 how,
+        "assessment_type":     assessment_type,
     }])], ignore_index=True)
     write_sheet_df(SHEET_CASES, cases_df)  # clears cache
 
@@ -324,6 +346,103 @@ def save_case(
     write_sheet_df(SHEET_SCORES, scores_df)  # clears cache
 
     return case_id
+
+
+def save_draft(
+    resident_email: str,
+    date,
+    specialty_id: str,
+    procedure_id: str,
+    attending_id: str,
+    scores_dict: dict,
+    notes: str = "",
+    case_complexity=None,
+    case_preparation=None,
+    overall_performance=None,
+    improve: str = "",
+    how: str = "",
+) -> str:
+    """Save a resident's in-progress assessment as a pre-fill draft for a
+    magic link; returns the draft_id to embed in the link's query string."""
+    draft_id  = uuid.uuid4().hex[:12]
+    drafts_df = read_sheet_df(SHEET_DRAFTS, expected_cols=DRAFT_COLS)
+    drafts_df = pd.concat([drafts_df, pd.DataFrame([{
+        "draft_id":             draft_id,
+        "resident_email":       resident_email,
+        "date":                 str(date),
+        "specialty_id":         specialty_id,
+        "procedure_id":         procedure_id,
+        "attending_id":         attending_id,
+        "case_complexity":      case_complexity,
+        "case_preparation":     case_preparation,
+        "overall_performance":  overall_performance,
+        "improve":              improve,
+        "how":                  how,
+        "notes":                notes,
+        "scores_json":          json.dumps(scores_dict),
+        "created_at":           datetime.datetime.utcnow().isoformat(),
+    }])], ignore_index=True)
+    write_sheet_df(SHEET_DRAFTS, drafts_df)
+    return draft_id
+
+
+def load_draft(draft_id: str):
+    """Fetch a pre-fill draft by id. Returns None if missing, blank, or the
+    sheet can't be reached — callers should fall back to a blank form."""
+    if not draft_id:
+        return None
+    try:
+        drafts_df = read_sheet_df(SHEET_DRAFTS, expected_cols=DRAFT_COLS)
+    except ConnectionError:
+        return None
+    if drafts_df.empty:
+        return None
+    drafts_df   = drafts_df.copy()
+    drafts_df["draft_id"] = _norm_id(drafts_df["draft_id"])
+    target      = _norm_id(pd.Series([draft_id])).iloc[0]
+    match       = drafts_df[drafts_df["draft_id"] == target]
+    if match.empty:
+        return None
+    row = match.iloc[0]
+
+    def _clean(v):
+        # Blank sheet cells round-trip through pandas as NaN (a float), not
+        # "" — and NaN is truthy in Python, so a plain `v or ""` doesn't
+        # catch it, leaving the literal text "nan" in text inputs/areas.
+        return "" if pd.isna(v) else str(v)
+
+    try:
+        scores = json.loads(_clean(row.get("scores_json")) or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        scores = {}
+    return {
+        "date":                 row.get("date"),
+        "case_complexity":      row.get("case_complexity"),
+        "case_preparation":     row.get("case_preparation"),
+        "overall_performance":  row.get("overall_performance"),
+        "improve":              _clean(row.get("improve")),
+        "how":                  _clean(row.get("how")),
+        "notes":                _clean(row.get("notes")),
+        "scores":               scores,
+    }
+
+
+def delete_draft(draft_id: str) -> None:
+    """Remove a consumed draft. Cleanup only — never raises."""
+    if not draft_id:
+        return
+    try:
+        drafts_df = read_sheet_df(SHEET_DRAFTS, expected_cols=DRAFT_COLS)
+        if drafts_df.empty:
+            return
+        drafts_df = drafts_df.copy()
+        drafts_df["draft_id"] = _norm_id(drafts_df["draft_id"])
+        target    = _norm_id(pd.Series([draft_id])).iloc[0]
+        remaining = drafts_df[drafts_df["draft_id"] != target]
+        if len(remaining) != len(drafts_df):
+            write_sheet_df(SHEET_DRAFTS, remaining)
+    except Exception:
+        pass
 
 
 # ─────────────────────────────────────────────
@@ -1149,25 +1268,6 @@ elif page == "start":
     st.session_state["attending_id"] = atnd_map[attending]
     st.session_state["date"]         = case_date
 
-    # ── Magic link for attending ──────────────────────────
-    if not is_admin:
-        _att_match = atnds[atnds["attending_id"].astype(str).str.strip() == str(st.session_state.get("attending_id", "")).strip()]
-        safe_att  = _att_match["attending_name"].values[0].replace(" ", "_") if len(_att_match) > 0 else "Unknown"
-        base_url  = st.secrets.get("APP_BASE_URL", "https://procedurepassport.streamlit.app")
-        magic_url = (
-            f"{base_url}/?mode=attending"
-            f"&resident={st.session_state['resident']}"
-            f"&procedure_id={st.session_state['procedure_id']}"
-            f"&specialty_id={specialty_id}"
-            f"&attending_name={safe_att}"
-        )
-        with st.expander("🔗 Magic Link for Attending (click to expand)", expanded=False):
-            st.markdown(
-                "Share this link with your attending so they can submit their evaluation directly:"
-            )
-            st.code(magic_url, language="text")
-            st.caption("On mobile: tap the link once for the copy button to appear.")
-
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 1, 2])
     with col1:
@@ -1175,10 +1275,11 @@ elif page == "start":
             go_to("home")
     with col3:
         if st.button("Start Assessment →", type="primary", width="stretch"):
-            st.session_state["scores"]  = {}
-            st.session_state["notes"]   = ""
-            st.session_state["improve"] = ""
-            st.session_state["how"]     = ""
+            st.session_state["scores"]              = {}
+            st.session_state["notes"]               = ""
+            st.session_state["improve"]              = ""
+            st.session_state["how"]                  = ""
+            st.session_state["generated_magic_link"] = None
             go_to("assessment")
 
 
@@ -1187,12 +1288,14 @@ elif page == "start":
 # ════════════════════════════════════════════════════════════
 elif page == "assessment":
     try:
-        _, proc_df, steps_df, _ = load_refs()
+        _, proc_df, steps_df, atnd_df = load_refs()
     except ConnectionError as exc:
         show_gs_error(exc)
         if st.button("⬅️ Back to Start"):
             go_to("start")
         st.stop()
+
+    is_admin = st.session_state["resident"] in ADMINS
 
     steps = steps_df[steps_df["procedure_id"] == st.session_state["procedure_id"]].sort_values("step_order")
     if steps.empty:
@@ -1298,11 +1401,8 @@ elif page == "assessment":
     if all(v == "Not Assessed" for v in st.session_state["scores"].values()):
         st.warning("⚠️ All steps are marked 'Not Assessed'.")
 
-    # Fix 7: Finish button alone at the bottom with a confirmation note
-    st.markdown("---")
-    st.caption("✅ The case is saved automatically when you click Finish & Save.")
-    if st.button("🏁 Finish & Save →", type="primary", width="stretch"):
-        _has_value = (
+    def _assessment_has_value() -> bool:
+        return (
             st.session_state["case_complexity"] != "— Select complexity —"
             or st.session_state["case_preparation"] != "Not Assessed"
             or st.session_state["overall_performance"] != O_SCORE_OPTIONS[0]
@@ -1311,27 +1411,88 @@ elif page == "assessment":
             or st.session_state.get("improve", "").strip() != ""
             or st.session_state.get("how", "").strip() != ""
         )
-        if not _has_value:
-            st.warning("Please provide at least one rating or comment before submitting.")
-        else:
-            try:
-                st.session_state["current_case_id"] = save_case(
-                    resident_email=st.session_state["resident"],
-                    date=st.session_state["date"],
-                    specialty_id=st.session_state["specialty_id"],
-                    procedure_id=st.session_state["procedure_id"],
-                    attending_id=st.session_state["attending_id"],
-                    scores_dict=st.session_state["scores"],
-                    case_complexity=st.session_state["case_complexity"],
-                    case_preparation=st.session_state["case_preparation"],
-                    overall_performance=st.session_state["overall_performance"],
-                    notes=st.session_state.get("notes", ""),
-                    improve=st.session_state.get("improve", ""),
-                    how=st.session_state.get("how", ""),
-                )
-                go_to("dashboard")
-            except ConnectionError as exc:
-                show_gs_error(exc)
+
+    def _save_self_assessment() -> str:
+        """Save the resident's own entry; shared by Finish & Save and
+        Generate Magic Link, both of which persist the same self-assessment."""
+        return save_case(
+            resident_email=st.session_state["resident"],
+            date=st.session_state["date"],
+            specialty_id=st.session_state["specialty_id"],
+            procedure_id=st.session_state["procedure_id"],
+            attending_id=st.session_state["attending_id"],
+            scores_dict=st.session_state["scores"],
+            case_complexity=st.session_state["case_complexity"],
+            case_preparation=st.session_state["case_preparation"],
+            overall_performance=st.session_state["overall_performance"],
+            notes=st.session_state.get("notes", ""),
+            improve=st.session_state.get("improve", ""),
+            how=st.session_state.get("how", ""),
+            assessment_type="Self-Assessment",
+        )
+
+    # Fix 7: Finish button alone at the bottom with a confirmation note
+    st.markdown("---")
+    st.caption("✅ The case is saved automatically when you click Finish & Save.")
+
+    if is_admin:
+        _finish_col, _link_col = st.container(), None
+    else:
+        _finish_col, _link_col = st.columns(2)
+
+    with _finish_col:
+        if st.button("🏁 Finish & Save →", type="primary", width="stretch"):
+            if not _assessment_has_value():
+                st.warning("Please provide at least one rating or comment before submitting.")
+            else:
+                try:
+                    st.session_state["current_case_id"] = _save_self_assessment()
+                    go_to("dashboard")
+                except ConnectionError as exc:
+                    show_gs_error(exc)
+
+    if _link_col is not None:
+        with _link_col:
+            if st.button("🔗 Generate Magic Link for Attending", width="stretch"):
+                if not _assessment_has_value():
+                    st.warning("Please provide at least one rating or comment before generating a link.")
+                else:
+                    try:
+                        st.session_state["current_case_id"] = _save_self_assessment()
+                        draft_id = save_draft(
+                            resident_email=st.session_state["resident"],
+                            date=st.session_state["date"],
+                            specialty_id=st.session_state["specialty_id"],
+                            procedure_id=st.session_state["procedure_id"],
+                            attending_id=st.session_state["attending_id"],
+                            scores_dict=st.session_state["scores"],
+                            case_complexity=st.session_state["case_complexity"],
+                            case_preparation=st.session_state["case_preparation"],
+                            overall_performance=st.session_state["overall_performance"],
+                            notes=st.session_state.get("notes", ""),
+                            improve=st.session_state.get("improve", ""),
+                            how=st.session_state.get("how", ""),
+                        )
+                        _att_match = atnd_df[atnd_df["attending_id"].astype(str).str.strip()
+                                              == str(st.session_state.get("attending_id", "")).strip()]
+                        safe_att = _att_match["attending_name"].values[0].replace(" ", "_") if len(_att_match) > 0 else "Unknown"
+                        base_url = st.secrets.get("APP_BASE_URL", "https://procedurepassport.streamlit.app")
+                        st.session_state["generated_magic_link"] = (
+                            f"{base_url}/?mode=attending"
+                            f"&resident={st.session_state['resident']}"
+                            f"&procedure_id={st.session_state['procedure_id']}"
+                            f"&specialty_id={st.session_state['specialty_id']}"
+                            f"&attending_name={safe_att}"
+                            f"&draft_id={draft_id}"
+                        )
+                    except ConnectionError as exc:
+                        show_gs_error(exc)
+
+    if st.session_state.get("generated_magic_link"):
+        st.success("✅ Your self-assessment was saved, and a pre-filled link is ready for your attending:")
+        st.code(st.session_state["generated_magic_link"], language="text")
+        st.caption("On mobile: tap the link once for the copy button to appear. "
+                   "The attending can review and adjust every field before submitting.")
 
 
 # ════════════════════════════════════════════════════════════
@@ -2074,7 +2235,14 @@ elif page == "attending_assessment":
     # Decode URL-safe attending name
     display_attending = attending_name.replace("_", " ")
 
+    # Pre-fill from the resident's self-assessment draft, if this link carries one.
+    draft_id = st.session_state.get("draft_id", "")
+    _draft   = load_draft(draft_id) if draft_id else None
+
     page_header("📝 Attending Evaluation")
+    if _draft:
+        st.info("📋 This form has been pre-filled from the resident's self-assessment. "
+                 "Review and adjust anything before submitting.")
     try:
         _, proc_df_att, steps_df, _ = load_refs()
     except ConnectionError as exc:
@@ -2099,7 +2267,17 @@ elif page == "attending_assessment":
         st.error("This procedure has no defined steps. Please contact the program coordinator.")
         st.stop()
 
-    case_date       = st.date_input("Date of Procedure", value=datetime.date.today())
+    # Defaults sourced from the draft when this link was pre-filled, else
+    # the usual blanks — same fallback pattern the resident's own page uses.
+    _d = _draft or {}
+    _default_date = datetime.date.today()
+    if _d.get("date"):
+        try:
+            _default_date = datetime.date.fromisoformat(str(_d["date"])[:10])
+        except ValueError:
+            pass
+
+    case_date = st.date_input("Date of Procedure", value=_default_date, key="att_case_date")
 
     with st.container(key="assess_improve_how"):
         _att_imp_cols = st.columns([1.7, 3.1, 0.7, 3.1, 0.3])
@@ -2108,6 +2286,7 @@ elif page == "attending_assessment":
         with _att_imp_cols[1]:
             improve = st.text_input(
                 "What to improve",
+                value=_d.get("improve", ""),
                 key="assess_improve",
                 label_visibility="collapsed",
                 placeholder="e.g., suture technique",
@@ -2117,6 +2296,7 @@ elif page == "attending_assessment":
         with _att_imp_cols[3]:
             how = st.text_input(
                 "How to improve it",
+                value=_d.get("how", ""),
                 key="assess_how",
                 label_visibility="collapsed",
                 placeholder="e.g., practice two-handed knots",
@@ -2129,25 +2309,50 @@ elif page == "attending_assessment":
     with st.container(key="assess_ratings_row"):
         _att_overall_col, _att_prep_col, _att_complexity_col = st.columns(3)
         with _att_overall_col:
-            o_score = st.selectbox("Overall Performance Rating", O_SCORE_OPTIONS, key="assess_overall_performance")
+            _att_o_default = _d.get("overall_performance", O_SCORE_OPTIONS[0])
+            _att_o_idx = O_SCORE_OPTIONS.index(_att_o_default) if _att_o_default in O_SCORE_OPTIONS else 0
+            o_score = st.selectbox("Overall Performance Rating", O_SCORE_OPTIONS, index=_att_o_idx, key="assess_overall_performance")
         with _att_prep_col:
             _att_cp_opts = ["Not Assessed", "Unprepared", "Poorly Prepared",
                             "Adequately Prepared", "Well Prepared", "Highly Prepared"]
-            case_preparation = st.selectbox("Preparation", _att_cp_opts, key="assess_preparation")
+            _att_cp_default = _d.get("case_preparation", "Not Assessed")
+            _att_cp_idx = _att_cp_opts.index(_att_cp_default) if _att_cp_default in _att_cp_opts else 0
+            case_preparation = st.selectbox("Preparation", _att_cp_opts, index=_att_cp_idx, key="assess_preparation")
         with _att_complexity_col:
             _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
-            case_complexity = st.selectbox("Case Complexity", _att_cc_opts, key="assess_case_complexity")
+            _att_cc_default = _d.get("case_complexity", "— Select complexity —")
+            _att_cc_idx = _att_cc_opts.index(_att_cc_default) if _att_cc_default in _att_cc_opts else 0
+            case_complexity = st.selectbox("Case Complexity", _att_cc_opts, index=_att_cc_idx, key="assess_case_complexity")
 
     scores: dict = {}
+    _draft_scores = _d.get("scores") or {}
     with st.expander(f"Step-Level Ratings for {_att_proc_name}", expanded=False, key="step_ratings_expander_attending"):
         for _, row in steps.iterrows():
             step_id   = row["step_id"]
             step_name = row["step_name"]
+            _step_default = _draft_scores.get(step_id, "Not Assessed")
+            _step_idx = RATING_OPTIONS.index(_step_default) if _step_default in RATING_OPTIONS else 0
             scores[step_id] = st.selectbox(
-                step_name, RATING_OPTIONS, key=f"att_score_{step_id}"
+                step_name, RATING_OPTIONS, index=_step_idx, key=f"att_score_{step_id}"
             )
 
-    notes   = st.text_area("Development / Improvement / Feed-Forward (optional)", key="assess_notes")
+    notes = st.text_area(
+        "Development / Improvement / Feed-Forward (optional)",
+        value=_d.get("notes", ""),
+        key="assess_notes",
+    )
+
+    _accept_no_changes   = False
+    _accept_with_changes = False
+    if _draft:
+        st.markdown("---")
+        st.markdown("**Since this form was pre-filled from the resident's self-assessment, please confirm:**")
+        _accept_no_changes = st.checkbox(
+            "No changes. Accept Resident Self-Assessment", key="assess_accept_no_changes"
+        )
+        _accept_with_changes = st.checkbox(
+            "Changes As Made Above", key="assess_accept_with_changes"
+        )
 
     st.markdown("---")
     if st.button("✅ Submit Evaluation", type="primary", width="stretch"):
@@ -2162,7 +2367,17 @@ elif page == "attending_assessment":
         )
         if not _has_value:
             st.warning("Please provide at least one rating or comment before submitting.")
+        elif _draft and not (_accept_no_changes or _accept_with_changes):
+            st.warning("Please check one of the two boxes above before submitting.")
+        elif _draft and _accept_no_changes and _accept_with_changes:
+            st.warning("Please check only one of the two boxes above, not both.")
         else:
+            if _draft:
+                _assessment_type = ("Attending Evaluation (Accepted Self-Assessment, No Changes)"
+                                     if _accept_no_changes else
+                                     "Attending Evaluation (Pre-filled, Changes Made)")
+            else:
+                _assessment_type = "Attending Evaluation (Blank)"
             try:
                 case_id = save_case(
                     resident_email=resident_email,
@@ -2177,7 +2392,10 @@ elif page == "attending_assessment":
                     overall_performance=o_score,
                     improve=improve,
                     how=how,
+                    assessment_type=_assessment_type,
                 )
+                if draft_id:
+                    delete_draft(draft_id)
                 # Store submission summary for the confirmation page
                 st.session_state["attending_submission"] = {
                     "case_id":             case_id,
@@ -2192,6 +2410,7 @@ elif page == "attending_assessment":
                     "notes":               notes,
                     "improve":             improve,
                     "how":                 how,
+                    "assessment_type":     _assessment_type,
                     "scores":              scores,
                     "steps":               steps[["step_id", "step_name"]].to_dict("records"),
                 }
@@ -2221,6 +2440,7 @@ elif page == "attending_confirmation":
         f'<b>Case Complexity:</b> {sub["case_complexity"]}<br>'
         f'<b>Preparation:</b> {sub["case_preparation"]}<br>'
         f'<b>Overall Performance:</b> {sub["overall_performance"]}<br>'
+        f'<b>Basis:</b> {sub.get("assessment_type", "Attending Evaluation")}<br>'
         f'<b>Case ID:</b> <code>{sub["case_id"]}</code>'
         f'</div>',
         unsafe_allow_html=True,
