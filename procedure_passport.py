@@ -54,6 +54,9 @@ _defaults: dict = {
     "attending_submission":    None,   # filled after magic-link submit
     "generated_magic_link":    None,   # filled after Generate Magic Link
     "draft_id":                "",
+    "assessment_mode":         "together",  # "together" or "self", set from Start
+    "blank_magic_link":        None,   # filled after Generate a Blank Magic Link
+    "last_assessment_type":    None,   # "Assessed Together" or "Self-Assessment"
 }
 for _k, _v in _defaults.items():
     if _k not in st.session_state:
@@ -1269,18 +1272,47 @@ elif page == "start":
     st.session_state["date"]         = case_date
 
     st.markdown("---")
-    col1, col2, col3 = st.columns([1, 1, 2])
-    with col1:
-        if st.button("⬅️ Back to Home"):
-            go_to("home")
-    with col3:
-        if st.button("Start Assessment →", type="primary", width="stretch"):
-            st.session_state["scores"]              = {}
-            st.session_state["notes"]               = ""
-            st.session_state["improve"]              = ""
-            st.session_state["how"]                  = ""
-            st.session_state["generated_magic_link"] = None
-            go_to("assessment")
+
+    def _reset_and_start(mode: str):
+        st.session_state["scores"]               = {}
+        st.session_state["notes"]                = ""
+        st.session_state["improve"]              = ""
+        st.session_state["how"]                  = ""
+        st.session_state["generated_magic_link"] = None
+        st.session_state["assessment_mode"]      = mode
+        go_to("assessment")
+
+    _start_cols = st.columns(1 if is_admin else 3)
+    with _start_cols[0]:
+        if st.button("Assess Together (Resident + Attending)", type="primary", width="stretch"):
+            _reset_and_start("together")
+
+    if not is_admin:
+        with _start_cols[1]:
+            if st.button("Self-Assessment", width="stretch"):
+                _reset_and_start("self")
+        with _start_cols[2]:
+            if st.button("🔗 Generate a Blank Magic Link for Attending", width="stretch"):
+                _att_match = atnds[atnds["attending_id"].astype(str).str.strip()
+                                    == str(st.session_state.get("attending_id", "")).strip()]
+                safe_att = _att_match["attending_name"].values[0].replace(" ", "_") if len(_att_match) > 0 else "Unknown"
+                base_url = st.secrets.get("APP_BASE_URL", "https://procedurepassport.streamlit.app")
+                st.session_state["blank_magic_link"] = (
+                    f"{base_url}/?mode=attending"
+                    f"&resident={st.session_state['resident']}"
+                    f"&procedure_id={st.session_state['procedure_id']}"
+                    f"&specialty_id={specialty_id}"
+                    f"&attending_name={safe_att}"
+                )
+
+    if st.session_state.get("blank_magic_link"):
+        st.success("✅ A blank link is ready for your attending:")
+        st.code(st.session_state["blank_magic_link"], language="text")
+        st.caption("On mobile: tap the link once for the copy button to appear.")
+
+    st.markdown("---")
+    if st.button("⬅️ Back to Home"):
+        go_to("home")
 
 
 # ════════════════════════════════════════════════════════════
@@ -1412,9 +1444,8 @@ elif page == "assessment":
             or st.session_state.get("how", "").strip() != ""
         )
 
-    def _save_self_assessment() -> str:
-        """Save the resident's own entry; shared by Finish & Save and
-        Generate Magic Link, both of which persist the same self-assessment."""
+    def _save_own_case(assessment_type: str) -> str:
+        """Save the resident's own entry, tagged with how it was taken."""
         return save_case(
             resident_email=st.session_state["resident"],
             date=st.session_state["date"],
@@ -1428,71 +1459,72 @@ elif page == "assessment":
             notes=st.session_state.get("notes", ""),
             improve=st.session_state.get("improve", ""),
             how=st.session_state.get("how", ""),
-            assessment_type="Self-Assessment",
+            assessment_type=assessment_type,
         )
 
-    # Fix 7: Finish button alone at the bottom with a confirmation note
+    # Admins never see the magic-link options (Start page hides those
+    # buttons for them), so treat any admin session as "together" too,
+    # regardless of whatever assessment_mode happens to be stored.
+    _mode = "self" if (not is_admin and st.session_state.get("assessment_mode") == "self") else "together"
+
     st.markdown("---")
-    st.caption("✅ The case is saved automatically when you click Finish & Save.")
 
-    if is_admin:
-        _finish_col, _link_col = st.container(), None
-    else:
-        _finish_col, _link_col = st.columns(2)
-
-    with _finish_col:
+    if _mode == "together":
+        # Fix 7: Finish button alone at the bottom with a confirmation note
+        st.caption("✅ The case is saved automatically when you click Finish & Save.")
         if st.button("🏁 Finish & Save →", type="primary", width="stretch"):
             if not _assessment_has_value():
                 st.warning("Please provide at least one rating or comment before submitting.")
             else:
                 try:
-                    st.session_state["current_case_id"] = _save_self_assessment()
+                    st.session_state["current_case_id"] = _save_own_case("Assessed Together")
+                    st.session_state["last_assessment_type"] = "Assessed Together"
                     go_to("dashboard")
                 except ConnectionError as exc:
                     show_gs_error(exc)
 
-    if _link_col is not None:
-        with _link_col:
-            if st.button("🔗 Generate Magic Link for Attending", width="stretch"):
-                if not _assessment_has_value():
-                    st.warning("Please provide at least one rating or comment before generating a link.")
-                else:
-                    try:
-                        st.session_state["current_case_id"] = _save_self_assessment()
-                        draft_id = save_draft(
-                            resident_email=st.session_state["resident"],
-                            date=st.session_state["date"],
-                            specialty_id=st.session_state["specialty_id"],
-                            procedure_id=st.session_state["procedure_id"],
-                            attending_id=st.session_state["attending_id"],
-                            scores_dict=st.session_state["scores"],
-                            case_complexity=st.session_state["case_complexity"],
-                            case_preparation=st.session_state["case_preparation"],
-                            overall_performance=st.session_state["overall_performance"],
-                            notes=st.session_state.get("notes", ""),
-                            improve=st.session_state.get("improve", ""),
-                            how=st.session_state.get("how", ""),
-                        )
-                        _att_match = atnd_df[atnd_df["attending_id"].astype(str).str.strip()
-                                              == str(st.session_state.get("attending_id", "")).strip()]
-                        safe_att = _att_match["attending_name"].values[0].replace(" ", "_") if len(_att_match) > 0 else "Unknown"
-                        base_url = st.secrets.get("APP_BASE_URL", "https://procedurepassport.streamlit.app")
-                        st.session_state["generated_magic_link"] = (
-                            f"{base_url}/?mode=attending"
-                            f"&resident={st.session_state['resident']}"
-                            f"&procedure_id={st.session_state['procedure_id']}"
-                            f"&specialty_id={st.session_state['specialty_id']}"
-                            f"&attending_name={safe_att}"
-                            f"&draft_id={draft_id}"
-                        )
-                    except ConnectionError as exc:
-                        show_gs_error(exc)
+    else:  # _mode == "self"
+        if st.button("🔗 Generate Pre-Filled Magic Link for Attending", type="primary", width="stretch"):
+            if not _assessment_has_value():
+                st.warning("Please provide at least one rating or comment before generating a link.")
+            else:
+                try:
+                    st.session_state["current_case_id"] = _save_own_case("Self-Assessment")
+                    st.session_state["last_assessment_type"] = "Self-Assessment"
+                    draft_id = save_draft(
+                        resident_email=st.session_state["resident"],
+                        date=st.session_state["date"],
+                        specialty_id=st.session_state["specialty_id"],
+                        procedure_id=st.session_state["procedure_id"],
+                        attending_id=st.session_state["attending_id"],
+                        scores_dict=st.session_state["scores"],
+                        case_complexity=st.session_state["case_complexity"],
+                        case_preparation=st.session_state["case_preparation"],
+                        overall_performance=st.session_state["overall_performance"],
+                        notes=st.session_state.get("notes", ""),
+                        improve=st.session_state.get("improve", ""),
+                        how=st.session_state.get("how", ""),
+                    )
+                    _att_match = atnd_df[atnd_df["attending_id"].astype(str).str.strip()
+                                          == str(st.session_state.get("attending_id", "")).strip()]
+                    safe_att = _att_match["attending_name"].values[0].replace(" ", "_") if len(_att_match) > 0 else "Unknown"
+                    base_url = st.secrets.get("APP_BASE_URL", "https://procedurepassport.streamlit.app")
+                    st.session_state["generated_magic_link"] = (
+                        f"{base_url}/?mode=attending"
+                        f"&resident={st.session_state['resident']}"
+                        f"&procedure_id={st.session_state['procedure_id']}"
+                        f"&specialty_id={st.session_state['specialty_id']}"
+                        f"&attending_name={safe_att}"
+                        f"&draft_id={draft_id}"
+                    )
+                except ConnectionError as exc:
+                    show_gs_error(exc)
 
-    if st.session_state.get("generated_magic_link"):
-        st.success("✅ Your self-assessment was saved, and a pre-filled link is ready for your attending:")
-        st.code(st.session_state["generated_magic_link"], language="text")
-        st.caption("On mobile: tap the link once for the copy button to appear. "
-                   "The attending can review and adjust every field before submitting.")
+        if st.session_state.get("generated_magic_link"):
+            st.success("✅ Your self-assessment was saved, and a pre-filled link is ready for your attending:")
+            st.code(st.session_state["generated_magic_link"], language="text")
+            st.caption("On mobile: tap the link once for the copy button to appear. "
+                       "The attending can review and adjust every field before submitting.")
 
 
 # ════════════════════════════════════════════════════════════
@@ -1523,6 +1555,7 @@ elif page == "dashboard":
         st.markdown(f"**Preparation:** {st.session_state.get('case_preparation', '—')}")
     with meta_col2:
         st.markdown(f"**Overall Performance:** {st.session_state.get('overall_performance', '—')}")
+        st.markdown(f"**Basis:** {st.session_state.get('last_assessment_type', '—')}")
 
     if st.session_state.get("improve", "").strip() or st.session_state.get("how", "").strip():
         st.markdown(
