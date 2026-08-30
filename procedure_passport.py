@@ -1930,7 +1930,7 @@ elif page == "comments":
 .comments-tbl th {background:var(--secondary-background-color);padding:8px 10px;
     text-align:left;border-bottom:2px solid #ccc;font-weight:600;}
 .comments-tbl td {padding:8px 10px;vertical-align:top;border-bottom:1px solid var(--secondary-background-color);}
-.comments-tbl td.date-col {white-space:nowrap;}
+.comments-tbl td.date-col, .comments-tbl td.attending-col {white-space:nowrap;}
 .comments-tbl td.comments-col {white-space:pre-wrap;word-break:break-word;min-width:260px;}
 </style>""", unsafe_allow_html=True)
 
@@ -1940,7 +1940,7 @@ elif page == "comments":
                 f"<tr>"
                 f"<td class='date-col'>{html.escape(str(r['Date']))}</td>"
                 f"<td>{html.escape(str(r['Procedure']))}</td>"
-                f"<td>{html.escape(str(r['Attending']))}</td>"
+                f"<td class='attending-col'>{html.escape(str(r['Attending']))}</td>"
                 f"<td class='comments-col'>{html.escape(str(r['Comments'])).replace(chr(10), '<br>')}</td>"
                 f"</tr>"
             )
