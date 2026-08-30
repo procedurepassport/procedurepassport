@@ -1869,17 +1869,34 @@ elif page == "comments":
     ]
 
     def _build_comments(row) -> str:
-        """The Comments column: the "In order to improve..." sentence (if
-        either field was answered), followed by the free-text notes."""
+        """Plain-text Comments value (used for the Excel export): the
+        "In order to improve..." sentence (if either field was answered),
+        followed by the free-text notes."""
         imp = row["improve"].strip()
         how = row["how"].strip()
         parts = []
         if imp or how:
-            parts.append(f"In order to improve {imp or '(blank)'}, do this: {how or '(blank)'}.")
+            parts.append(f"In order to improve {imp or '(blank)'}.\nDo this: {how or '(blank)'}.")
         if row["notes"].strip():
             parts.append(row["notes"].strip())
         return "\n\n".join(parts)
 
+    def _build_comments_html(row) -> str:
+        """HTML Comments value for the on-screen table: the resident's
+        improve/how answers are underlined, and "Do this:" starts as its
+        own sentence on a new line."""
+        imp = row["improve"].strip()
+        how = row["how"].strip()
+        parts = []
+        if imp or how:
+            imp_html = f"<u>{html.escape(imp)}</u>" if imp else "(blank)"
+            how_html = f"<u>{html.escape(how)}</u>" if how else "(blank)"
+            parts.append(f"In order to improve {imp_html}.<br>Do this: {how_html}.")
+        if row["notes"].strip():
+            parts.append(html.escape(row["notes"].strip()).replace(chr(10), "<br>"))
+        return "<br><br>".join(parts)
+
+    res_cases["comments_html"] = res_cases.apply(_build_comments_html, axis=1)
     res_cases["notes"] = res_cases.apply(_build_comments, axis=1)
 
     if res_cases.empty:
@@ -1902,10 +1919,11 @@ elif page == "comments":
             "procedure_name": "Procedure",
             "attending_name": "Attending",
             "notes":          "Comments",
+            "comments_html":  "Comments_html",
         })
         # Fix 1: format dates as MM-DD-YYYY — sort by datetime first, then format
         merged["_date_sort"] = pd.to_datetime(merged["Date"], errors="coerce")
-        merged = merged[["Date", "Procedure", "Attending", "Comments", "_date_sort"]].sort_values("_date_sort", ascending=False).drop(columns=["_date_sort"])
+        merged = merged[["Date", "Procedure", "Attending", "Comments", "Comments_html", "_date_sort"]].sort_values("_date_sort", ascending=False).drop(columns=["_date_sort"])
         merged["Date"] = merged["Date"].apply(fmt_date)
 
         st.caption("💡 Tip: To screenshot the full table — on mobile use print preview; on desktop use File > Print (Cmd+P / Ctrl+P), then adjust the scale percentage down until all columns fit on one page before screenshotting.")
@@ -1943,7 +1961,7 @@ elif page == "comments":
                 f"<td class='date-col'>{html.escape(str(r['Date']))}</td>"
                 f"<td class='procedure-col'>{html.escape(str(r['Procedure']))}</td>"
                 f"<td class='attending-col'>{html.escape(str(r['Attending']))}</td>"
-                f"<td class='comments-col'>{html.escape(str(r['Comments'])).replace(chr(10), '<br>')}</td>"
+                f"<td class='comments-col'>{r['Comments_html']}</td>"
                 f"</tr>"
             )
         st.markdown(
@@ -2005,7 +2023,7 @@ elif page == "comments":
 
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            merged.to_excel(writer, index=False, sheet_name="Comments")
+            merged.drop(columns=["Comments_html"]).to_excel(writer, index=False, sheet_name="Comments")
         st.download_button(
             label="📥 Download as Excel",
             data=output.getvalue(),
