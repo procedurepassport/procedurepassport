@@ -579,6 +579,27 @@ def _header_max(text: str) -> float:
         return 1.6
 
 
+def header_break_before_for(core: str, name: str) -> str:
+    """Join a header's core text with "for {name}", replacing every
+    space with a non-breaking one except the single space right before
+    "for" — so if page_header()'s mobile 2-line allowance (see its own
+    fit script) ever does need to wrap this header, the break can only
+    land right before "for ...", never mid-procedure-name or
+    mid-resident-name."""
+    nb = " "
+    return f"{core.replace(' ', nb)} for{nb}{name.replace(' ', nb)}"
+
+
+def label_break_after_for(prefix: str, name: str) -> str:
+    """Join "{prefix} for {name}", replacing every space with a
+    non-breaking one except the single space right after "for" — for
+    labels like the Step-Level Ratings expander's, where a needed wrap
+    should land there instead of splitting the prefix phrase or the
+    procedure name itself."""
+    nb = " "
+    return f"{prefix.replace(' ', nb)}{nb}for {name.replace(' ', nb)}"
+
+
 def page_header(text: str, tier_text: str | None = None) -> None:
     """Render a page's main H1 header, then measure its actual rendered
     width in the browser and scale the font to exactly fill the
@@ -626,9 +647,22 @@ def page_header(text: str, tier_text: str | None = None) -> None:
                 var natural = el.scrollWidth;
                 el.style.display = '';
                 el.style.whiteSpace = '';
-                var finalPx = natural <= containerWidth
+                // On a narrow (mobile) screen, let the header wrap onto
+                // its second line — already permitted by the CSS's own
+                // -webkit-line-clamp: 2 — rather than always shrinking
+                // to fit on one: a two-line header at a readable size
+                // beats a one-line header shrunk down illegibly small.
+                // Budgeting 2x the container's width is an approximation
+                // (assumes the text splits into two roughly-equal-width
+                // lines at a word boundary, same as the 1-line case
+                // already approximates with its own 0.96 fudge factor);
+                // anything that still overflows falls to the line-clamp's
+                // own ellipsis. Desktop keeps the original one-line fit.
+                var allowedLines = window.parent.innerWidth <= 600 ? 2 : 1;
+                var budget = containerWidth * allowedLines;
+                var finalPx = natural <= budget
                     ? maxPx
-                    : Math.max(1, maxPx * (containerWidth / natural) * 0.96);
+                    : Math.max(1, maxPx * (budget / natural) * 0.96);
                 el.style.fontSize = finalPx + 'px';
                 doc.documentElement.style.setProperty(
                     '--pp-substep-font', (finalPx * 0.75) + 'px'
@@ -1826,7 +1860,7 @@ elif page == "assessment":
     # into a smaller ceiling; the fit script still measures and shrinks
     # the full displayed text (name included) if it doesn't actually fit.
     page_header(
-        f"📝 {_proc_name} Assessment for {st.session_state['resident_name']}",
+        header_break_before_for(f"📝 {_proc_name} Assessment", st.session_state["resident_name"]),
         tier_text=f"📝 {_proc_name} Assessment",
     )
     assessment_instructions_note()
@@ -1894,7 +1928,11 @@ elif page == "assessment":
                 key="assess_preparation",
             )
 
-    with st.expander(f"Step-Level Ratings for {_proc_name}", expanded=False, key="step_ratings_expander_resident"):
+    with st.expander(
+        label_break_after_for("Step-Level Ratings", _proc_name),
+        expanded=False,
+        key="step_ratings_expander_resident",
+    ):
         # Case Complexity leads the Step-Level Ratings section, then each
         # procedure step in order.
         _cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
@@ -2959,7 +2997,7 @@ elif page == "attending_assessment":
         _resident_display_name = resident_email
 
     page_header(
-        f"📝 {_att_proc_name} Assessment for {_resident_display_name}",
+        header_break_before_for(f"📝 {_att_proc_name} Assessment", _resident_display_name),
         tier_text=f"📝 {_att_proc_name} Assessment",
     )
     assessment_instructions_note()
@@ -3053,7 +3091,11 @@ elif page == "attending_assessment":
     scores: dict = {}
     _draft_scores = _d.get("scores") or {}
     _draft_resolved_scores: dict = {}
-    with st.expander(f"Step-Level Ratings for {_att_proc_name}", expanded=False, key="step_ratings_expander_attending"):
+    with st.expander(
+        label_break_after_for("Step-Level Ratings", _att_proc_name),
+        expanded=False,
+        key="step_ratings_expander_attending",
+    ):
         # Case Complexity leads the Step-Level Ratings section, then each
         # procedure step in order.
         case_complexity = st.selectbox(
