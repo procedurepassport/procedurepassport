@@ -579,15 +579,14 @@ def _header_max(text: str) -> float:
         return 1.6
 
 
-def header_break_before_for(core: str, name: str) -> str:
-    """Join a header's core text with "for {name}", replacing every
-    space with a non-breaking one except the single space right before
-    "for" — so if page_header()'s mobile 2-line allowance (see its own
-    fit script) ever does need to wrap this header, the break can only
-    land right before "for ...", never mid-procedure-name or
-    mid-resident-name."""
+def header_break_before(prefix: str, suffix: str) -> str:
+    """Join "{prefix} {suffix}", replacing every space with a
+    non-breaking one except the single space between them — so if
+    page_header()'s mobile 2-line allowance (see its own fit script)
+    ever does need to wrap this header, the break can only land right
+    at that boundary, never mid-word within either part."""
     nb = " "
-    return f"{core.replace(' ', nb)} for{nb}{name.replace(' ', nb)}"
+    return f"{prefix.replace(' ', nb)} {suffix.replace(' ', nb)}"
 
 
 def label_break_after_for(prefix: str, name: str) -> str:
@@ -662,7 +661,7 @@ def page_header(text: str, tier_text: str | None = None) -> None:
                 var containerWidth = wrap.clientWidth;
                 if (!containerWidth) return;
                 var fullText = el.textContent;
-                // header_break_before_for()/label_break_after_for() (see
+                // header_break_before()/label_break_after_for() (see
                 // their Python definitions) build some headers with
                 // exactly one regular, breakable space and non-breaking
                 // spaces (nbsp) everywhere else, marking one deliberate
@@ -1884,7 +1883,7 @@ elif page == "assessment":
     # into a smaller ceiling; the fit script still measures and shrinks
     # the full displayed text (name included) if it doesn't actually fit.
     page_header(
-        header_break_before_for(f"📝 {_proc_name} Assessment", st.session_state["resident_name"]),
+        header_break_before(f"📝 {_proc_name}", f"Assessment for {st.session_state['resident_name']}"),
         tier_text=f"📝 {_proc_name} Assessment",
     )
     assessment_instructions_note()
@@ -3021,7 +3020,7 @@ elif page == "attending_assessment":
         _resident_display_name = resident_email
 
     page_header(
-        header_break_before_for(f"📝 {_att_proc_name} Assessment", _resident_display_name),
+        header_break_before(f"📝 {_att_proc_name}", f"Assessment for {_resident_display_name}"),
         tier_text=f"📝 {_att_proc_name} Assessment",
     )
     assessment_instructions_note()
