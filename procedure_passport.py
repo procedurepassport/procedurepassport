@@ -2944,7 +2944,7 @@ elif page == "attending_assessment":
     _accept_with_changes = False
     if _draft:
         st.markdown("---")
-        st.markdown("**Since this form was pre-filled from the resident's self-assessment, please confirm:**")
+        st.markdown("**This form was pre-filled from the resident's self-assessment, please confirm:**")
         _accept_no_changes = st.checkbox(
             "No changes. Accept Resident Self-Assessment", key="assess_accept_no_changes"
         )
