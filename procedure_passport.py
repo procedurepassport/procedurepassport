@@ -1128,11 +1128,13 @@ button p {
 /* The two dividers around this section still carry Streamlit's normal
    ~32px/48px vertical rhythm above/below (each element's own default
    spacing plus the page's inter-element gap) — pull the section's
-   outer wrapper up/down with negative margins so it sits snug between
-   the two lines instead of floating with mismatched gaps. */
+   outer wrapper up/down with negative margins, unevenly (-16/-32
+   rather than a flat -24/-24), so the section actually sits centered
+   between the two lines (equal ~16px gaps to each) instead of just
+   snug with mismatched gaps. */
 [data-testid="stLayoutWrapper"]:has(> .st-key-assess_improve_how) {
-    margin-top: -24px !important;
-    margin-bottom: -24px !important;
+    margin-top: -16px !important;
+    margin-bottom: -32px !important;
 }
 /* Same idea for the Overall/Preparation row (Case Complexity now
    lives inside the Step-Level Ratings expander below): its default
@@ -2830,11 +2832,6 @@ elif page == "attending_assessment":
         st.info("📋 This form has been pre-filled from the resident's self-assessment. "
                  "Review and adjust anything before submitting.")
 
-    # A little extra breathing room above the divider — above the header
-    # in the blank form (no info box), above the "pre-filled" notice in
-    # the self-assess form — before the "In order to improve this:"
-    # section below.
-    st.markdown('<div style="height: 1rem;"></div>', unsafe_allow_html=True)
     st.markdown("---")
 
     steps = steps_df[steps_df["procedure_id"] == procedure_id].sort_values("step_order")
