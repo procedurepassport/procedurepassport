@@ -1233,14 +1233,17 @@ button p {
     margin-top: -8px !important;
     margin-bottom: 16px !important;
 }
-/* Step-Level Ratings expander: its default gap to the next field
-   below (Development/Improvement/Feed-Forward) was a tight 16px —
-   bump it to a full 32px. The key class lands directly on this
-   expander's own wrapper (unlike a plain st.container), so no
+/* Step-Level Ratings expander: a divider now sits between it and
+   Development/Improvement/Feed-Forward below, so its default ~48px
+   gap to that divider needs pulling in — to 32px, matching the
+   divider's own default gap to the field below it, for a symmetric,
+   deliberate-looking gap on both sides of the line instead of the
+   default's uneven ~48px/32px split. The key class lands directly on
+   this expander's own wrapper (unlike a plain st.container), so no
    :has() indirection is needed here. */
 .st-key-step_ratings_expander_resident,
 .st-key-step_ratings_expander_attending {
-    margin-bottom: 16px !important;
+    margin-bottom: -16px !important;
 }
 /* Start page: "Assess Together", "Self-Assessment", and "Blank
    Magic-Link for Attending" all get the same white background /
@@ -1898,6 +1901,8 @@ elif page == "assessment":
                 index=RATING_OPTIONS.index(current) if current in RATING_OPTIONS else 0,
                 key=f"score_{step_id}",
             )
+
+    st.markdown("---")
 
     st.session_state["notes"] = st.text_area(
         "Development / Improvement / Feed-Forward", st.session_state.get("notes", ""), key="assess_notes"
@@ -3046,6 +3051,8 @@ elif page == "attending_assessment":
             scores[step_id] = st.selectbox(
                 step_name, RATING_OPTIONS, index=_step_idx, key=f"att_score_{step_id}"
             )
+
+    st.markdown("---")
 
     notes = st.text_area(
         "Development / Improvement / Feed-Forward (optional)",
