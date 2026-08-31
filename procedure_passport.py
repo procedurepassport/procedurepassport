@@ -892,6 +892,16 @@ button p {
     font-size: var(--pp-substep-font, 1.3125rem);
     font-weight: 600;
 }
+/* "Click to Expand" hint on its own line under that label, at a third
+   of its size — a generated ::after (rather than a second line of real
+   text) since st.expander's label is a single inline markdown string. */
+.st-key-step_ratings_expander_resident summary [data-testid="stMarkdownContainer"] p::after,
+.st-key-step_ratings_expander_attending summary [data-testid="stMarkdownContainer"] p::after {
+    content: "Click to Expand";
+    display: block;
+    font-size: calc(var(--pp-substep-font, 1.3125rem) / 3);
+    font-weight: normal;
+}
 /* Main page headers: font-size is set by page_header()'s injected script
    after measuring the real rendered text width, so it exactly fills the
    container. This is the CSS-only fallback/safety net (script disabled,
