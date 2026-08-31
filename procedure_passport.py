@@ -615,6 +615,40 @@ def label_break_after_for(prefix: str, name: str) -> str:
     return f"{protected_prefix}{nb}for {protected_name}"
 
 
+def suppress_mobile_keyboard(*keys: str) -> None:
+    """Set inputmode="none" on these st.selectbox widgets' underlying
+    <input> elements, so tapping one to open its dropdown doesn't also
+    pop up the on-screen keyboard on mobile — they're pick-one-from-a-
+    list controls, not free-text fields anyone needs to type into. A
+    MutationObserver re-applies it if Streamlit re-renders the input
+    (e.g. after a selection), since a plain one-time pass would only
+    catch whatever's in the DOM at that instant."""
+    selectors = ", ".join(
+        f'.st-key-{key} [data-testid="stSelectbox"] input' for key in keys
+    )
+    st.iframe(
+        f"""
+        <script>
+        (function() {{
+            var doc = window.parent.document;
+            function apply() {{
+                doc.querySelectorAll('{selectors}').forEach(function(el) {{
+                    el.setAttribute('inputmode', 'none');
+                }});
+            }}
+            apply();
+            if (window.parent.MutationObserver) {{
+                new window.parent.MutationObserver(apply).observe(doc.body, {{
+                    childList: true, subtree: true
+                }});
+            }}
+        }})();
+        </script>
+        """,
+        height=1,
+    )
+
+
 def page_header(text: str, tier_text: str | None = None) -> None:
     """Render a page's main H1 header, then measure its actual rendered
     width in the browser and scale the font to exactly fill the
@@ -1811,8 +1845,12 @@ elif page == "start":
     attending = st.selectbox(
         "Attending",
         [_CHOOSE_ATT] + sorted(atnd_map.keys(), key=lambda n: n.split()[-1] if n.split() else n),
+        key="start_attending_select",
     )
-    procedure = st.selectbox("Procedure", [_CHOOSE_PROC] + _proc_options)
+    procedure = st.selectbox(
+        "Procedure", [_CHOOSE_PROC] + _proc_options, key="start_procedure_select"
+    )
+    suppress_mobile_keyboard("start_attending_select", "start_procedure_select")
     case_date = st.date_input("Date", st.session_state["date"])
 
     procedure_chosen = procedure != _CHOOSE_PROC
