@@ -1503,13 +1503,25 @@ elif page == "start":
     proc_map = dict(zip(procs["procedure_name"], procs["procedure_id"]))
     atnd_map = dict(zip(atnds["attending_name"], atnds["attending_id"]))
 
-    procedure = st.selectbox("Procedure", sorted(proc_map.keys()))
-    attending = st.selectbox("Attending", sorted(atnd_map.keys(), key=lambda n: n.split()[-1] if n.split() else n))
+    _CHOOSE_PROC = "Choose Procedure"
+    _CHOOSE_ATT  = "Choose Attending"
+
+    procedure = st.selectbox("Procedure", [_CHOOSE_PROC] + sorted(proc_map.keys()))
+    attending = st.selectbox(
+        "Attending",
+        [_CHOOSE_ATT] + sorted(atnd_map.keys(), key=lambda n: n.split()[-1] if n.split() else n),
+    )
     case_date = st.date_input("Date", st.session_state["date"])
 
-    st.session_state["procedure_id"] = proc_map[procedure]
-    st.session_state["attending_id"] = atnd_map[attending]
+    procedure_chosen = procedure != _CHOOSE_PROC
+    attending_chosen = attending != _CHOOSE_ATT
+
+    st.session_state["procedure_id"] = proc_map[procedure] if procedure_chosen else None
+    st.session_state["attending_id"] = atnd_map[attending] if attending_chosen else None
     st.session_state["date"]         = case_date
+
+    if not (procedure_chosen and attending_chosen):
+        st.info("Choose a procedure and an attending to continue.")
 
     st.markdown("---")
 
@@ -1522,21 +1534,23 @@ elif page == "start":
         st.session_state["assessment_mode"]      = mode
         go_to("assessment")
 
+    _selection_incomplete = not (procedure_chosen and attending_chosen)
+
     # Self-Assess's label is the longest of the three, so give it more of
     # the row's width and take it from the other two — fit_all_button_labels()
     # still shrinks per-button as a backstop, but this keeps all three
     # legible at typical widths instead of relying on that shrink alone.
     _start_cols = st.columns([1] if is_admin else [0.85, 1.3, 0.85])
     with _start_cols[0]:
-        if st.button("Assess Together (Resident + Attending)", type="primary", width="stretch", key="start_together_btn"):
+        if st.button("Assess Together (Resident + Attending)", type="primary", width="stretch", key="start_together_btn", disabled=_selection_incomplete):
             _reset_and_start("together")
 
     if not is_admin:
         with _start_cols[1]:
-            if st.button("Self-Assess 🔗 Pre-Filled Magic Link for Attending", width="stretch", key="start_self_btn"):
+            if st.button("Self-Assess 🔗 Pre-Filled Magic Link for Attending", width="stretch", key="start_self_btn", disabled=_selection_incomplete):
                 _reset_and_start("self")
         with _start_cols[2]:
-            if st.button("🔗 Blank Magic-Link for Attending", width="stretch", key="start_blank_link_btn"):
+            if st.button("🔗 Blank Magic-Link for Attending", width="stretch", key="start_blank_link_btn", disabled=_selection_incomplete):
                 _att_match = atnds[atnds["attending_id"].astype(str).str.strip()
                                     == str(st.session_state.get("attending_id", "")).strip()]
                 safe_att = _att_match["attending_name"].values[0].replace(" ", "_") if len(_att_match) > 0 else "Unknown"
