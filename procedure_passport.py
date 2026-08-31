@@ -579,24 +579,40 @@ def _header_max(text: str) -> float:
         return 1.6
 
 
+def _protect_from_wrapping(text: str) -> str:
+    """Replace every space and hyphen with its non-breaking Unicode
+    counterpart, so nothing inside `text` offers the browser a place
+    to wrap — a plain hyphen is a valid line-break opportunity on its
+    own by default (independent of spaces), which let a procedure name
+    like "Robotic-Assisted ..." break there instead of only at a
+    forced-break helper's designated point."""
+    return text.replace(" ", " ").replace("-", "‑")
+
+
 def header_break_before(prefix: str, suffix: str) -> str:
-    """Join "{prefix} {suffix}", replacing every space with a
-    non-breaking one except the single space between them — so if
-    page_header()'s mobile 2-line allowance (see its own fit script)
-    ever does need to wrap this header, the break can only land right
-    at that boundary, never mid-word within either part."""
-    nb = " "
-    return f"{prefix.replace(' ', nb)} {suffix.replace(' ', nb)}"
+    """Join "{prefix} {suffix}", protecting every space and hyphen in
+    each part from wrapping except the single regular space between
+    them — so if page_header()'s mobile 2-line allowance (see its own
+    fit script) ever does need to wrap this header, the break can only
+    land right at that boundary, never mid-word within either part."""
+    return f"{_protect_from_wrapping(prefix)} {_protect_from_wrapping(suffix)}"
 
 
 def label_break_after_for(prefix: str, name: str) -> str:
-    """Join "{prefix} for {name}", replacing every space with a
-    non-breaking one except the single space right after "for" — for
-    labels like the Step-Level Ratings expander's, where a needed wrap
-    should land there instead of splitting the prefix phrase or the
-    procedure name itself."""
+    """Join "{prefix} for {name}": the prefix phrase's own spaces
+    and the one right after "for" are non-breaking, so "{prefix} for"
+    always stays together and the wrap (if needed) lands right after
+    "for" — but {name}'s own spaces stay regular, so a long procedure
+    name can still wrap across further lines on its own instead of
+    being forced onto one (potentially illegibly small) line. Hyphens
+    are protected everywhere regardless (in both parts), since a plain
+    one is a valid line-break point on its own, independent of spaces
+    (e.g. "Robotic-Assisted ..." would otherwise break there)."""
     nb = " "
-    return f"{prefix.replace(' ', nb)}{nb}for {name.replace(' ', nb)}"
+    nbh = "‑"
+    protected_prefix = prefix.replace("-", nbh).replace(" ", nb)
+    protected_name = name.replace("-", nbh)
+    return f"{protected_prefix}{nb}for {protected_name}"
 
 
 def page_header(text: str, tier_text: str | None = None) -> None:
@@ -1088,13 +1104,21 @@ button p {
     font-size: clamp(0.7rem, 8.5cqw, 0.875rem);
 }
 /* Step-Level Ratings expander: label styled like a smaller page header.
-   --pp-substep-font is set by page_header()'s injected script (0.75x the
-   main header's actual measured font-size) so this always renders
-   smaller than that page's main header. */
+   --pp-substep-font sets its size (on desktop, page_header()'s injected
+   script sets it to 0.75x the main header's own measured size; on
+   mobile it's pinned to a fixed floor — see the media query above —
+   independent of the header entirely). white-space: normal overrides
+   Streamlit's own default (nowrap + ellipsis) for expander summary
+   labels, which is otherwise sized for the typical short, single-line
+   case — label_break_after_for() keeps "Step-Level Ratings for"
+   together as a unit, but leaves the procedure name's own spaces
+   breakable, so a long one wraps across as many lines as it needs
+   instead of either truncating or being squeezed onto one. */
 .st-key-step_ratings_expander_resident summary [data-testid="stMarkdownContainer"] p,
 .st-key-step_ratings_expander_attending summary [data-testid="stMarkdownContainer"] p {
     font-size: var(--pp-substep-font, 1.3125rem);
     font-weight: 600;
+    white-space: normal !important;
 }
 /* "Click to Expand" hint on its own line under that label, at 3/4 of
    its size — a generated ::after (rather than a second line of real
