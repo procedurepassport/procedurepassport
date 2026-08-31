@@ -966,27 +966,25 @@ button p {
     align-items: center !important;
     align-self: center !important;
 }
-/* Assessment page field labels (Preparation, Case Complexity, Overall
-   Performance Rating, Development/Improvement/Feed-Forward) and every
-   step label inside the Step-Level Ratings expander: sized relative to
-   that expander's own header (--pp-substep-font, itself 0.75x the
-   page's main header), so the whole page scales together as one
-   hierarchy with window width. */
+/* Assessment page field labels (Preparation, Overall Performance Rating,
+   Development/Improvement/Feed-Forward) and every label inside the
+   Step-Level Ratings expander (Case Complexity, then each procedure
+   step): sized relative to that expander's own header (--pp-substep-font,
+   itself 0.75x the page's main header), so the whole page scales
+   together as one hierarchy with window width. */
 .st-key-assess_preparation [data-testid="stWidgetLabel"] p,
-.st-key-assess_case_complexity [data-testid="stWidgetLabel"] p,
 .st-key-assess_overall_performance [data-testid="stWidgetLabel"] p,
 .st-key-assess_notes [data-testid="stWidgetLabel"] p,
 .st-key-step_ratings_expander_resident [data-testid="stWidgetLabel"] p,
 .st-key-step_ratings_expander_attending [data-testid="stWidgetLabel"] p {
     font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.75);
 }
-/* Dropdown value text (Preparation, Case Complexity, Overall Performance
-   Rating, and every Step-Level Ratings step): 0.8x its own label's size
-   above, i.e. 0.6x --pp-substep-font overall. The options popup itself
-   renders in a portal under <body>, outside these scoped containers, so
-   it isn't reachable here and keeps its default size. */
+/* Dropdown value text (Preparation, Overall Performance Rating, and every
+   Step-Level Ratings entry incl. Case Complexity): 0.8x its own label's
+   size above, i.e. 0.6x --pp-substep-font overall. The options popup
+   itself renders in a portal under <body>, outside these scoped
+   containers, so it isn't reachable here and keeps its default size. */
 .st-key-assess_preparation [data-testid="stSelectbox"] input,
-.st-key-assess_case_complexity [data-testid="stSelectbox"] input,
 .st-key-assess_overall_performance [data-testid="stSelectbox"] input,
 .st-key-step_ratings_expander_resident [data-testid="stSelectbox"] input,
 .st-key-step_ratings_expander_attending [data-testid="stSelectbox"] input {
@@ -1045,11 +1043,12 @@ button p {
     margin-top: -24px !important;
     margin-bottom: -40px !important;
 }
-/* Same idea for the Overall/Preparation/Case Complexity row: its
-   default gaps to the divider above (32px) and the Step-Level
-   Ratings expander below (16px) weren't equal — pull/push its
-   wrapper so the gap above lands at 24px and the gap below (bumped
-   an extra 8px per feedback that it still looked tighter) at 32px. */
+/* Same idea for the Overall/Preparation row (Case Complexity now
+   lives inside the Step-Level Ratings expander below): its default
+   gaps to the divider above (32px) and the expander below (16px)
+   weren't equal — pull/push its wrapper so the gap above lands at
+   24px and the gap below (bumped an extra 8px per feedback that it
+   still looked tighter) at 32px. */
 [data-testid="stLayoutWrapper"]:has(> .st-key-assess_ratings_row) {
     margin-top: -8px !important;
     margin-bottom: 16px !important;
@@ -1664,7 +1663,7 @@ elif page == "assessment":
     st.markdown("---")
 
     with st.container(key="assess_ratings_row"):
-        _overall_col, _prep_col, _complexity_col = st.columns(3)
+        _overall_col, _prep_col = st.columns(2)
         with _overall_col:
             current_o = st.session_state.get("overall_performance", O_SCORE_OPTIONS[0])
             st.session_state["overall_performance"] = st.selectbox(
@@ -1684,18 +1683,19 @@ elif page == "assessment":
                 index=_cp_idx,
                 key="assess_preparation",
             )
-        with _complexity_col:
-            _cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
-            _cc_default = st.session_state.get("case_complexity", "— Select complexity —")
-            _cc_idx = _cc_opts.index(_cc_default) if _cc_default in _cc_opts else 0
-            st.session_state["case_complexity"] = st.selectbox(
-                "Case Complexity",
-                _cc_opts,
-                index=_cc_idx,
-                key="assess_case_complexity",
-            )
 
     with st.expander(f"Step-Level Ratings for {_proc_name}", expanded=False, key="step_ratings_expander_resident"):
+        # Case Complexity leads the Step-Level Ratings section, then each
+        # procedure step in order.
+        _cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
+        _cc_default = st.session_state.get("case_complexity", "— Select complexity —")
+        _cc_idx = _cc_opts.index(_cc_default) if _cc_default in _cc_opts else 0
+        st.session_state["case_complexity"] = st.selectbox(
+            "Case Complexity",
+            _cc_opts,
+            index=_cc_idx,
+            key="assess_case_complexity",
+        )
         # Fix 6: reverting to "Not Assessed" is supported — "Not Assessed" is index 0
         # in RATING_OPTIONS so the user can always select it from the dropdown.
         for _, row in steps.iterrows():
@@ -2767,7 +2767,7 @@ elif page == "attending_assessment":
     st.markdown("---")
 
     with st.container(key="assess_ratings_row"):
-        _att_overall_col, _att_prep_col, _att_complexity_col = st.columns(3)
+        _att_overall_col, _att_prep_col = st.columns(2)
         with _att_overall_col:
             _att_o_default = _d.get("overall_performance", O_SCORE_OPTIONS[0])
             _att_o_idx = O_SCORE_OPTIONS.index(_att_o_default) if _att_o_default in O_SCORE_OPTIONS else 0
@@ -2778,11 +2778,10 @@ elif page == "attending_assessment":
             _att_cp_default = _d.get("case_preparation", "Not Assessed")
             _att_cp_idx = _att_cp_opts.index(_att_cp_default) if _att_cp_default in _att_cp_opts else 0
             case_preparation = st.selectbox("Preparation", _att_cp_opts, index=_att_cp_idx, key="assess_preparation")
-        with _att_complexity_col:
-            _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
-            _att_cc_default = _d.get("case_complexity", "— Select complexity —")
-            _att_cc_idx = _att_cc_opts.index(_att_cc_default) if _att_cc_default in _att_cc_opts else 0
-            case_complexity = st.selectbox("Case Complexity", _att_cc_opts, index=_att_cc_idx, key="assess_case_complexity")
+
+    _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
+    _att_cc_default = _d.get("case_complexity", "— Select complexity —")
+    _att_cc_idx = _att_cc_opts.index(_att_cc_default) if _att_cc_default in _att_cc_opts else 0
 
     # The resolved (index-0-fallback-aware) starting value for each field —
     # used below to check whether "Changes As Made Above" is actually true,
@@ -2798,6 +2797,11 @@ elif page == "attending_assessment":
     _draft_scores = _d.get("scores") or {}
     _draft_resolved_scores: dict = {}
     with st.expander(f"Step-Level Ratings for {_att_proc_name}", expanded=False, key="step_ratings_expander_attending"):
+        # Case Complexity leads the Step-Level Ratings section, then each
+        # procedure step in order.
+        case_complexity = st.selectbox(
+            "Case Complexity", _att_cc_opts, index=_att_cc_idx, key="assess_case_complexity"
+        )
         for _, row in steps.iterrows():
             step_id   = row["step_id"]
             step_name = row["step_name"]
