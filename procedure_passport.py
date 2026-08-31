@@ -638,31 +638,55 @@ def page_header(text: str, tier_text: str | None = None) -> None:
             var el = wrap.querySelector('.pp-page-header');
             if (!el) return;
             var maxPx = {max_rem} * 16;
+            var nbsp = '\\u00a0';
+            // Measures a string's rendered single-line width at a given
+            // font size via a detached, invisible probe — never touches
+            // el itself, so its real DOM (Streamlit wraps header text in
+            // an anchor-link span) is never disturbed.
+            function measureWidth(str, fontPx) {{
+                var probe = doc.createElement('span');
+                probe.style.position = 'absolute';
+                probe.style.visibility = 'hidden';
+                probe.style.whiteSpace = 'nowrap';
+                probe.style.fontSize = fontPx + 'px';
+                var computed = window.parent.getComputedStyle(el);
+                probe.style.fontFamily = computed.fontFamily;
+                probe.style.fontWeight = computed.fontWeight;
+                probe.textContent = str;
+                doc.body.appendChild(probe);
+                var w = probe.scrollWidth;
+                doc.body.removeChild(probe);
+                return w;
+            }}
             function fit() {{
                 var containerWidth = wrap.clientWidth;
                 if (!containerWidth) return;
-                el.style.whiteSpace = 'nowrap';
-                el.style.display = 'inline-block';
-                el.style.fontSize = maxPx + 'px';
-                var natural = el.scrollWidth;
-                el.style.display = '';
-                el.style.whiteSpace = '';
-                // On a narrow (mobile) screen, let the header wrap onto
-                // its second line — already permitted by the CSS's own
-                // -webkit-line-clamp: 2 — rather than always shrinking
-                // to fit on one: a two-line header at a readable size
-                // beats a one-line header shrunk down illegibly small.
-                // Budgeting 2x the container's width is an approximation
-                // (assumes the text splits into two roughly-equal-width
-                // lines at a word boundary, same as the 1-line case
-                // already approximates with its own 0.96 fudge factor);
-                // anything that still overflows falls to the line-clamp's
-                // own ellipsis. Desktop keeps the original one-line fit.
-                var allowedLines = window.parent.innerWidth <= 600 ? 2 : 1;
-                var budget = containerWidth * allowedLines;
-                var finalPx = natural <= budget
+                var fullText = el.textContent;
+                // header_break_before_for()/label_break_after_for() (see
+                // their Python definitions) build some headers with
+                // exactly one regular, breakable space and non-breaking
+                // spaces (nbsp) everywhere else, marking one deliberate
+                // wrap point. On a narrow (mobile) screen, measure each
+                // side of that point separately and take the wider one —
+                // rather than assuming (as an earlier version of this
+                // script did) that the text splits into two *even*
+                // halves, which let a lopsided split (e.g. a long
+                // procedure name, short resident name) overflow its line
+                // and trigger the CSS's overflow-wrap: break-word
+                // mid-word. Headers without such a point (or on desktop)
+                // measure as one line, same as always.
+                var mobile = window.parent.innerWidth <= 600;
+                var breakIdx = mobile && fullText.indexOf(nbsp) > -1
+                    ? fullText.indexOf(' ') : -1;
+                var widest = breakIdx > -1
+                    ? Math.max(
+                        measureWidth(fullText.slice(0, breakIdx), maxPx),
+                        measureWidth(fullText.slice(breakIdx + 1), maxPx)
+                      )
+                    : measureWidth(fullText, maxPx);
+                var finalPx = widest <= containerWidth
                     ? maxPx
-                    : Math.max(1, maxPx * (budget / natural) * 0.96);
+                    : Math.max(1, maxPx * (containerWidth / widest) * 0.96);
                 el.style.fontSize = finalPx + 'px';
                 doc.documentElement.style.setProperty(
                     '--pp-substep-font', (finalPx * 0.75) + 'px'
