@@ -32,13 +32,19 @@ if (
     and st.session_state.get("page", "login") not in ("attending_confirmation",)
     and not st.session_state.get("_magic_routed")
 ):
-    st.session_state["page"]           = "attending_assessment"
-    st.session_state["resident"]       = query_params.get("resident", "")
-    st.session_state["procedure_id"]   = query_params.get("procedure_id", "")
-    st.session_state["specialty_id"]   = query_params.get("specialty_id", "")
-    st.session_state["attending_name"] = query_params.get("attending_name", "")
-    st.session_state["draft_id"]       = query_params.get("draft_id", "")
-    st.session_state["_magic_routed"]  = True
+    st.session_state["page"]              = "attending_assessment"
+    st.session_state["resident"]          = query_params.get("resident", "")
+    st.session_state["procedure_id"]      = query_params.get("procedure_id", "")
+    st.session_state["specialty_id"]      = query_params.get("specialty_id", "")
+    st.session_state["attending_name"]    = query_params.get("attending_name", "")
+    st.session_state["draft_id"]          = query_params.get("draft_id", "")
+    # Only carried by the blank-link flow (the self-assess/pre-filled flow
+    # gets its date from the draft instead) — the date the resident chose
+    # on the Start page before generating the blank link, attached to the
+    # submission silently; there's no UI on the attending page to view or
+    # edit it.
+    st.session_state["attending_link_date"] = query_params.get("date", "")
+    st.session_state["_magic_routed"]     = True
 
 # ─────────────────────────────────────────────
 # SESSION STATE DEFAULTS
@@ -58,6 +64,7 @@ _defaults: dict = {
     "draft_id":                "",
     "assessment_mode":         "together",  # "together" or "self", set from Start
     "blank_magic_link":        None,   # filled after Generate a Blank Magic Link
+    "attending_link_date":     "",     # resident's chosen date, carried by a blank magic link
     "last_assessment_type":    None,   # "Assessed Together" or "Self-Assessment"
     "login_stage":             "email",  # "email" | "create_password" | "check_password"
     "login_email":             "",
@@ -1666,6 +1673,7 @@ elif page == "start":
                     f"&procedure_id={st.session_state['procedure_id']}"
                     f"&specialty_id={specialty_id}"
                     f"&attending_name={safe_att}"
+                    f"&date={st.session_state['date']}"
                 )
 
     if st.session_state.get("blank_magic_link"):
@@ -2786,10 +2794,6 @@ elif page == "attending_assessment":
     draft_id = st.session_state.get("draft_id", "")
     _draft   = load_draft(draft_id) if draft_id else None
 
-    page_header("📝 Attending Evaluation")
-    if _draft:
-        st.info("📋 This form has been pre-filled from the resident's self-assessment. "
-                 "Review and adjust anything before submitting.")
     try:
         _, proc_df_att, steps_df, _ = load_refs()
     except ConnectionError as exc:
@@ -2800,14 +2804,31 @@ elif page == "attending_assessment":
     _att_proc_rows = proc_df_att.loc[proc_df_att["procedure_id"] == procedure_id, "procedure_name"].values
     _att_proc_name = _att_proc_rows[0] if len(_att_proc_rows) else procedure_id
 
-    st.markdown(
-        f'<div class="pp-card">'
-        f'<b>Resident:</b> {resident_email}<br>'
-        f'<b>Procedure:</b> {_att_proc_name}<br>'
-        f'<b>Attending:</b> {display_attending}'
-        f'</div>',
-        unsafe_allow_html=True,
+    # Resolve the resident's display name for the header, same "...
+    # Assessment for {name}" phrasing the resident's own Assess
+    # Together/Self-Assess page uses, so this page reads as the same
+    # page. The magic link only carries the resident's email, not their
+    # name, so look it up; fall back to the email if that fails.
+    try:
+        _residents_df = read_sheet_df(
+            SHEET_RESIDENTS, expected_cols=["email", "name", "specialty_id", "created_at"]
+        )
+        _resident_match = _residents_df.loc[
+            _residents_df["email"].astype(str).str.strip().str.lower() == resident_email.strip().lower()
+        ]
+        _resident_display_name = (
+            _resident_match["name"].values[0] if len(_resident_match) else resident_email
+        )
+    except ConnectionError:
+        _resident_display_name = resident_email
+
+    page_header(
+        f"📝 {_att_proc_name} Assessment for {_resident_display_name}",
+        tier_text=f"📝 {_att_proc_name} Assessment",
     )
+    if _draft:
+        st.info("📋 This form has been pre-filled from the resident's self-assessment. "
+                 "Review and adjust anything before submitting.")
 
     steps = steps_df[steps_df["procedure_id"] == procedure_id].sort_values("step_order")
     if steps.empty:
@@ -2817,14 +2838,21 @@ elif page == "attending_assessment":
     # Defaults sourced from the draft when this link was pre-filled, else
     # the usual blanks — same fallback pattern the resident's own page uses.
     _d = _draft or {}
-    _default_date = datetime.date.today()
-    if _d.get("date"):
+    # Resident:/Procedure:/Attending:/Date of Procedure used to be shown
+    # here — dropped so this page matches the resident's own assessment
+    # page, which doesn't show them either. The date is no longer
+    # editable by the attending: it comes from the draft (self-assess
+    # flow) or, for a blank link, the date the resident actually chose on
+    # the Start page before generating it (attending_link_date, carried
+    # by the link itself) — falling back to today only if neither is
+    # present (e.g. an old link from before this was added).
+    _date_source = _d.get("date") or st.session_state.get("attending_link_date")
+    case_date = datetime.date.today()
+    if _date_source:
         try:
-            _default_date = datetime.date.fromisoformat(str(_d["date"])[:10])
+            case_date = datetime.date.fromisoformat(str(_date_source)[:10])
         except ValueError:
             pass
-
-    case_date = st.date_input("Date of Procedure", value=_default_date, key="att_case_date")
 
     with st.container(key="assess_improve_how"):
         _att_imp_label_col, _att_imp_input_col = st.columns([2, 6])
