@@ -1014,58 +1014,49 @@ button p {
 .st-key-step_ratings_expander_attending [data-testid="stSelectbox"] input {
     font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.6);
 }
-/* "In order to improve ___, do ___." sentence (feeds the Improve/How
-   columns): flex-align the static text fragments with the two inline
-   text inputs so they sit on one line like a real sentence, and size
-   them to match the Development/Improvement/Feed-Forward label
-   further down the page. The label columns (text fragments) are
-   ratio-sized by st.columns(), which
-   leaves them wider than their actual text — shrink them to their
-   content here so the boxes sit right up against the words instead
-   of floating in leftover column width, and hand that reclaimed
-   space to the two input columns. A small fixed gap (not Streamlit's
-   larger column default) keeps the remaining spacing tight too. */
+/* "In order to improve this:" / "Do this:" — two stacked label+textbox
+   rows, one st.columns() call each but with matching ratios, so the
+   labels' right edges and the text boxes' left edges each line up
+   between the two rows regardless of label text length. Sized to match
+   the Development/Improvement/Feed-Forward label further down the page. */
 .st-key-assess_improve_how [data-testid="stHorizontalBlock"] {
     align-items: center;
     gap: 0.4rem;
 }
-.st-key-assess_improve_how [data-testid="stColumn"]:has([data-testid="stMarkdownContainer"]) {
-    flex: 0 0 auto !important;
-    width: auto !important;
-    min-width: 0 !important;
-}
-.st-key-assess_improve_how [data-testid="stColumn"]:has([data-testid="stTextInput"]) {
-    flex: 1 1 0 !important;
-    width: auto !important;
-    min-width: 100px !important;
+/* The two rows are separate blocks stacked in the container's own
+   vertical flow — tighten Streamlit's default inter-block gap between
+   them so they read as one compact two-line field instead of two
+   loosely related rows. */
+.st-key-assess_improve_how [data-testid="stVerticalBlock"] {
+    gap: 0.3rem;
 }
 /* Streamlit gives stMarkdownContainer a built-in -16px bottom margin
    (its own vertical-rhythm spacing trick). That negative margin
-   collapses this whole column's layout height down to ~10px even
-   though the text still renders at its full ~26px, so the text
-   visually overflows out the bottom of its (collapsed) box — which
-   is what made it look bottom-aligned against the input next to it.
-   Cancel it so the column's box actually matches its text, and the
-   row's align-items:center above can center it correctly. */
+   collapses this column's layout height down to ~10px even though the
+   text still renders at its full ~26px, so the text visually
+   overflowed out the bottom of its (collapsed) box — which is what
+   made it look bottom-aligned against the input next to it. Cancel it
+   so the column's box actually matches its text, and the row's
+   align-items:center above can center it correctly. */
 .st-key-assess_improve_how [data-testid="stMarkdownContainer"] {
     margin-bottom: 0 !important;
 }
-.st-key-assess_improve_how [data-testid="stMarkdownContainer"] p {
+.st-key-assess_improve_how [data-testid="stColumn"]:has([data-testid="stMarkdownContainer"]) [data-testid="stMarkdownContainer"] p {
     margin: 0;
-    white-space: nowrap;
+    text-align: right;
     font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.75);
 }
 .st-key-assess_improve_how [data-testid="stTextInput"] input {
     font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.6);
 }
-/* The two dividers around this row still carry Streamlit's normal
+/* The two dividers around this section still carry Streamlit's normal
    ~32px/48px vertical rhythm above/below (each element's own default
-   spacing plus the page's inter-element gap) — pull the row's outer
-   wrapper up/down with negative margins so it sits snug and centered
-   between the two lines instead of floating with mismatched gaps. */
+   spacing plus the page's inter-element gap) — pull the section's
+   outer wrapper up/down with negative margins so it sits snug between
+   the two lines instead of floating with mismatched gaps. */
 [data-testid="stLayoutWrapper"]:has(> .st-key-assess_improve_how) {
     margin-top: -24px !important;
-    margin-bottom: -40px !important;
+    margin-bottom: -24px !important;
 }
 /* Same idea for the Overall/Preparation row (Case Complexity now
    lives inside the Step-Level Ratings expander below): its default
@@ -1665,10 +1656,10 @@ elif page == "assessment":
     st.markdown("---")
 
     with st.container(key="assess_improve_how"):
-        _imp_cols = st.columns([1.7, 3.1, 0.7, 3.1, 0.3])
-        with _imp_cols[0]:
-            st.markdown("In order to improve")
-        with _imp_cols[1]:
+        _imp_label_col, _imp_input_col = st.columns([2, 6])
+        with _imp_label_col:
+            st.markdown("In order to improve this:")
+        with _imp_input_col:
             st.session_state["improve"] = st.text_input(
                 "What to improve",
                 value=st.session_state.get("improve", ""),
@@ -1676,9 +1667,10 @@ elif page == "assessment":
                 label_visibility="collapsed",
                 placeholder="e.g., suture technique",
             )
-        with _imp_cols[2]:
-            st.markdown(", do this:")
-        with _imp_cols[3]:
+        _how_label_col, _how_input_col = st.columns([2, 6])
+        with _how_label_col:
+            st.markdown("Do this:")
+        with _how_input_col:
             st.session_state["how"] = st.text_input(
                 "How to improve it",
                 value=st.session_state.get("how", ""),
@@ -1686,8 +1678,6 @@ elif page == "assessment":
                 label_visibility="collapsed",
                 placeholder="e.g., practice two-handed knots",
             )
-        with _imp_cols[4]:
-            st.markdown(".")
 
     st.markdown("---")
 
@@ -2764,10 +2754,10 @@ elif page == "attending_assessment":
     case_date = st.date_input("Date of Procedure", value=_default_date, key="att_case_date")
 
     with st.container(key="assess_improve_how"):
-        _att_imp_cols = st.columns([1.7, 3.1, 0.7, 3.1, 0.3])
-        with _att_imp_cols[0]:
-            st.markdown("In order to improve")
-        with _att_imp_cols[1]:
+        _att_imp_label_col, _att_imp_input_col = st.columns([2, 6])
+        with _att_imp_label_col:
+            st.markdown("In order to improve this:")
+        with _att_imp_input_col:
             improve = st.text_input(
                 "What to improve",
                 value=_d.get("improve", ""),
@@ -2775,9 +2765,10 @@ elif page == "attending_assessment":
                 label_visibility="collapsed",
                 placeholder="e.g., suture technique",
             )
-        with _att_imp_cols[2]:
-            st.markdown(", do this:")
-        with _att_imp_cols[3]:
+        _att_how_label_col, _att_how_input_col = st.columns([2, 6])
+        with _att_how_label_col:
+            st.markdown("Do this:")
+        with _att_how_input_col:
             how = st.text_input(
                 "How to improve it",
                 value=_d.get("how", ""),
@@ -2785,8 +2776,6 @@ elif page == "attending_assessment":
                 label_visibility="collapsed",
                 placeholder="e.g., practice two-handed knots",
             )
-        with _att_imp_cols[4]:
-            st.markdown(".")
 
     st.markdown("---")
 
