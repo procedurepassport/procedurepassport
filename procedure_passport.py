@@ -2830,6 +2830,13 @@ elif page == "attending_assessment":
         st.info("📋 This form has been pre-filled from the resident's self-assessment. "
                  "Review and adjust anything before submitting.")
 
+    # A little extra breathing room above the divider — above the header
+    # in the blank form (no info box), above the "pre-filled" notice in
+    # the self-assess form — before the "In order to improve this:"
+    # section below.
+    st.markdown('<div style="height: 1rem;"></div>', unsafe_allow_html=True)
+    st.markdown("---")
+
     steps = steps_df[steps_df["procedure_id"] == procedure_id].sort_values("step_order")
     if steps.empty:
         st.error("This procedure has no defined steps. Please contact the program coordinator.")
