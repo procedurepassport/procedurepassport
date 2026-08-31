@@ -1636,7 +1636,7 @@ elif page == "assessment":
     _proc_rows = proc_df.loc[proc_df["procedure_id"] == st.session_state["procedure_id"], "procedure_name"].values
     _proc_name = _proc_rows[0] if len(_proc_rows) else "Assessment"
     mobile_tip("📱 On mobile: tap the >> icon at top left to view the sidebar.")
-    page_header(f"📝 {_proc_name} Assessment")
+    page_header(f"📝 {_proc_name} Assessment for {st.session_state['resident_name']}")
 
     # Back button placed at the top, clearly separated from Finish (Fix 7)
     with st.container(key="assess_top_nav"):
