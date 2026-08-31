@@ -902,6 +902,13 @@ button p {
     font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.75);
     font-weight: normal;
 }
+/* Green border while the Step-Level Ratings expander is collapsed, to
+   draw the eye to it; gone once it's opened (the native <details>
+   element's own "open" attribute drives this, no JS needed here). */
+.st-key-step_ratings_expander_resident details:not([open]),
+.st-key-step_ratings_expander_attending details:not([open]) {
+    border: 2px solid #2E7D32 !important;
+}
 /* Main page headers: font-size is set by page_header()'s injected script
    after measuring the real rendered text width, so it exactly fills the
    container. This is the CSS-only fallback/safety net (script disabled,
