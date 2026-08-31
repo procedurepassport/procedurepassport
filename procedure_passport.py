@@ -1046,6 +1046,13 @@ button p {
     text-align: right;
     font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.75);
 }
+/* "In order to improve this:" (the first row's label) sits flush left
+   instead — everything else (its row's textbox, the second row's
+   right-aligned "Do this:" label, and the two textboxes' shared left
+   edge) is unaffected. */
+.st-key-assess_improve_how [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stMarkdownContainer"] p {
+    text-align: left !important;
+}
 .st-key-assess_improve_how [data-testid="stTextInput"] input {
     font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.6);
 }
