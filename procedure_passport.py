@@ -1899,14 +1899,9 @@ elif page == "assessment":
                         f"&attending_name={safe_att}"
                         f"&draft_id={draft_id}"
                     )
+                    go_to("magic_link_ready")
                 except ConnectionError as exc:
                     show_gs_error(exc)
-
-        if st.session_state.get("generated_magic_link"):
-            st.success("✅ Your self-assessment was saved, and a pre-filled link is ready for your attending:")
-            st.code(st.session_state["generated_magic_link"], language="text")
-            st.caption("On mobile: tap the link once for the copy button to appear. "
-                       "The attending can review and adjust every field before submitting.")
 
 
 # ════════════════════════════════════════════════════════════
@@ -1948,6 +1943,35 @@ elif page == "dashboard":
     if st.session_state.get("notes", "").strip():
         st.markdown("**Comments:**")
         st.info(st.session_state["notes"])
+
+    st.markdown("---")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("⬅️ Back to Assessment"):
+            go_to("assessment")
+    with col2:
+        if st.button("🏠 Home"):
+            go_to("home")
+    with col3:
+        if st.button("➕ New Assessment", type="primary"):
+            go_to("start")
+
+
+# ════════════════════════════════════════════════════════════
+# PAGE: MAGIC LINK READY (after a self-assessment generates one)
+# ════════════════════════════════════════════════════════════
+elif page == "magic_link_ready":
+    if not st.session_state.get("generated_magic_link"):
+        st.error("No magic link found. Please generate one from the assessment page.")
+        if st.button("⬅️ Back to Assessment"):
+            go_to("assessment")
+        st.stop()
+
+    page_header("🔗 Magic Link Ready")
+    st.success("✅ Your self-assessment was saved, and a pre-filled link is ready for your attending:")
+    st.code(st.session_state.get("generated_magic_link", ""), language="text")
+    st.caption("On mobile: tap the link once for the copy button to appear. "
+               "The attending can review and adjust every field before submitting.")
 
     st.markdown("---")
     col1, col2, col3 = st.columns(3)
