@@ -572,7 +572,7 @@ def _header_max(text: str) -> float:
         return 1.6
 
 
-def page_header(text: str) -> None:
+def page_header(text: str, tier_text: str | None = None) -> None:
     """Render a page's main H1 header, then measure its actual rendered
     width in the browser and scale the font to exactly fill the
     container — no leftover right-hand margin — while never exceeding
@@ -584,8 +584,15 @@ def page_header(text: str) -> None:
     gap for shorter/narrower strings. Measuring the actual rendered
     width removes that guesswork entirely, and also sets
     --pp-substep-font so the Step-Level Ratings expander label (see the
-    CSS rule using it) stays proportionally smaller than this header."""
-    max_rem = _header_max(text)
+    CSS rule using it) stays proportionally smaller than this header.
+
+    tier_text: text to base _header_max()'s length tier on, if different
+    from what's actually displayed — e.g. a variable suffix (a resident's
+    name) that shouldn't itself push the header into a smaller ceiling
+    tier just for being long. The real fit still measures the full
+    displayed text's actual rendered width, so it still shrinks further
+    than that ceiling if the full text doesn't fit."""
+    max_rem = _header_max(tier_text if tier_text is not None else text)
     escaped = html.escape(text)
     st.markdown(
         f'<div class="pp-page-header-wrap"><h1 class="pp-page-header">'
@@ -1636,13 +1643,15 @@ elif page == "assessment":
     _proc_rows = proc_df.loc[proc_df["procedure_id"] == st.session_state["procedure_id"], "procedure_name"].values
     _proc_name = _proc_rows[0] if len(_proc_rows) else "Assessment"
     mobile_tip("📱 On mobile: tap the >> icon at top left to view the sidebar.")
-    # Resident name as a separate small caption rather than appended to the
-    # header text itself — the header's own length drives _header_max()'s
-    # font-size ceiling and, through page_header()'s fit script,
-    # --pp-substep-font (everything else on the page scales off that), so
-    # folding the name into the header text shrank the whole page.
-    page_header(f"📝 {_proc_name} Assessment")
-    st.caption(f"for {st.session_state['resident_name']}")
+    # tier_text excludes the resident's name from _header_max()'s length
+    # tier so a long name doesn't needlessly drop the whole header (and
+    # --pp-substep-font, which everything else on the page scales off of)
+    # into a smaller ceiling; the fit script still measures and shrinks
+    # the full displayed text (name included) if it doesn't actually fit.
+    page_header(
+        f"📝 {_proc_name} Assessment for {st.session_state['resident_name']}",
+        tier_text=f"📝 {_proc_name} Assessment",
+    )
 
     # Back button placed at the top, clearly separated from Finish (Fix 7)
     with st.container(key="assess_top_nav"):
