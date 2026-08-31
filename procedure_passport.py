@@ -735,6 +735,52 @@ def fit_all_button_labels() -> None:
     )
 
 
+def sync_improve_how_label_width() -> None:
+    """Measure the "In order to improve this:" and "Do this:" labels'
+    natural (unwrapped) widths and set --pp-improve-label-width to the
+    wider of the two — same measure-and-fit approach as page_header/
+    mobile_tip, but syncing a shared width across two separate st.columns()
+    rows instead of a font-size. The CSS rule using that var then gives
+    both label columns that same width, so each label sits snug against
+    its own text box and the two text boxes' left edges line up between
+    the two rows, regardless of which row's label text is longer. Call
+    this once, right after rendering both rows."""
+    st.iframe(
+        """
+        <script>
+        (function() {
+            var doc = window.parent.document;
+            var containers = doc.querySelectorAll('.st-key-assess_improve_how');
+            var container = containers[containers.length - 1];
+            if (!container) return;
+            var labels = container.querySelectorAll('[data-testid="stMarkdownContainer"] p');
+            function fit() {
+                var maxWidth = 0;
+                labels.forEach(function(p) {
+                    var prevDisplay = p.style.display;
+                    var prevWhiteSpace = p.style.whiteSpace;
+                    p.style.display = 'inline-block';
+                    p.style.whiteSpace = 'nowrap';
+                    maxWidth = Math.max(maxWidth, p.scrollWidth);
+                    p.style.display = prevDisplay;
+                    p.style.whiteSpace = prevWhiteSpace;
+                });
+                if (maxWidth > 0) {
+                    container.style.setProperty('--pp-improve-label-width', (maxWidth + 3) + 'px');
+                }
+            }
+            fit();
+            window.parent.addEventListener('resize', fit);
+            if (window.parent.ResizeObserver) {
+                new window.parent.ResizeObserver(fit).observe(container);
+            }
+        })();
+        </script>
+        """,
+        height=1,
+    )
+
+
 # ─────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────
@@ -1015,13 +1061,28 @@ button p {
     font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.6);
 }
 /* "In order to improve this:" / "Do this:" — two stacked label+textbox
-   rows, one st.columns() call each but with matching ratios, so the
-   labels' right edges and the text boxes' left edges each line up
-   between the two rows regardless of label text length. Sized to match
-   the Development/Improvement/Feed-Forward label further down the page. */
+   rows, one st.columns() call each. sync_improve_how_label_width()
+   measures both labels' natural (unwrapped) widths and sets
+   --pp-improve-label-width to the wider of the two, so both label
+   columns below share that same width regardless of which row's label
+   is actually longer — the text boxes' left edges line up between the
+   two rows, and each row's label sits snug against its own text box
+   instead of at a fixed ratio-based column boundary with a leftover
+   gap. Falls back to auto (each column sized to its own content, which
+   won't line up between rows) if the measurement script can't run. */
 .st-key-assess_improve_how [data-testid="stHorizontalBlock"] {
     align-items: center;
     gap: 0.4rem;
+}
+.st-key-assess_improve_how [data-testid="stColumn"]:has([data-testid="stMarkdownContainer"]) {
+    flex: 0 0 var(--pp-improve-label-width, auto) !important;
+    width: var(--pp-improve-label-width, auto) !important;
+    min-width: 0 !important;
+}
+.st-key-assess_improve_how [data-testid="stColumn"]:has([data-testid="stTextInput"]) {
+    flex: 1 1 0 !important;
+    width: auto !important;
+    min-width: 100px !important;
 }
 /* The two rows are separate blocks stacked in the container's own
    vertical flow — tighten Streamlit's default inter-block gap between
@@ -1046,13 +1107,14 @@ button p {
     text-align: right;
     font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.75);
 }
-/* "In order to improve this:" (the first row's label) sits flush left
-   instead — everything else (its row's textbox, the second row's
-   right-aligned "Do this:" label, and the two textboxes' shared left
-   edge) is unaffected. */
-.st-key-assess_improve_how [data-testid="stHorizontalBlock"]:first-of-type [data-testid="stMarkdownContainer"] p {
-    text-align: left !important;
-}
+/* Both rows are separate st.columns() calls, so each is the lone/first
+   [data-testid="stHorizontalBlock"] under its own private wrapper —
+   :first-of-type can't tell them apart (it matched both, which is why
+   that approach briefly left "Do this:" flush left too). The "In order
+   to improve this:" label instead gets an inline style="text-align:left"
+   straight from Python, which — having higher specificity than this
+   class-based rule without needing !important — cleanly overrides just
+   that one label while "Do this:" keeps the rule's default right-align. */
 .st-key-assess_improve_how [data-testid="stTextInput"] input {
     font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.6);
 }
@@ -1665,7 +1727,10 @@ elif page == "assessment":
     with st.container(key="assess_improve_how"):
         _imp_label_col, _imp_input_col = st.columns([2, 6])
         with _imp_label_col:
-            st.markdown("In order to improve this:")
+            st.markdown(
+                '<p style="text-align: left;">In order to improve this:</p>',
+                unsafe_allow_html=True,
+            )
         with _imp_input_col:
             st.session_state["improve"] = st.text_input(
                 "What to improve",
@@ -1685,6 +1750,7 @@ elif page == "assessment":
                 label_visibility="collapsed",
                 placeholder="e.g., practice two-handed knots",
             )
+    sync_improve_how_label_width()
 
     st.markdown("---")
 
@@ -2763,7 +2829,10 @@ elif page == "attending_assessment":
     with st.container(key="assess_improve_how"):
         _att_imp_label_col, _att_imp_input_col = st.columns([2, 6])
         with _att_imp_label_col:
-            st.markdown("In order to improve this:")
+            st.markdown(
+                '<p style="text-align: left;">In order to improve this:</p>',
+                unsafe_allow_html=True,
+            )
         with _att_imp_input_col:
             improve = st.text_input(
                 "What to improve",
@@ -2783,6 +2852,7 @@ elif page == "attending_assessment":
                 label_visibility="collapsed",
                 placeholder="e.g., practice two-handed knots",
             )
+    sync_improve_how_label_width()
 
     st.markdown("---")
 
