@@ -1508,16 +1508,27 @@ elif page == "start":
 
     # Pinned procedures always come first, in this order (when present for
     # the current specialty); everything else follows alphabetically.
+    # Matched case/whitespace-insensitively (normalizing runs of whitespace,
+    # including non-breaking spaces, to a single plain space) since a sheet
+    # value that differs from these only by case or stray spacing should
+    # still be recognized as the same procedure and pinned correctly.
     _PINNED_PROCS = [
         "Robotic Surgical Skills Feedback",
         "Robotic Bedsiding",
         "Open Surgical Skills Feedback",
         "Endoscopic Surgical Skills Feedback",
     ]
-    _pinned_rank = {name: i for i, name in enumerate(_PINNED_PROCS)}
+
+    def _norm_proc(name: str) -> str:
+        return " ".join(name.replace("\xa0", " ").split()).casefold()
+
+    _pinned_rank = {_norm_proc(name): i for i, name in enumerate(_PINNED_PROCS)}
     _proc_options = sorted(
         proc_map.keys(),
-        key=lambda n: (_pinned_rank.get(n, len(_PINNED_PROCS)), n if n not in _pinned_rank else ""),
+        key=lambda n: (
+            _pinned_rank.get(_norm_proc(n), len(_PINNED_PROCS)),
+            n if _norm_proc(n) not in _pinned_rank else "",
+        ),
     )
 
     attending = st.selectbox(
