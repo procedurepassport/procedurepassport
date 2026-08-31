@@ -650,6 +650,19 @@ def page_header(text: str, tier_text: str | None = None) -> None:
     )
 
 
+def assessment_instructions_note() -> None:
+    """Info box explaining the assessment form's three main sections —
+    shown under the page header, before the first divider, on all three
+    assessment-filling pages (Assess Together, Self-Assess, and the
+    attending's pre-filled/blank forms)."""
+    st.info(
+        "There are 3 main sections. Fill out as much or as little as you are able.\n\n"
+        "1. Short Form: Improve this / Do this\n"
+        "2. Step-Level Ratings of a Case or Skills\n"
+        "3. Free Form: Development/Improvement/Feed-Forward"
+    )
+
+
 def mobile_tip(text: str) -> None:
     """Render the "On mobile: ..." tip, then shrink its font (down from the
     CSS-defined base size in the .st-key-mobile_tip rule) just enough that
@@ -1722,6 +1735,7 @@ elif page == "assessment":
         f"📝 {_proc_name} Assessment for {st.session_state['resident_name']}",
         tier_text=f"📝 {_proc_name} Assessment",
     )
+    assessment_instructions_note()
 
     # Back button placed at the top, clearly separated from Finish (Fix 7)
     with st.container(key="assess_top_nav"):
@@ -2852,6 +2866,7 @@ elif page == "attending_assessment":
         f"📝 {_att_proc_name} Assessment for {_resident_display_name}",
         tier_text=f"📝 {_att_proc_name} Assessment",
     )
+    assessment_instructions_note()
     if _draft:
         st.info("📋 This form has been pre-filled from the resident's self-assessment. "
                  "Review and adjust anything before submitting.")
