@@ -1069,6 +1069,23 @@ button p {
     overflow-wrap: break-word;
     text-overflow: ellipsis;
 }
+/* --pp-substep-font ties a whole hierarchy of form text (field labels,
+   dropdown values, Step-Level Ratings, Improve/How, the mobile tip) to
+   the page header's own live-measured size — deliberately, on desktop,
+   so the page scales as one unit with window width. On a narrow phone
+   screen that's counterproductive: a long procedure/resident name can
+   force the header down quite small to avoid wrapping (by design, see
+   page_header() — no floor there), and everything tied to it shrinks
+   right along with it, well past comfortable reading size. Pin the
+   variable back to its own static default below this breakpoint,
+   overriding the script's inline value (a plain inline style loses to
+   an !important rule) — the header itself keeps shrinking as needed,
+   but the actual form fields stay legible regardless of title length. */
+@media (max-width: 600px) {
+    :root {
+        --pp-substep-font: 1.3125rem !important;
+    }
+}
 /* Assessment page top nav: Streamlit stacks columns onto separate rows
    below a width breakpoint (each stColumn gets min-width: ~100%). Force
    the Back/Home buttons to stay side by side at any width instead. Columns
