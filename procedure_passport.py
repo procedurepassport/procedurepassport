@@ -1522,14 +1522,18 @@ elif page == "start":
         st.session_state["assessment_mode"]      = mode
         go_to("assessment")
 
-    _start_cols = st.columns(1 if is_admin else 3)
+    # Self-Assess's label is the longest of the three, so give it more of
+    # the row's width and take it from the other two — fit_all_button_labels()
+    # still shrinks per-button as a backstop, but this keeps all three
+    # legible at typical widths instead of relying on that shrink alone.
+    _start_cols = st.columns([1] if is_admin else [0.85, 1.3, 0.85])
     with _start_cols[0]:
         if st.button("Assess Together (Resident + Attending)", type="primary", width="stretch", key="start_together_btn"):
             _reset_and_start("together")
 
     if not is_admin:
         with _start_cols[1]:
-            if st.button("Self-Assess 🔗 Pre-Filled Magic Link", width="stretch", key="start_self_btn"):
+            if st.button("Self-Assess 🔗 Pre-Filled Magic Link for Attending", width="stretch", key="start_self_btn"):
                 _reset_and_start("self")
         with _start_cols[2]:
             if st.button("🔗 Blank Magic-Link for Attending", width="stretch", key="start_blank_link_btn"):
