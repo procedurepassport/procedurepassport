@@ -663,6 +663,80 @@ def assessment_instructions_note() -> None:
     )
 
 
+def copy_link_button(link: str, key: str) -> None:
+    """Big, obvious "Copy Link" button. st.code()'s own built-in copy
+    icon is small, only shows on hover, and on mobile needs a first tap
+    just to reveal it — easy to miss entirely.
+
+    Rendered via st.iframe rather than st.markdown(unsafe_allow_html=True):
+    confirmed empirically that Streamlit strips onclick (and presumably
+    any other inline event-handler attribute) from markdown HTML even
+    with unsafe_allow_html=True — the button still renders, just inert,
+    with no error or warning. st.iframe's content isn't run through that
+    sanitizer at all, and — also confirmed empirically (an actual OS
+    clipboard write was observed after a click, matching the intended
+    text) — the Clipboard API works fine from inside it. Falls back to
+    the older execCommand('copy') approach (via a temporary off-screen
+    textarea) if navigator.clipboard isn't available."""
+    safe_link = json.dumps(link)
+    st.iframe(
+        f"""
+        <!DOCTYPE html>
+        <html><head><style>
+        body {{ margin: 0; font-family: "Source Sans Pro", sans-serif; }}
+        button {{
+            width: 100%;
+            box-sizing: border-box;
+            padding: 0.6rem 1rem;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 8px;
+            border: 3px solid #FF4B4B;
+            background: #FFFFFF;
+            color: #000000;
+            cursor: pointer;
+        }}
+        button:hover {{
+            background: #FFF0F0;
+            border-color: #E63946;
+        }}
+        </style></head>
+        <body>
+        <button id="{key}">📋 Copy Link</button>
+        <script>
+        var text = {safe_link};
+        var btn = document.getElementById("{key}");
+        btn.addEventListener("click", function() {{
+            function done(ok) {{
+                btn.textContent = ok ? "✅ Copied!" : "⚠️ Copy failed — select manually below";
+                setTimeout(function() {{ btn.textContent = "📋 Copy Link"; }}, 1800);
+            }}
+            function fallback() {{
+                var ta = document.createElement("textarea");
+                ta.value = text;
+                ta.style.position = "fixed";
+                ta.style.opacity = "0";
+                document.body.appendChild(ta);
+                ta.focus();
+                ta.select();
+                var ok = false;
+                try {{ ok = document.execCommand("copy"); }} catch (e) {{}}
+                document.body.removeChild(ta);
+                done(ok);
+            }}
+            if (navigator.clipboard && navigator.clipboard.writeText) {{
+                navigator.clipboard.writeText(text).then(function() {{ done(true); }}, fallback);
+            }} else {{
+                fallback();
+            }}
+        }});
+        </script>
+        </body></html>
+        """,
+        height=54,
+    )
+
+
 def mobile_tip(text: str) -> None:
     """Render the "On mobile: ..." tip, then shrink its font (down from the
     CSS-defined base size in the .st-key-mobile_tip rule) just enough that
@@ -1693,8 +1767,8 @@ elif page == "start":
 
     if st.session_state.get("blank_magic_link"):
         st.success("✅ A blank link is ready for your attending:")
+        copy_link_button(st.session_state["blank_magic_link"], key="copy_blank_link")
         st.code(st.session_state["blank_magic_link"], language="text")
-        st.caption("On mobile: tap the link once for the copy button to appear.")
 
     st.markdown("---")
     if st.button("⬅️ Back to Home"):
@@ -1983,9 +2057,9 @@ elif page == "magic_link_ready":
 
     page_header("🔗 Magic Link Ready")
     st.success("✅ Your self-assessment was saved, and a pre-filled link is ready for your attending:")
+    copy_link_button(st.session_state["generated_magic_link"], key="copy_generated_link")
     st.code(st.session_state.get("generated_magic_link", ""), language="text")
-    st.caption("On mobile: tap the link once for the copy button to appear. "
-               "The attending can review and adjust every field before submitting.")
+    st.caption("The attending can review and adjust every field before submitting.")
 
     st.markdown("---")
     col1, col2, col3 = st.columns(3)
