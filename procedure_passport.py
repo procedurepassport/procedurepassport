@@ -1506,11 +1506,11 @@ elif page == "start":
     _CHOOSE_PROC = "Choose Procedure"
     _CHOOSE_ATT  = "Choose Attending"
 
-    procedure = st.selectbox("Procedure", [_CHOOSE_PROC] + sorted(proc_map.keys()))
     attending = st.selectbox(
         "Attending",
         [_CHOOSE_ATT] + sorted(atnd_map.keys(), key=lambda n: n.split()[-1] if n.split() else n),
     )
+    procedure = st.selectbox("Procedure", [_CHOOSE_PROC] + sorted(proc_map.keys()))
     case_date = st.date_input("Date", st.session_state["date"])
 
     procedure_chosen = procedure != _CHOOSE_PROC
@@ -1521,7 +1521,7 @@ elif page == "start":
     st.session_state["date"]         = case_date
 
     if not (procedure_chosen and attending_chosen):
-        st.info("Choose a procedure and an attending to continue.")
+        st.info("Choose an attending and a procedure to continue.")
 
     st.markdown("---")
 
