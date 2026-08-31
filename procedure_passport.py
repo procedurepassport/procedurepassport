@@ -1730,9 +1730,6 @@ elif page == "assessment":
         "Development / Improvement / Feed-Forward", st.session_state.get("notes", ""), key="assess_notes"
     )
 
-    if all(v == "Not Assessed" for v in st.session_state["scores"].values()):
-        st.warning("⚠️ All steps are marked 'Not Assessed'.")
-
     def _assessment_has_value() -> bool:
         return (
             st.session_state["case_complexity"] != "— Select complexity —"
@@ -2245,9 +2242,7 @@ elif page == "cumulative":
         })
 
     # Case-level filter: omit any case where every step rating is
-    # "Not Assessed" — no real signal for the heatmap, same condition the
-    # assessment page itself flags with "⚠️ All steps are marked 'Not
-    # Assessed'.".
+    # "Not Assessed" — no real signal for the heatmap.
     _meaningful_case_ids = {r["case_id"] for r in merged_rows if r["rating"] != "Not Assessed"}
     merged_rows = [r for r in merged_rows if r["case_id"] in _meaningful_case_ids]
 
