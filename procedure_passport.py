@@ -1486,18 +1486,15 @@ elif page == "start":
             go_to("home")
         st.stop()
 
-    spec_map   = dict(zip(spec_df["specialty_name"], spec_df["specialty_id"]))
-    id_to_name = dict(zip(spec_df["specialty_id"],   spec_df["specialty_name"]))
-    is_admin   = st.session_state["resident"] in ADMINS
+    spec_map = dict(zip(spec_df["specialty_name"], spec_df["specialty_id"]))
+    is_admin = st.session_state["resident"] in ADMINS
 
     if is_admin:
         selected_spec_name = st.selectbox("Specialty", list(spec_map.keys()))
         specialty_id       = spec_map[selected_spec_name]
         st.session_state["specialty_id"] = specialty_id
     else:
-        specialty_id       = st.session_state.get("specialty_id")
-        selected_spec_name = id_to_name.get(specialty_id, "Unknown Specialty")
-        st.markdown(f"**Specialty:** {selected_spec_name}")
+        specialty_id = st.session_state.get("specialty_id")
         if specialty_id is None:
             st.error("No specialty assigned. Contact an admin.")
             st.stop()
