@@ -1506,11 +1506,25 @@ elif page == "start":
     _CHOOSE_PROC = "Choose Procedure"
     _CHOOSE_ATT  = "Choose Attending"
 
+    # Pinned procedures always come first, in this order (when present for
+    # the current specialty); everything else follows alphabetically.
+    _PINNED_PROCS = [
+        "Robotic Surgical Skills Feedback",
+        "Robotic Bedsiding",
+        "Open Surgical Skills Feedback",
+        "Endoscopic Surgical Skills Feedback",
+    ]
+    _pinned_rank = {name: i for i, name in enumerate(_PINNED_PROCS)}
+    _proc_options = sorted(
+        proc_map.keys(),
+        key=lambda n: (_pinned_rank.get(n, len(_PINNED_PROCS)), n if n not in _pinned_rank else ""),
+    )
+
     attending = st.selectbox(
         "Attending",
         [_CHOOSE_ATT] + sorted(atnd_map.keys(), key=lambda n: n.split()[-1] if n.split() else n),
     )
-    procedure = st.selectbox("Procedure", [_CHOOSE_PROC] + sorted(proc_map.keys()))
+    procedure = st.selectbox("Procedure", [_CHOOSE_PROC] + _proc_options)
     case_date = st.date_input("Date", st.session_state["date"])
 
     procedure_chosen = procedure != _CHOOSE_PROC
