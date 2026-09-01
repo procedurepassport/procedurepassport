@@ -3382,15 +3382,30 @@ elif page == "attending_resident_dashboard":
         residents_df = read_sheet_df(
             SHEET_RESIDENTS, expected_cols=["email", "name", "specialty_id", "created_at"]
         )
+        cases_df = read_sheet_df(
+            SHEET_CASES, expected_cols=["case_id", "resident_email", "specialty_id", "assessment_type"]
+        )
     except ConnectionError as exc:
         show_gs_error(exc)
         if st.button("⬅️ Back to Home", key="att_dash_home_err"):
             go_to("attending_home")
         st.stop()
 
-    my_residents = residents_df[residents_df["specialty_id"] == specialty_id]
+    # Same "attending-confirmed" definition used everywhere else on this
+    # page (comments table, case matrix): a resident's own unsubmitted
+    # self-assessment doesn't count as data an attending can review yet.
+    residents_with_data = set(
+        cases_df.loc[
+            cases_df["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment",
+            "resident_email",
+        ]
+    )
+    my_residents = residents_df[
+        (residents_df["specialty_id"] == specialty_id)
+        & (residents_df["email"].isin(residents_with_data))
+    ]
     if my_residents.empty:
-        st.warning("⚠️ No residents configured for your specialty.")
+        st.warning("⚠️ No residents with recorded cases in your specialty yet.")
         if st.button("⬅️ Back to Home", key="att_dash_no_res"):
             go_to("attending_home")
         st.stop()
