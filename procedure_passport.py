@@ -3375,6 +3375,7 @@ elif page == "attending_assessment":
                 st.session_state["attending_submission"] = {
                     "case_id":             case_id,
                     "resident_email":      resident_email,
+                    "resident_name":       _resident_display_name,
                     "procedure_id":        procedure_id,
                     "procedure_name":      _att_proc_name,
                     "attending_name":      display_attending,
@@ -3408,15 +3409,11 @@ elif page == "attending_confirmation":
 
     st.markdown(
         f'<div class="pp-card">'
-        f'<b>Resident:</b> {sub["resident_email"]}<br>'
+        f'<b>Resident:</b> {sub.get("resident_name", sub["resident_email"])}<br>'
         f'<b>Attending:</b> {sub["attending_name"]}<br>'
         f'<b>Procedure:</b> {sub.get("procedure_name", sub["procedure_id"])}<br>'
         f'<b>Date:</b> {fmt_date(sub["date"])}<br>'
-        f'<b>Case Complexity:</b> {sub["case_complexity"]}<br>'
-        f'<b>Preparation:</b> {sub["case_preparation"]}<br>'
-        f'<b>Overall Performance:</b> {sub["overall_performance"]}<br>'
-        f'<b>Basis:</b> {sub.get("assessment_type", "Attending Evaluation")}<br>'
-        f'<b>Case ID:</b> <code>{sub["case_id"]}</code>'
+        f'<b>Overall Performance:</b> {sub["overall_performance"]}'
         f'</div>',
         unsafe_allow_html=True,
     )
