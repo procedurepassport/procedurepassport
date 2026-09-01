@@ -3454,23 +3454,42 @@ elif page == "attending_resident_dashboard":
         )
     procedure_id = proc_map.get(procedure_choice) if procedure_choice != _ALL_PROCS else None
 
+    # Whether the Comments table is narrowed to the chosen procedure or
+    # showing every procedure, independent of the dropdown itself — the
+    # dropdown also drives the heatmap below, so switching it back to "All
+    # Procedures" just to see every comment would lose the heatmap too.
+    # The toggle always starts filtered whenever the resident/procedure
+    # selection changes, rather than carrying over a stale "show all" from
+    # a previous procedure.
+    _comments_scope = f"{resident_email}|{procedure_choice}"
+    if st.session_state.get("att_dash_comments_scope") != _comments_scope:
+        st.session_state["att_dash_comments_scope"] = _comments_scope
+        st.session_state["att_dash_show_all_comments"] = False
+    show_all_comments = st.session_state["att_dash_show_all_comments"] or not procedure_id
+
     st.caption("💡 Tip: this page is print-friendly — on desktop use File > Print (Cmd+P / Ctrl+P); on mobile use print preview.")
     st.markdown("---")
 
     st.markdown(f"### 💬 Comments — {resident_choice}")
+    if procedure_id:
+        _toggle_label = "Show All Comments" if not show_all_comments else f"Show Only {procedure_choice} Comments"
+        if st.button(_toggle_label, key="att_dash_comments_toggle"):
+            st.session_state["att_dash_show_all_comments"] = not show_all_comments
+            st.rerun()
+
     try:
         comments_df = _build_resident_comments_df(resident_email)
     except ConnectionError as exc:
         show_gs_error(exc)
         st.stop()
 
-    if procedure_id and not comments_df.empty:
+    if procedure_id and not show_all_comments and not comments_df.empty:
         comments_df = comments_df[comments_df["Procedure"] == procedure_choice]
 
     if comments_df.empty:
         st.info("No comments recorded yet.")
     else:
-        _render_comments_html_table(comments_df, show_proc=(procedure_id is None), show_att=True)
+        _render_comments_html_table(comments_df, show_proc=show_all_comments, show_att=True)
 
     if procedure_id:
         st.markdown("---")
