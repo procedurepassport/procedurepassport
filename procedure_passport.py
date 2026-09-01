@@ -2475,11 +2475,87 @@ elif page == "admin":
                     st.error("Please enter an attending name.")
 
         if not attendings.empty:
+            with st.expander("✏️ Edit Attending / Assign Login"):
+                st.caption(
+                    "Give an existing attending an email here to designate their account "
+                    "as an attending login — they'll then be able to log in themselves "
+                    "(same Log In screen as residents) and get their own Attending Home, "
+                    "Start Assessment, and Resident Dashboard."
+                )
+                edit_att_name = st.selectbox(
+                    "Select attending to edit", attendings["attending_name"], key="edit_att_select"
+                )
+                _edit_row = attendings[attendings["attending_name"] == edit_att_name].iloc[0]
+                _edit_spec_name_match = spec_df.loc[
+                    spec_df["specialty_id"] == _edit_row["specialty_id"], "specialty_name"
+                ]
+                _edit_spec_default = _edit_spec_name_match.values[0] if len(_edit_spec_name_match) else None
+                _edit_spec_options = list(spec_df["specialty_name"])
+                _edit_spec_idx = (
+                    _edit_spec_options.index(_edit_spec_default)
+                    if _edit_spec_default in _edit_spec_options else 0
+                )
+                edit_att_name_new = st.text_input(
+                    "Attending name", value=str(_edit_row["attending_name"]), key="edit_att_name"
+                )
+                edit_att_spec = st.selectbox(
+                    "Specialty", _edit_spec_options, index=_edit_spec_idx, key="edit_att_spec"
+                )
+                edit_att_email = st.text_input(
+                    "Email (blank = no login)",
+                    value="" if pd.isna(_edit_row["email"]) else str(_edit_row["email"]),
+                    key="edit_att_email",
+                )
+                if st.button("Save Changes", key="btn_edit_att"):
+                    if not edit_att_name_new.strip():
+                        st.error("Please enter an attending name.")
+                    else:
+                        _spec_match = spec_df[spec_df["specialty_name"].astype(str).str.strip() == str(edit_att_spec).strip()]
+                        _new_spec_id = _spec_match["specialty_id"].values[0] if len(_spec_match) > 0 else None
+                        _old_email = "" if pd.isna(_edit_row["email"]) else str(_edit_row["email"]).strip()
+                        _new_email = edit_att_email.strip()
+                        updated = attendings.copy()
+                        _mask = updated["attending_name"] == edit_att_name
+                        updated.loc[_mask, "attending_name"] = edit_att_name_new.strip()
+                        updated.loc[_mask, "specialty_id"]   = _new_spec_id
+                        updated.loc[_mask, "email"]          = _new_email
+                        write_sheet_df(SHEET_ATTENDINGS, updated)
+                        # Changing/removing the email invalidates any password stored
+                        # under the old one — it would otherwise be an orphaned,
+                        # unreachable credential.
+                        if _old_email and _old_email.lower() != _new_email.lower():
+                            clear_password(_old_email)
+                        st.success(f"✅ Saved {edit_att_name_new.strip()}")
+                        time.sleep(0.5)
+                        st.rerun()
+
+            with st.expander("🔑 Reset Attending Password"):
+                st.caption("Clears their stored password — their next login will prompt them to set a new one.")
+                _att_with_email = attendings[attendings["email"].fillna("").astype(str).str.strip() != ""]
+                if _att_with_email.empty:
+                    st.caption("_No attendings have a login email set yet — add one under Edit Attending above._")
+                else:
+                    reset_att = st.selectbox(
+                        "Select attending", _att_with_email["attending_name"], key="reset_att_pw"
+                    )
+                    if st.button("Reset Password", key="btn_reset_att_pw"):
+                        _reset_email = _att_with_email.loc[
+                            _att_with_email["attending_name"] == reset_att, "email"
+                        ].values[0]
+                        clear_password(str(_reset_email))
+                        st.success(f"✅ Password cleared for {reset_att}")
+                        time.sleep(0.5)
+                        st.rerun()
+
             with st.expander("🗑️ Delete Attending"):
                 del_att = st.selectbox("Select attending to delete", attendings["attending_name"], key="del_att")
                 if st.button("Delete", key="btn_del_att"):
+                    _del_row = attendings[attendings["attending_name"] == del_att].iloc[0]
+                    _del_email = "" if pd.isna(_del_row["email"]) else str(_del_row["email"]).strip()
                     updated = attendings[attendings["attending_name"] != del_att].reset_index(drop=True)
                     write_sheet_df(SHEET_ATTENDINGS, updated)
+                    if _del_email:
+                        clear_password(_del_email)
                     st.success(f"Deleted {del_att}")
                     time.sleep(0.5)
                     st.rerun()
