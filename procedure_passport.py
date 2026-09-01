@@ -1022,6 +1022,54 @@ def fit_all_button_labels() -> None:
     )
 
 
+def center_button_lines(key: str, lines: list) -> None:
+    """Rebuild a 2-line button's label so each line's actual words are
+    centered as if a leading/trailing emoji decoration weren't there,
+    instead of the emoji's own width shifting the apparent center of
+    the words (plain text-align:center on the whole label centers the
+    emoji along with the text, which isn't the same thing once the
+    label reads e.g. "Assess Together ✅" instead of just "Assess
+    Together"). Each line becomes its own full-width block: the words
+    in a centered span, and the emoji (if any) pinned to that block's
+    left/right edge via absolute positioning, outside the centered
+    span's own box — so it never counts toward centering the words.
+
+    lines: one [text, emoji, position] entry per line, in order —
+    position is "before" or "after"; pass [text, None, None] for a
+    line with no emoji. A one-time DOM rebuild (position:0/100% is
+    pure CSS, so it holds at any width with no resize listener needed)
+    — call once, right after the button renders. Independent of, and
+    safe to combine with, fit_all_button_labels(): that only ever sets
+    the <p>'s own font-size style, never touches its children, so
+    which one runs first doesn't matter."""
+    payload = json.dumps(lines)
+    st.iframe(
+        f"""
+        <script>
+        (function() {{
+            var doc = window.parent.document;
+            var ps = doc.querySelectorAll('.st-key-{key} button p');
+            var p = ps[ps.length - 1];
+            if (!p) return;
+            var lines = {payload};
+            p.innerHTML = lines.map(function(line) {{
+                var text = line[0], emoji = line[1], pos = line[2];
+                var row = '<span style="position:relative;display:block;width:100%;">'
+                    + '<span style="display:block;text-align:center;">' + text + '</span>';
+                if (emoji) {{
+                    var side = pos === 'before' ? 'left:0;' : 'right:0;';
+                    row += '<span style="position:absolute;top:50%;' + side
+                        + 'transform:translateY(-50%);">' + emoji + '</span>';
+                }}
+                return row + '</span>';
+            }}).join('');
+        }})();
+        </script>
+        """,
+        height=1,
+    )
+
+
 def sync_improve_how_label_width() -> None:
     """Measure the "In order to improve this:" and "Do this:" labels'
     natural (unwrapped) widths and set --pp-improve-label-width to the
@@ -1967,20 +2015,33 @@ elif page == "start":
         # Two trailing spaces before \n is Markdown's hard-break syntax —
         # renders as a real <br>, forcing exactly two lines regardless of
         # width (never collapses to one, and white-space:nowrap on
-        # button p keeps either line from wrapping into a third).
-        # fit_all_button_labels() shrinks the font if the wider of the
-        # two lines would otherwise overflow, so neither line ever ends
-        # in an ellipsis either — verified at both desktop and cramped
-        # widths before applying.
-        if st.button("Assess Together  \nResident + Attending", type="primary", width="stretch", key="start_together_btn", disabled=_selection_incomplete):
+        # button p keeps either line from wrapping into a third). This
+        # is the no-JS fallback; center_button_lines() below replaces it
+        # with the same two lines, each centered independent of the
+        # emoji beside it. fit_all_button_labels() shrinks the font if
+        # the wider of the two lines would otherwise overflow, so
+        # neither line ever ends in an ellipsis either — verified at
+        # both desktop and cramped widths before applying.
+        if st.button("Assess Together ✅  \nResident + Attending", type="primary", width="stretch", key="start_together_btn", disabled=_selection_incomplete):
             _reset_and_start("together")
+        center_button_lines(
+            "start_together_btn",
+            [["Assess Together", "✅", "after"], ["Resident + Attending", None, None]],
+        )
 
     if not is_admin:
         with _start_cols[1]:
-            if st.button("Self-Assess  \nPre-Filled Magic Link for Attending", width="stretch", key="start_self_btn", disabled=_selection_incomplete):
+            if st.button("Self-Assess ✅  \n🔗 Pre-Filled Magic Link for Attending", width="stretch", key="start_self_btn", disabled=_selection_incomplete):
                 _reset_and_start("self")
+            center_button_lines(
+                "start_self_btn",
+                [
+                    ["Self-Assess", "✅", "after"],
+                    ["Pre-Filled Magic Link for Attending", "🔗", "before"],
+                ],
+            )
         with _start_cols[2]:
-            if st.button("Blank Magic Link  \nSend to Attending", width="stretch", key="start_blank_link_btn", disabled=_selection_incomplete):
+            if st.button("🔗 Blank Magic Link  \nSend to Attending ✉️", width="stretch", key="start_blank_link_btn", disabled=_selection_incomplete):
                 _att_match = atnds[atnds["attending_id"].astype(str).str.strip()
                                     == str(st.session_state.get("attending_id", "")).strip()]
                 safe_att = _att_match["attending_name"].values[0].replace(" ", "_") if len(_att_match) > 0 else "Unknown"
@@ -1993,6 +2054,13 @@ elif page == "start":
                     f"&attending_name={safe_att}"
                     f"&date={st.session_state['date']}"
                 )
+            center_button_lines(
+                "start_blank_link_btn",
+                [
+                    ["Blank Magic Link", "🔗", "before"],
+                    ["Send to Attending", "✉️", "after"],
+                ],
+            )
 
     if st.session_state.get("blank_magic_link"):
         st.success("✅ A blank link is ready for your attending:")
