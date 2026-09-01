@@ -1312,23 +1312,6 @@ def header_break_before(prefix: str, suffix: str) -> str:
     return f"{_protect_from_wrapping(prefix)} {_protect_from_wrapping(suffix)}"
 
 
-def label_break_after_for(prefix: str, name: str) -> str:
-    """Join "{prefix} for {name}": the prefix phrase's own spaces
-    and the one right after "for" are non-breaking, so "{prefix} for"
-    always stays together and the wrap (if needed) lands right after
-    "for" — but {name}'s own spaces stay regular, so a long procedure
-    name can still wrap across further lines on its own instead of
-    being forced onto one (potentially illegibly small) line. Hyphens
-    are protected everywhere regardless (in both parts), since a plain
-    one is a valid line-break point on its own, independent of spaces
-    (e.g. "Robotic-Assisted ..." would otherwise break there)."""
-    nb = " "
-    nbh = "‑"
-    protected_prefix = prefix.replace("-", nbh).replace(" ", nb)
-    protected_name = name.replace("-", nbh)
-    return f"{protected_prefix}{nb}for {protected_name}"
-
-
 def suppress_picker_keyboards() -> None:
     """Set inputmode="none" on every st.selectbox and st.date_input
     input on the currently rendered page, so tapping one to open its
@@ -1513,8 +1496,8 @@ def page_header(text: str, tier_text: str | None = None) -> None:
                 var containerWidth = wrap.clientWidth;
                 if (!containerWidth) return;
                 var fullText = el.textContent;
-                // header_break_before()/label_break_after_for() (see
-                // their Python definitions) build some headers with
+                // header_break_before() (see its Python definition)
+                // builds some headers with
                 // exactly one regular, breakable space and non-breaking
                 // spaces (nbsp) everywhere else, marking one deliberate
                 // wrap point. On a narrow (mobile) screen, measure each
@@ -1986,18 +1969,21 @@ button p {
    --pp-substep-font sets its size — a fixed value (see its own
    definition below), independent of the main header's size, so a long
    procedure/resident name that shrinks the header doesn't shrink this
-   too. white-space: normal overrides
-   Streamlit's own default (nowrap + ellipsis) for expander summary
-   labels, which is otherwise sized for the typical short, single-line
-   case — label_break_after_for() keeps "Step-Level Ratings for"
-   together as a unit, but leaves the procedure name's own spaces
-   breakable, so a long one wraps across as many lines as it needs
-   instead of either truncating or being squeezed onto one. */
+   too. white-space: normal overrides Streamlit's own default (nowrap +
+   ellipsis) for expander summary labels, which is otherwise sized for
+   the typical short, single-line case — header_break_before() keeps
+   "Step-Level Ratings for" and the procedure name each as their own
+   unbreakable unit, with the one regular breakable space landing right
+   after "for": one line whenever it fits, and if not, the wrap lands
+   there rather than mid-phrase or partway through the name.
+   overflow-wrap: break-word is a safety net for a name too long to
+   fit even on its own full line. */
 .st-key-step_ratings_expander_resident summary [data-testid="stMarkdownContainer"] p,
 .st-key-step_ratings_expander_attending summary [data-testid="stMarkdownContainer"] p {
     font-size: var(--pp-substep-font, 1.3125rem);
     font-weight: 600;
     white-space: normal !important;
+    overflow-wrap: break-word;
 }
 /* "Click to Expand" hint on its own line under that label, at 3/4 of
    its size — a generated ::after (rather than a second line of real
@@ -2949,7 +2935,7 @@ elif page == "assessment":
             )
 
     with st.expander(
-        label_break_after_for("Step-Level Ratings", _proc_name),
+        header_break_before("Step-Level Ratings for", _proc_name),
         expanded=False,
         key="step_ratings_expander_resident",
     ):
@@ -3666,7 +3652,7 @@ elif page == "attending_assessment":
     _draft_scores = _d.get("scores") or {}
     _draft_resolved_scores: dict = {}
     with st.expander(
-        label_break_after_for("Step-Level Ratings", _att_proc_name),
+        header_break_before("Step-Level Ratings for", _att_proc_name),
         expanded=False,
         key="step_ratings_expander_attending",
     ):
