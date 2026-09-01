@@ -637,7 +637,16 @@ def suppress_picker_keyboards() -> None:
     stop it from being clicked/tapped to open the calendar popup, which
     is the only way this field is meant to be filled in anyway.
     Selectboxes don't get readonly: they support typing to search/
-    filter their own option list, which readonly would break."""
+    filter their own option list, which readonly would break.
+
+    Still reported reaching a real phone's keyboard despite that,
+    likely because BaseWeb (the underlying component library) can
+    reset an input's own DOM attributes on a React re-render faster
+    than the childList/subtree observer below reacts to it — that
+    observer only fires on nodes being added/removed, not on an
+    existing node's attributes changing. Each date input additionally
+    gets its own dedicated attribute-level observer, which reacts to
+    exactly that case."""
     st.iframe(
         """
         <script>
@@ -650,6 +659,16 @@ def suppress_picker_keyboards() -> None:
                 doc.querySelectorAll('[data-testid="stDateInput"] input').forEach(function(el) {
                     el.setAttribute('inputmode', 'none');
                     el.setAttribute('readonly', 'readonly');
+                    if (el.__ppKeyboardGuard || !window.parent.MutationObserver) return;
+                    el.__ppKeyboardGuard = true;
+                    new window.parent.MutationObserver(function() {
+                        if (el.getAttribute('inputmode') !== 'none') {
+                            el.setAttribute('inputmode', 'none');
+                        }
+                        if (!el.hasAttribute('readonly')) {
+                            el.setAttribute('readonly', 'readonly');
+                        }
+                    }).observe(el, {attributes: true, attributeFilter: ['inputmode', 'readonly']});
                 });
             }
             apply();
