@@ -3383,7 +3383,8 @@ elif page == "attending_resident_dashboard":
             SHEET_RESIDENTS, expected_cols=["email", "name", "specialty_id", "created_at"]
         )
         cases_df = read_sheet_df(
-            SHEET_CASES, expected_cols=["case_id", "resident_email", "specialty_id", "assessment_type"]
+            SHEET_CASES,
+            expected_cols=["case_id", "resident_email", "specialty_id", "procedure_id", "assessment_type"],
         )
     except ConnectionError as exc:
         show_gs_error(exc)
@@ -3394,15 +3395,12 @@ elif page == "attending_resident_dashboard":
     # Same "attending-confirmed" definition used everywhere else on this
     # page (comments table, case matrix): a resident's own unsubmitted
     # self-assessment doesn't count as data an attending can review yet.
-    residents_with_data = set(
-        cases_df.loc[
-            cases_df["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment",
-            "resident_email",
-        ]
-    )
+    confirmed_cases = cases_df[
+        cases_df["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment"
+    ]
     my_residents = residents_df[
         (residents_df["specialty_id"] == specialty_id)
-        & (residents_df["email"].isin(residents_with_data))
+        & (residents_df["email"].isin(set(confirmed_cases["resident_email"])))
     ]
     if my_residents.empty:
         st.warning("⚠️ No residents with recorded cases in your specialty yet.")
@@ -3423,7 +3421,18 @@ elif page == "attending_resident_dashboard":
 
     resident_email = res_map[resident_choice]
 
-    procs = proc_df[proc_df["specialty_id"] == specialty_id]
+    # procedure_id is compared as a string, not the raw dtype — the cases
+    # and procedures sheets can disagree on int vs. float vs. string for
+    # the same ID (see _norm_id above), so a raw .isin() can silently
+    # drop real matches.
+    resident_procedure_ids = set(
+        confirmed_cases.loc[confirmed_cases["resident_email"] == resident_email, "procedure_id"]
+        .astype(str)
+    )
+    procs = proc_df[
+        (proc_df["specialty_id"] == specialty_id)
+        & (proc_df["procedure_id"].astype(str).isin(resident_procedure_ids))
+    ]
     proc_map = dict(zip(procs["procedure_name"], procs["procedure_id"]))
     _ALL_PROCS = "All Procedures"
     procedure_choice = st.selectbox(
