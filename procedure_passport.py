@@ -247,7 +247,10 @@ def load_refs():
     spec_df  = _safe(SHEET_SPECIALTY,  ["specialty_id",  "specialty_name"])
     proc_df  = _safe(SHEET_PROCEDURES, ["procedure_id",  "procedure_name", "specialty_id"])
     steps_df = _safe(SHEET_STEPS,      ["step_id",       "procedure_id",   "step_order", "step_name"])
-    atnd_df  = _safe(SHEET_ATTENDINGS, ["attending_id",  "attending_name", "specialty_id", "email"])
+    try:
+        atnd_df = _read_attendings_df()
+    except Exception:
+        atnd_df = pd.DataFrame(columns=ATTENDING_COLS)
     return spec_df, proc_df, steps_df, atnd_df
 
 
@@ -329,8 +332,7 @@ def ensure_resident(email: str, name: str = "", specialty_id=None) -> None:
 
 
 def ensure_attending(name: str, specialty_id: str, email: str = "") -> None:
-    cols = ["attending_id", "attending_name", "specialty_id", "email"]
-    df   = read_sheet_df(SHEET_ATTENDINGS, expected_cols=cols)
+    df = _read_attendings_df()
     if name not in df["attending_name"].values:
         att_id = "A_" + specialty_id + "_" + name.replace(" ", "_").upper()
         df = pd.concat([df, pd.DataFrame([{
@@ -547,6 +549,27 @@ def attending_display_name(attending_id: str, atnds_lookup: dict) -> str:
     return attending_id or "Unknown"
 
 
+ATTENDING_COLS = ["attending_id", "attending_name", "specialty_id", "email"]
+
+
+def _read_attendings_df() -> pd.DataFrame:
+    """Read the attendings sheet as ATTENDING_COLS, tolerating a sheet whose
+    login-email column is still named "attending_email" (an older schema —
+    some existing sheets/export snapshots use that name) instead of "email".
+    Always returns a single, populated "email" column regardless of which
+    name the live sheet actually has, preferring "email" when both are
+    present. Every read of the attendings sheet should go through this,
+    not a raw read_sheet_df(SHEET_ATTENDINGS, ...) call, so that whichever
+    column the data is really in, it's picked up — and so any write that
+    follows (which only ever writes ATTENDING_COLS) carries the value
+    forward under "email" instead of silently dropping it."""
+    df = read_sheet_df(SHEET_ATTENDINGS, expected_cols=ATTENDING_COLS + ["attending_email"])
+    _email  = df["email"].fillna("").astype(str).str.strip()
+    _legacy = df["attending_email"].fillna("").astype(str).str.strip()
+    df["email"] = _email.where(_email != "", _legacy)
+    return df[ATTENDING_COLS]
+
+
 # Pinned procedures always come first, in this order (when present for
 # the current specialty); everything else follows alphabetically. Matched
 # case/whitespace-insensitively (normalizing runs of whitespace, including
@@ -646,7 +669,7 @@ def _build_resident_comments_df(resident_email: str) -> pd.DataFrame:
                        "improve", "how"],
     )
     procs_df = read_sheet_df(SHEET_PROCEDURES, expected_cols=["procedure_id", "procedure_name", "specialty_id"])
-    atnds_df = read_sheet_df(SHEET_ATTENDINGS, expected_cols=["attending_id", "attending_name", "specialty_id", "email"])
+    atnds_df = _read_attendings_df()
 
     cases_df["case_id"] = _norm_id(cases_df["case_id"])
     cases_df = cases_df.drop_duplicates(subset=["case_id"])
@@ -794,7 +817,7 @@ def _build_resident_case_matrix(resident_email: str):
                                                              "case_complexity", "overall_performance"])
     steps_df  = read_sheet_df(SHEET_STEPS,  expected_cols=["step_id", "procedure_id", "step_order", "step_name"])
     procs_df  = read_sheet_df(SHEET_PROCEDURES, expected_cols=["procedure_id", "procedure_name", "specialty_id"])
-    atnds_df  = read_sheet_df(SHEET_ATTENDINGS, expected_cols=["attending_id", "attending_name", "specialty_id", "email"])
+    atnds_df  = _read_attendings_df()
 
     def _clean_id(val) -> str:
         s = str(val).strip()
@@ -2254,9 +2277,7 @@ if page == "login":
                 specialty_id=row["specialty_id"], role="resident", page="home",
             )
         else:
-            attendings = read_sheet_df(
-                SHEET_ATTENDINGS, expected_cols=["attending_id", "attending_name", "specialty_id", "email"]
-            )
+            attendings = _read_attendings_df()
             attendings_lower = attendings["email"].fillna("").str.strip().str.lower()
             row = attendings.loc[attendings_lower == email_lower].iloc[0]
             st.session_state.update(
@@ -2300,10 +2321,7 @@ if page == "login":
                     SHEET_RESIDENTS,
                     expected_cols=["email", "name", "specialty_id", "created_at"],
                 )
-                attendings = read_sheet_df(
-                    SHEET_ATTENDINGS,
-                    expected_cols=["attending_id", "attending_name", "specialty_id", "email"],
-                )
+                attendings = _read_attendings_df()
                 email_lower = email.strip().lower()
                 admins_lower = [a.lower() for a in ADMINS]
                 residents_lower = residents["email"].str.strip().str.lower()
@@ -2448,9 +2466,7 @@ elif page == "admin":
     # ── Attendings ───────────────────────────────────────
     st.subheader("Attendings")
     try:
-        attendings = read_sheet_df(
-            SHEET_ATTENDINGS, expected_cols=["attending_id", "attending_name", "specialty_id", "email"]
-        )
+        attendings = _read_attendings_df()
         spec_df, _, _, _ = load_refs()
         st.dataframe(attendings, width="stretch")
 
