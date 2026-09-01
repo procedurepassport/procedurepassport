@@ -3438,7 +3438,7 @@ elif page == "attending_resident_dashboard":
         & (proc_df["procedure_id"].astype(str).isin(resident_procedure_ids))
     ]
     proc_map = dict(zip(procs["procedure_name"], procs["procedure_id"]))
-    _ALL_PROCS = "All Procedures"
+    _ALL_PROCS = "Choose Procedure for Heat Map"
     _proc_opts = [_ALL_PROCS] + _ordered_procedure_names(proc_map)
     # A procedure picked for the previous resident can fall outside this
     # resident's options — reset it rather than letting st.selectbox raise
