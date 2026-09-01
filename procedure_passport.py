@@ -66,8 +66,6 @@ _defaults: dict = {
     "blank_magic_link":        None,   # filled after Generate a Blank Magic Link
     "attending_link_date":     "",     # resident's chosen date, carried by a blank magic link
     "last_assessment_type":    None,   # "Assessed Together" or "Self-Assessment"
-    "login_stage":             "email",  # "email" | "create_password" | "check_password"
-    "login_email":             "",
 }
 for _k, _v in _defaults.items():
     if _k not in st.session_state:
@@ -1506,7 +1504,7 @@ if page == "login":
 
     def _complete_login(canonical_email: str) -> None:
         """Password verified (or just created) — resolve the account and
-        drop into the app proper, resetting the login flow's own state."""
+        drop into the app proper."""
         residents = read_sheet_df(
             SHEET_RESIDENTS, expected_cols=["email", "name", "specialty_id", "created_at"]
         )
@@ -1520,8 +1518,6 @@ if page == "login":
                 resident=row["email"], resident_name=row["name"],
                 specialty_id=row["specialty_id"], page="home",
             )
-        st.session_state["login_stage"] = "email"
-        st.session_state["login_email"] = ""
         st.rerun()
 
     col_c, col_r = st.columns([1, 1])
@@ -1530,80 +1526,62 @@ if page == "login":
         st.markdown("_Track your surgical skills journey, one procedure at a time._")
         st.markdown("---")
 
-        _login_stage = st.session_state.get("login_stage", "email")
-
-        if _login_stage == "email":
-            email = st.text_input("Email address", placeholder="you@hospital.org")
-            if st.button("Continue →", width="stretch", type="primary"):
-                if not email.strip():
-                    st.error("Please enter your email address.")
-                else:
-                    try:
-                        residents = read_sheet_df(
-                            SHEET_RESIDENTS,
-                            expected_cols=["email", "name", "specialty_id", "created_at"],
-                        )
-                        email_lower = email.strip().lower()
-                        admins_lower = [a.lower() for a in ADMINS]
-                        residents_lower = residents["email"].str.strip().str.lower()
-                        if email_lower in admins_lower:
-                            canonical = ADMINS[admins_lower.index(email_lower)]
-                        elif email_lower in residents_lower.values:
-                            canonical = residents.loc[residents_lower == email_lower].iloc[0]["email"]
-                        else:
-                            canonical = None
-                        if canonical is None:
-                            st.error("❌ Email not recognised. Ask an admin to add you.")
-                        else:
-                            st.session_state["login_email"] = canonical
-                            has_password = get_password_row(canonical) is not None
-                            st.session_state["login_stage"] = "check_password" if has_password else "create_password"
-                            st.rerun()
-                    except ConnectionError as exc:
-                        show_gs_error(exc)
-
-        elif _login_stage == "create_password":
-            st.info(
-                f"👋 First time logging in as **{st.session_state['login_email']}** — "
-                "set a password for future logins."
-            )
-            pw1 = st.text_input("Create a password", type="password", key="login_new_pw")
-            pw2 = st.text_input("Confirm password", type="password", key="login_new_pw2")
-            _back_col, _go_col = st.columns(2)
-            with _back_col:
-                if st.button("⬅️ Back", width="stretch"):
-                    st.session_state["login_stage"] = "email"
-                    st.rerun()
-            with _go_col:
-                if st.button("Set Password & Log In →", type="primary", width="stretch"):
-                    if len(pw1) < 8:
-                        st.error("Password must be at least 8 characters.")
-                    elif pw1 != pw2:
-                        st.error("Passwords don't match.")
+        # Email and password on one screen, submitted together — whether
+        # this is a first-ever login (no password on file yet) or a
+        # returning one is only known once the email is looked up, which
+        # only happens on submit, so both fields are always shown up
+        # front rather than password appearing as a separate step after
+        # the email is entered.
+        email = st.text_input("Email address", placeholder="you@hospital.org", key="login_email_input")
+        pw = st.text_input("Password", type="password", key="login_pw_input")
+        st.caption(
+            "First time here, or no password set yet? Leave Password blank and "
+            "click Log In — you'll be prompted to choose one (8+ characters)."
+        )
+        if st.button("Log In →", width="stretch", type="primary"):
+            if not email.strip():
+                st.error("Please enter your email address.")
+            else:
+                # Password isn't required just to submit — whether one's
+                # even needed depends on whether this account has one on
+                # file yet, which isn't known until after the lookup
+                # below. A first-time user can submit with the password
+                # field left blank; they're told to choose one once
+                # that's confirmed, without ever leaving this page.
+                try:
+                    residents = read_sheet_df(
+                        SHEET_RESIDENTS,
+                        expected_cols=["email", "name", "specialty_id", "created_at"],
+                    )
+                    email_lower = email.strip().lower()
+                    admins_lower = [a.lower() for a in ADMINS]
+                    residents_lower = residents["email"].str.strip().str.lower()
+                    if email_lower in admins_lower:
+                        canonical = ADMINS[admins_lower.index(email_lower)]
+                    elif email_lower in residents_lower.values:
+                        canonical = residents.loc[residents_lower == email_lower].iloc[0]["email"]
                     else:
-                        try:
-                            set_password(st.session_state["login_email"], pw1)
-                            _complete_login(st.session_state["login_email"])
-                        except ConnectionError as exc:
-                            show_gs_error(exc)
-
-        elif _login_stage == "check_password":
-            st.markdown(f"**{st.session_state['login_email']}**")
-            pw = st.text_input("Password", type="password", key="login_check_pw")
-            _back_col, _go_col = st.columns(2)
-            with _back_col:
-                if st.button("⬅️ Back", width="stretch"):
-                    st.session_state["login_stage"] = "email"
-                    st.rerun()
-            with _go_col:
-                if st.button("Log In →", type="primary", width="stretch"):
-                    try:
-                        if verify_password(st.session_state["login_email"], pw):
-                            _complete_login(st.session_state["login_email"])
+                        canonical = None
+                    if canonical is None:
+                        st.error("❌ Email not recognised. Ask an admin to add you.")
+                    elif get_password_row(canonical) is not None:
+                        if not pw:
+                            st.error("Please enter your password.")
+                        elif verify_password(canonical, pw):
+                            _complete_login(canonical)
                         else:
                             st.error("❌ Incorrect password.")
-                    except ConnectionError as exc:
-                        show_gs_error(exc)
+                    elif len(pw) < 8:
+                        st.info(
+                            f"👋 First time logging in as **{canonical}** — "
+                            "enter a password above (8+ characters) and log in again "
+                            "to set it as your password."
+                        )
+                    else:
+                        set_password(canonical, pw)
+                        _complete_login(canonical)
+                except ConnectionError as exc:
+                    show_gs_error(exc)
 
 
 # ════════════════════════════════════════════════════════════
