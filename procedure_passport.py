@@ -66,6 +66,11 @@ _defaults: dict = {
     "blank_magic_link":        None,   # filled after Generate a Blank Magic Link
     "attending_link_date":     "",     # resident's chosen date, carried by a blank magic link
     "last_assessment_type":    None,   # "Assessed Together" or "Self-Assessment"
+    "role":                    None,   # "resident", "admin", or "attending" — set at login
+    "attending_login_email":   "",     # set only when role == "attending" (their own account)
+    "attending_login_name":    "",
+    "attending_login_id":      "",
+    "attending_login_specialty_id": "",
 }
 for _k, _v in _defaults.items():
     if _k not in st.session_state:
@@ -542,6 +547,37 @@ def attending_display_name(attending_id: str, atnds_lookup: dict) -> str:
     return attending_id or "Unknown"
 
 
+# Pinned procedures always come first, in this order (when present for
+# the current specialty); everything else follows alphabetically. Matched
+# case/whitespace-insensitively (normalizing runs of whitespace, including
+# non-breaking spaces, to a single plain space) since a sheet value that
+# differs from these only by case or stray spacing should still be
+# recognized as the same procedure and pinned correctly.
+_PINNED_PROCS = [
+    "Robotic Surgical Skills Feedback",
+    "Robotic Bedsiding",
+    "Open Surgical Skills Feedback",
+    "Endoscopic Surgical Skills Feedback",
+]
+
+
+def _norm_proc(name: str) -> str:
+    return " ".join(name.replace("\xa0", " ").split()).casefold()
+
+
+def _ordered_procedure_names(proc_map: dict) -> list:
+    """Procedure names for a Procedure dropdown: the pinned procedures
+    first (in _PINNED_PROCS order), then everything else alphabetically."""
+    _pinned_rank = {_norm_proc(name): i for i, name in enumerate(_PINNED_PROCS)}
+    return sorted(
+        proc_map.keys(),
+        key=lambda n: (
+            _pinned_rank.get(_norm_proc(n), len(_PINNED_PROCS)),
+            n if _norm_proc(n) not in _pinned_rank else "",
+        ),
+    )
+
+
 def show_gs_error(exc: Exception) -> None:
     st.error(
         "⚠️ **Could not reach Google Sheets.** "
@@ -556,6 +592,658 @@ def show_gs_error(exc: Exception) -> None:
 def go_to(page: str) -> None:
     st.session_state["page"] = page
     st.rerun()
+
+
+# ─────────────────────────────────────────────
+# RESIDENT DATA HELPERS
+# (shared by a resident's own Comments/Cumulative dashboards and by an
+# attending's Resident Dashboard, which shows the same views for a resident
+# of the attending's choosing)
+# ─────────────────────────────────────────────
+def _build_comments(row) -> str:
+    """Plain-text Comments value (used for the Excel export): the
+    "In order to improve..." sentence (if either field was answered),
+    followed by the free-text notes."""
+    imp = row["improve"].strip()
+    how = row["how"].strip()
+    parts = []
+    if imp or how:
+        parts.append(f"In order to improve {imp or '(blank)'}.\nDo this: {how or '(blank)'}.")
+    if row["notes"].strip():
+        parts.append(row["notes"].strip())
+    return "\n\n".join(parts)
+
+
+def _build_comments_html(row) -> str:
+    """HTML Comments value for the on-screen table: the resident's
+    improve/how answers are underlined, and "Do this:" starts as its
+    own sentence on a new line."""
+    imp = row["improve"].strip()
+    how = row["how"].strip()
+    parts = []
+    if imp or how:
+        imp_html = f"<u>{html.escape(imp)}</u>" if imp else "(blank)"
+        how_html = f"<u>{html.escape(how)}</u>" if how else "(blank)"
+        parts.append(f"In order to improve {imp_html}.<br>Do this: {how_html}.")
+    if row["notes"].strip():
+        parts.append(html.escape(row["notes"].strip()).replace(chr(10), "<br>"))
+    return "<br><br>".join(parts)
+
+
+def _build_resident_comments_df(resident_email: str) -> pd.DataFrame:
+    """Attending-confirmed cases with a comment (improve/how/notes) for one
+    resident, as a Date/Procedure/Attending/Comments/Comments_html table
+    sorted newest first. Self-assessments are excluded — same as the
+    heatmap, these are the resident's own unverified entry, not an
+    attending-confirmed one. Empty DataFrame (with those columns) if there's
+    nothing to show."""
+    _cols = ["Date", "Procedure", "Attending", "Comments", "Comments_html"]
+    cases_df = read_sheet_df(
+        SHEET_CASES,
+        expected_cols=["case_id", "resident_email", "date", "specialty_id",
+                       "procedure_id", "attending_id", "notes",
+                       "case_complexity", "overall_performance", "assessment_type",
+                       "improve", "how"],
+    )
+    procs_df = read_sheet_df(SHEET_PROCEDURES, expected_cols=["procedure_id", "procedure_name", "specialty_id"])
+    atnds_df = read_sheet_df(SHEET_ATTENDINGS, expected_cols=["attending_id", "attending_name", "specialty_id", "email"])
+
+    cases_df["case_id"] = _norm_id(cases_df["case_id"])
+    cases_df = cases_df.drop_duplicates(subset=["case_id"])
+
+    res_cases = cases_df[cases_df["resident_email"] == resident_email].copy()
+    res_cases = res_cases[res_cases["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment"]
+    res_cases["notes"]   = res_cases["notes"].fillna("").astype(str)
+    res_cases["improve"] = res_cases["improve"].fillna("").astype(str)
+    res_cases["how"]     = res_cases["how"].fillna("").astype(str)
+    res_cases = res_cases[
+        (res_cases["notes"].str.strip() != "")
+        | (res_cases["improve"].str.strip() != "")
+        | (res_cases["how"].str.strip() != "")
+    ]
+    if res_cases.empty:
+        return pd.DataFrame(columns=_cols)
+
+    res_cases["comments_html"] = res_cases.apply(_build_comments_html, axis=1)
+    res_cases["notes"] = res_cases.apply(_build_comments, axis=1)
+
+    atnds_lookup = dict(zip(atnds_df["attending_id"], atnds_df["attending_name"]))
+    res_cases["attending_name"] = res_cases["attending_id"].apply(
+        lambda aid: attending_display_name(str(aid), atnds_lookup)
+    )
+
+    procs_dedup = procs_df.drop_duplicates(subset=["procedure_id"])
+    merged = res_cases.merge(procs_dedup[["procedure_id", "procedure_name"]], on="procedure_id", how="left")
+    merged = merged.rename(columns={
+        "date":           "Date",
+        "procedure_name": "Procedure",
+        "attending_name": "Attending",
+        "notes":          "Comments",
+        "comments_html":  "Comments_html",
+    })
+    merged["_date_sort"] = pd.to_datetime(merged["Date"], errors="coerce")
+    merged = merged[_cols + ["_date_sort"]].sort_values("_date_sort", ascending=False).drop(columns=["_date_sort"])
+    merged["Date"] = merged["Date"].apply(fmt_date)
+    return merged
+
+
+def _render_comments_html_table(merged: pd.DataFrame, show_proc: bool, show_att: bool) -> None:
+    """Render a Date/[Procedure]/[Attending]/Comments table as wrapped HTML
+    (so the Comments column can wrap), with the same shrink-to-fit script
+    the Comments Dashboard uses."""
+    st.markdown("""
+<style>
+.comments-tbl {width:100%;border-collapse:collapse;font-size:0.88rem;}
+.comments-tbl th {background:var(--secondary-background-color);padding:8px 10px;
+    text-align:left;border-bottom:2px solid #ccc;font-weight:600;}
+.comments-tbl td {padding:8px 10px;vertical-align:top;border-bottom:1px solid var(--secondary-background-color);}
+.comments-tbl td.date-col, .comments-tbl td.attending-col, .comments-tbl td.procedure-col {
+    white-space:nowrap;font-size:var(--cmts-sync-font, inherit);
+}
+.comments-tbl td.comments-col {white-space:pre-wrap;word-break:break-word;min-width:260px;}
+</style>""", unsafe_allow_html=True)
+
+    _rows_html = ""
+    for _, r in merged.reset_index(drop=True).iterrows():
+        _rows_html += (
+            f"<tr>"
+            f"<td class='date-col'>{html.escape(str(r['Date']))}</td>"
+            + (f"<td class='procedure-col'>{html.escape(str(r['Procedure']))}</td>" if show_proc else "")
+            + (f"<td class='attending-col'>{html.escape(str(r['Attending']))}</td>" if show_att else "")
+            + f"<td class='comments-col'>{r['Comments_html']}</td>"
+            f"</tr>"
+        )
+    _header_html = (
+        "<th>Date</th>"
+        + ("<th>Procedure</th>" if show_proc else "")
+        + ("<th>Attending</th>" if show_att else "")
+        + "<th>Comments</th>"
+    )
+    st.markdown(
+        "<table class='comments-tbl'>"
+        f"<thead><tr>{_header_html}</tr></thead>"
+        f"<tbody>{_rows_html}</tbody></table>",
+        unsafe_allow_html=True,
+    )
+    # Date, Procedure, and Attending default to the table's normal font
+    # size (the CSS above just falls back to `inherit`) and Comments
+    # absorbs the squeeze down to its own min-width first. Only if that
+    # still isn't enough room does this shrink Date/Procedure/Attending
+    # — together, to the same size as each other via one shared CSS
+    # var — just enough to fit without wrapping.
+    st.iframe(
+        """
+        <script>
+        (function() {
+            var doc = window.parent.document;
+            var tables = doc.querySelectorAll('.comments-tbl');
+            var table = tables[tables.length - 1];
+            if (!table) return;
+            function fit() {
+                table.style.removeProperty('--cmts-sync-font');
+                var container = table.parentElement;
+                if (!container) return;
+                var containerWidth = container.clientWidth;
+                if (!containerWidth) return;
+                var natural = table.scrollWidth;
+                if (natural <= containerWidth) return;
+                var dateCells = table.querySelectorAll('td.date-col');
+                var procCells = table.querySelectorAll('td.procedure-col');
+                var attCells = table.querySelectorAll('td.attending-col');
+                if (!dateCells.length) return;
+                function maxWidth(cells) {
+                    var m = 0;
+                    cells.forEach(function(c) { m = Math.max(m, c.scrollWidth); });
+                    return m;
+                }
+                var threeW = maxWidth(dateCells) + maxWidth(procCells) + maxWidth(attCells);
+                if (threeW <= 0) return;
+                var otherW = natural - threeW;
+                var availableForThree = containerWidth - otherW;
+                var baseSize = parseFloat(window.getComputedStyle(dateCells[0]).fontSize);
+                var ratio = Math.min(1, availableForThree / threeW) * 0.98;
+                var newSize = Math.max(baseSize * ratio, 9);
+                table.style.setProperty('--cmts-sync-font', newSize + 'px');
+            }
+            fit();
+            window.parent.addEventListener('resize', fit);
+            if (window.parent.ResizeObserver) {
+                new window.parent.ResizeObserver(fit).observe(table.parentElement);
+            }
+        })();
+        </script>
+        """,
+        height=1,
+    )
+
+
+def _build_resident_case_matrix(resident_email: str):
+    """Every attending-confirmed case for one resident, joined down to
+    per-step rating rows (self-assessments and steps left "Not Assessed"
+    excluded, same as the resident's own Cumulative Dashboard).
+
+    Returns (merged, steps_df, procs_map); `merged` is empty when there's
+    no case or no meaningful rating yet — callers should treat that as
+    "nothing to show" rather than distinguishing the two."""
+    cases_df  = read_sheet_df(SHEET_CASES,  expected_cols=["case_id", "resident_email", "date",
+                                                             "specialty_id", "procedure_id",
+                                                             "attending_id", "notes",
+                                                             "case_complexity", "overall_performance",
+                                                             "assessment_type"])
+    scores_df = read_sheet_df(SHEET_SCORES, expected_cols=["case_id", "step_id", "rating", "rating_num",
+                                                             "case_complexity", "overall_performance"])
+    steps_df  = read_sheet_df(SHEET_STEPS,  expected_cols=["step_id", "procedure_id", "step_order", "step_name"])
+    procs_df  = read_sheet_df(SHEET_PROCEDURES, expected_cols=["procedure_id", "procedure_name", "specialty_id"])
+    atnds_df  = read_sheet_df(SHEET_ATTENDINGS, expected_cols=["attending_id", "attending_name", "specialty_id", "email"])
+
+    def _clean_id(val) -> str:
+        s = str(val).strip()
+        return s[:-2] if s.endswith(".0") else s
+
+    atnds_lookup = {
+        str(r.get("attending_id", "")): str(r.get("attending_name", ""))
+        for _, r in atnds_df.iterrows()
+    }
+    procs_map = {
+        str(r.get("procedure_id", "")): str(r.get("procedure_name", ""))
+        for _, r in procs_df.iterrows()
+    }
+
+    resident_cases: dict = {}
+    for _, row in cases_df.iterrows():
+        if str(row.get("resident_email", "")).strip() != str(resident_email).strip():
+            continue
+        if str(row.get("assessment_type", "")).strip() == "Self-Assessment":
+            continue
+        cid = _clean_id(row.get("case_id", ""))
+        if not cid or cid == "nan":
+            continue
+        aid = str(row.get("attending_id", ""))
+        resident_cases[cid] = {
+            "case_id":             cid,
+            "date":                str(row.get("date", "")),
+            "case_procedure_id":   str(row.get("procedure_id", "")),
+            "attending_name":      attending_display_name(aid, atnds_lookup),
+            "case_complexity":     row.get("case_complexity"),
+            "overall_performance": row.get("overall_performance"),
+        }
+
+    if not resident_cases:
+        return pd.DataFrame(), steps_df, procs_map
+
+    steps_lookup: dict = {}
+    for _, row in steps_df.iterrows():
+        sid = str(row.get("step_id", "")).strip()
+        if not sid or sid == "nan":
+            continue
+        steps_lookup[sid] = {
+            "step_procedure_id": str(row.get("procedure_id", "")),
+            "step_name":         str(row.get("step_name", "")),
+            "step_order":        row.get("step_order", 0),
+        }
+
+    seen_case_step: set = set()
+    merged_rows: list = []
+    for _, row in scores_df.iterrows():
+        cid = _clean_id(row.get("case_id", ""))
+        if cid not in resident_cases:
+            continue
+        sid = str(row.get("step_id", "")).strip()
+        if not sid or sid == "nan":
+            continue
+        key = (cid, sid)
+        if key in seen_case_step:
+            continue
+        seen_case_step.add(key)
+        step_meta = steps_lookup.get(sid, {})
+        merged_rows.append({
+            "case_id":             cid,
+            "step_id":             sid,
+            "rating":              str(row.get("rating", "")),
+            "rating_num":          row.get("rating_num"),
+            **resident_cases[cid],
+            "step_procedure_id":   step_meta.get("step_procedure_id", ""),
+            "step_name":           step_meta.get("step_name", ""),
+            "step_order":          step_meta.get("step_order", 0),
+        })
+
+    _meaningful_case_ids = {r["case_id"] for r in merged_rows if r["rating"] != "Not Assessed"}
+    merged_rows = [r for r in merged_rows if r["case_id"] in _meaningful_case_ids]
+
+    if not merged_rows:
+        return pd.DataFrame(), steps_df, procs_map
+
+    merged = pd.DataFrame(merged_rows)
+    if "case_procedure_id" not in merged.columns:
+        merged["case_procedure_id"] = ""
+    return merged, steps_df, procs_map
+
+
+def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs_map: dict,
+                              selected_proc: str, filename_stub: str) -> None:
+    """Render the progress heatmap + legends + Excel export for one
+    resident's one procedure. `merged` is the resident's full case matrix
+    from _build_resident_case_matrix (not yet filtered to a procedure) —
+    this filters it to `selected_proc` itself."""
+    proc_data = merged[merged["case_procedure_id"] == selected_proc].copy()
+    if proc_data.empty:
+        st.info("No assessment data yet for this procedure.")
+        return
+
+    ordered_steps = (
+        steps_df[steps_df["procedure_id"] == selected_proc]
+        .sort_values("step_order")["step_name"]
+        .tolist()
+    )
+
+    def _fmt_step_hdr(name):
+        return name if isinstance(name, str) else name
+
+    _step_display        = {s: _fmt_step_hdr(s) for s in ordered_steps}
+    ordered_steps_display = [_step_display[s] for s in ordered_steps]
+
+    pivot = proc_data.pivot_table(
+        index=["date", "attending_name", "case_id", "case_complexity", "overall_performance"],
+        columns="step_name",
+        values="rating",
+        aggfunc="first",
+    ).reset_index()
+
+    for step in ordered_steps:
+        if step not in pivot.columns:
+            pivot[step] = pd.NA
+
+    pivot = pivot[["date", "attending_name", "case_id", "case_complexity", "overall_performance"] + ordered_steps]
+
+    proc_display_name = procs_map.get(selected_proc, selected_proc)
+    st.markdown(
+        f"### {proc_display_name} — Progress Heatmap\n"
+        "Most recent cases at the top. Zoom out to screenshot this grid. 📸"
+    )
+    st.caption("💡 Tip: To screenshot the full table — on mobile use print preview; on desktop use File > Print (Cmd+P / Ctrl+P), then adjust the scale percentage down until all columns fit on one page before screenshotting.")
+
+    pivot_sorted = pivot.sort_values("date", ascending=False)
+
+    _mr = {"date": "", "attending_name": "📌 Most Recent", "case_complexity": pd.NA, "overall_performance": pd.NA}
+    for _s in ordered_steps:
+        _vals = pivot_sorted[_s].dropna()
+        _vals = _vals[_vals != "Not Assessed"]
+        _mr[_s] = _vals.iloc[0] if not _vals.empty else pd.NA
+
+    _best = {"date": "", "attending_name": "🏆 Best", "case_complexity": pd.NA, "overall_performance": pd.NA}
+    for _s in ordered_steps:
+        _vals = pivot_sorted[_s].dropna()
+        if _vals.empty:
+            _best[_s] = pd.NA
+        else:
+            _best[_s] = max(_vals.tolist(), key=lambda v: RATING_TO_NUM.get(v, -1))
+
+    _summary_df = pd.DataFrame([_mr, _best])
+    _meta_cols  = ["date", "attending_name", "case_complexity", "overall_performance"]
+
+    display_df = pd.concat(
+        [_summary_df[_meta_cols + ordered_steps],
+         pivot_sorted.drop(columns=["case_id"])[_meta_cols + ordered_steps]],
+        ignore_index=True,
+    )
+
+    display_df["date"] = display_df["date"].apply(fmt_date)
+
+    display_df = display_df.rename(columns={
+        "date":                "Date",
+        "attending_name":      "Attending",
+        "case_complexity":     "Case Complexity",
+        "overall_performance": "Overall Performance",
+        **_step_display,
+    })
+    all_cols = list(display_df.columns)
+
+    display_df["Date"]      = display_df["Date"].fillna("")
+    display_df["Attending"] = display_df["Attending"].fillna("")
+
+    _rating_cols = [c for c in ordered_steps_display + ["Case Complexity", "Overall Performance"]
+                    if c in display_df.columns]
+
+    _orig_vals = {}
+    for col in _rating_cols:
+        _v = display_df[col].copy()
+        if isinstance(_v, pd.DataFrame):
+            _v = _v.iloc[:, 0]
+        _orig_vals[col] = _v.reindex(display_df.index)
+
+    for _c in _rating_cols:
+        display_df[_c] = " "
+
+    _never_attempted_cols = set()
+    _n_summary = 2
+    for _sc in ordered_steps_display:
+        if _sc not in _orig_vals:
+            continue
+        _data_vals = _orig_vals[_sc].iloc[_n_summary:]
+        _meaningful = _data_vals[~(_data_vals.isna() | (_data_vals == "Not Assessed"))]
+        if _meaningful.empty:
+            _never_attempted_cols.add(_sc)
+
+    def _color_step(val, col=None):
+        _is_na = val is None or (isinstance(val, float) and np.isnan(val)) or val == ""
+        try:
+            _is_na = _is_na or pd.isna(val)
+        except (TypeError, ValueError):
+            pass
+        if col in _never_attempted_cols:
+            if _is_na or val == "Not Assessed":
+                return "background-color: #E0E0E0"
+        if _is_na:
+            return "background-color: #E0E0E0"
+        color = RATING_HEX.get(val, "")
+        return f"background-color: {color}" if color else ""
+
+    def _color_complexity(val):
+        if pd.isna(val) or val == "":
+            return ""
+        return f"background-color: {COMPLEXITY_HEX.get(val, '')}"
+
+    def _color_o_score(val):
+        if not isinstance(val, str) or val == "":
+            return ""
+        key = val.split("-")[0].strip()
+        return f"background-color: {O_SCORE_HEX.get(key, '')}"
+
+    try:
+        styled = display_df.style
+
+        if ordered_steps_display:
+            _safe_step_cols = [c for c in ordered_steps_display if c in _orig_vals]
+            _orig_steps_df = pd.DataFrame(
+                {c: _orig_vals[c] for c in _safe_step_cols},
+                index=display_df.index,
+            )
+
+            def _color_steps_matrix(df):
+                result = {}
+                for col in df.columns:
+                    col_colors = []
+                    is_never = col in _never_attempted_cols
+                    for i, v in enumerate(_orig_steps_df[col]):
+                        _na = v is None or v == ""
+                        try:
+                            _na = _na or pd.isna(v)
+                        except (TypeError, ValueError):
+                            pass
+                        if is_never and i < _n_summary:
+                            col_colors.append("background-color: #E0E0E0")
+                        else:
+                            col_colors.append(_color_step(v, col=col))
+                    result[col] = col_colors
+                return pd.DataFrame(result, index=df.index)
+
+            if _safe_step_cols:
+                styled = styled.apply(_color_steps_matrix, subset=_safe_step_cols, axis=None)
+
+        def _apply_complexity_colors(col):
+            return [_color_complexity(v) for v in _orig_vals["Case Complexity"]]
+
+        def _apply_o_score_colors(col):
+            return [_color_o_score(v) for v in _orig_vals["Overall Performance"]]
+
+        styled = (
+            styled
+            .apply(_apply_complexity_colors, subset=["Case Complexity"], axis=0)
+            .apply(_apply_o_score_colors,    subset=["Overall Performance"], axis=0)
+            .hide(axis="index")
+            .set_properties(
+                subset=["Date", "Attending"],
+                **{"min-width": "120px", "white-space": "nowrap"},
+            )
+            .set_properties(
+                subset=["Case Complexity", "Overall Performance"],
+                **{"min-width": "40px", "max-width": "40px", "width": "40px", "text-align": "center"},
+            )
+        )
+        if ordered_steps_display:
+            styled = styled.set_properties(
+                subset=ordered_steps_display,
+                **{"min-width": "40px", "max-width": "40px", "width": "40px", "text-align": "center"},
+            )
+
+        table_styles = [
+            {"selector": "table",       "props": [("border-collapse", "collapse"), ("margin", "0 auto"),
+                                                   ("border", "2px solid #555")]},
+            {"selector": "th, td",      "props": [("border", "1px solid #bbb"),
+                                                   ("padding", "4px"), ("font-size", "0.8rem")]},
+            {"selector": "th.col_heading", "props": [("text-align", "center"), ("vertical-align", "bottom"),
+                                                       ("font-weight", "600")]},
+            {"selector": "thead tr:last-child th", "props": [("border-bottom", "2px solid #555")]},
+            {"selector": "tbody tr", "props": [("border-bottom", "1px solid #bbb")]},
+            {"selector": "tbody tr:nth-child(1)", "props": [("border-bottom", "2px solid #555")]},
+            {"selector": "tbody tr:nth-child(2)", "props": [("border-bottom", "2px solid #555")]},
+            {"selector": "tbody tr:nth-child(1) td:nth-child(1)",
+             "props": [("border-right", "none")]},
+            {"selector": "tbody tr:nth-child(2) td:nth-child(1)",
+             "props": [("border-right", "none")]},
+            {"selector": "tbody tr:nth-child(1) td:nth-child(2)",
+             "props": [("text-align", "right"), ("font-weight", "600"),
+                       ("padding-right", "6px"), ("border-left", "none")]},
+            {"selector": "tbody tr:nth-child(2) td:nth-child(2)",
+             "props": [("text-align", "right"), ("font-weight", "600"),
+                       ("padding-right", "6px"), ("border-left", "none")]},
+        ]
+        _vheader_cols  = [c for c in all_cols
+                           if c in ordered_steps_display or c in ("Case Complexity", "Overall Performance")]
+        _BASE_FONT_PX  = 12
+        _PX_PER_CHAR   = 7
+        _CELL_PAD_PX   = 12
+        _MIN_HEADER_PX = 180
+        _MIN_FONT_PX   = 7
+
+        def _label_len(c):
+            return len(c) if isinstance(c, str) else 0
+
+        if _vheader_cols:
+            _estimates = sorted(_label_len(c) * _PX_PER_CHAR + _CELL_PAD_PX for c in _vheader_cols)
+            _half_idx = -(-len(_estimates) // 2) - 1
+            _max_header_px = max(_estimates[_half_idx], _MIN_HEADER_PX)
+        else:
+            _max_header_px = _MIN_HEADER_PX
+
+        for idx, col_name in enumerate(all_cols):
+            if col_name in _vheader_cols:
+                _need_px = _label_len(col_name) * _PX_PER_CHAR + _CELL_PAD_PX
+                _props = [
+                    ("writing-mode", "vertical-rl"),
+                    ("transform", "rotate(180deg)"),
+                    ("vertical-align", "bottom"),
+                    ("text-align", "left"),
+                    ("padding", "4px 2px"),
+                    ("width", "36px"),
+                    ("min-width", "36px"),
+                    ("max-width", "36px"),
+                    ("max-height", f"{_max_header_px}px"),
+                    ("height", f"{_max_header_px}px"),
+                ]
+                if _need_px <= _max_header_px:
+                    _props += [
+                        ("white-space", "nowrap"),
+                        ("font-size", "0.75rem"),
+                    ]
+                else:
+                    _per_line_px = _need_px / 2
+                    _scale = min(1.0, _max_header_px / _per_line_px) if _per_line_px else 1.0
+                    _font_px = max(_MIN_FONT_PX, round(_BASE_FONT_PX * _scale))
+                    _props += [
+                        ("white-space", "normal"),
+                        ("overflow-wrap", "break-word"),
+                        ("word-break", "break-word"),
+                        ("line-height", "1.05"),
+                        ("font-size", f"{_font_px}px"),
+                    ]
+                table_styles.append({
+                    "selector": f"th.col_heading.level0.col{idx}",
+                    "props": _props,
+                })
+
+        table_styles.append({
+            "selector": "th.col_heading .pp-vhdr-inner",
+            "props": [
+                ("display", "flex"),
+                ("align-items", "center"),
+                ("justify-content", "flex-start"),
+                ("width", "100%"),
+                ("height", "100%"),
+            ],
+        })
+
+        def _wrap_vheader_labels(html_str, vheader_indices):
+            if not vheader_indices:
+                return html_str
+            _col_idx_re = re.compile(r"\bcol(\d+)\b")
+
+            def _wrap(m):
+                open_tag, inner, close_tag = m.group(1), m.group(2), m.group(3)
+                if "col_heading" not in open_tag:
+                    return m.group(0)
+                idx_match = _col_idx_re.search(open_tag)
+                if not idx_match or int(idx_match.group(1)) not in vheader_indices:
+                    return m.group(0)
+                return f'{open_tag}<div class="pp-vhdr-inner">{inner}</div>{close_tag}'
+
+            return re.sub(r"(<th\b[^>]*>)(.*?)(</th>)", _wrap, html_str, flags=re.DOTALL)
+
+        styled = styled.set_table_styles(table_styles)
+        _vheader_idx = {idx for idx, c in enumerate(all_cols) if c in _vheader_cols}
+        st.markdown(_wrap_vheader_labels(styled.to_html(), _vheader_idx), unsafe_allow_html=True)
+
+    except Exception as _heatmap_err:
+        st.warning(
+            f"⚠️ Could not render the heatmap for this procedure: {_heatmap_err}\n\n"
+            "Please try a different procedure, or contact your program coordinator."
+        )
+
+    def _swatch(color, label, border=""):
+        _bdr = f"border:{border};" if border else ""
+        return (
+            f'<span class="legend-item">'
+            f'<span class="legend-swatch" style="background-color:{color};{_bdr}"></span>{label}'
+            f'</span>'
+        )
+
+    st.markdown("#### Ratings Legend")
+    _rating_legend_html = "".join(
+        _swatch(v, k, "1px solid #aaa" if k == "Not Assessed" else "")
+        for k, v in RATING_HEX.items()
+    )
+    _rating_legend_html += _swatch("#E0E0E0", "Never Attempted")
+    st.markdown('<div class="legend-row">' + _rating_legend_html + "</div>", unsafe_allow_html=True)
+
+    st.markdown("#### Case Complexity")
+    st.markdown(
+        '<div class="legend-row">' +
+        "".join(_swatch(v, k) for k, v in COMPLEXITY_HEX.items()) +
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("---")
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        pivot_excel = pivot.copy()
+        pivot_excel["date"] = pivot_excel["date"].apply(fmt_date)
+        pivot_excel = pivot_excel.rename(columns={
+            "date":                "Date",
+            "attending_name":      "Attending",
+            "case_id":             "Case ID",
+            "case_complexity":     "Case Complexity",
+            "overall_performance": "Overall Performance",
+        })
+        pivot_excel.to_excel(writer, index=False, sheet_name="Cumulative")
+        ws_xl = writer.sheets["Cumulative"]
+        from openpyxl.styles import PatternFill, Font
+
+        step_fill_map = {k: v.lstrip("#") for k, v in RATING_HEX.items() if k not in ("Not Assessed",)}
+        step_fill_map["Not Assessed"] = "E0E0E0"
+
+        start_col = 6
+        for xl_row in ws_xl.iter_rows(
+            min_row=2, max_row=ws_xl.max_row,
+            min_col=start_col, max_col=5 + len(ordered_steps),
+        ):
+            for cell in xl_row:
+                val = cell.value
+                if val in step_fill_map:
+                    cell.fill = PatternFill(
+                        start_color=step_fill_map[val],
+                        end_color=step_fill_map[val],
+                        fill_type="solid",
+                    )
+                    cell.font = Font(color="FFFFFF" if val in ("Not Yet", "Auto") else "000000")
+
+    st.download_button(
+        label=f"📥 Download Excel — {procs_map.get(selected_proc, selected_proc)}",
+        data=output.getvalue(),
+        file_name=f"{filename_stub}_{selected_proc}_cumulative.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key=f"dl_heatmap_{filename_stub}_{selected_proc}",
+    )
 
 
 # ─────────────────────────────────────────────
@@ -1085,7 +1773,14 @@ def sync_improve_how_label_width() -> None:
 # ─────────────────────────────────────────────
 st.sidebar.title("🩺 Procedure Passport")
 
-_logged_in = st.session_state.get("resident")
+_is_attending_role = st.session_state.get("role") == "attending"
+# When an attending is logged in, "resident" holds whichever resident they're
+# currently assessing (same repurposing the anonymous magic-link flow already
+# does) — not their own identity, so it must never drive the resident-login
+# sidebar below.
+_logged_in = None if _is_attending_role else st.session_state.get("resident")
+_attending_logged_in = st.session_state.get("attending_login_email") if _is_attending_role else None
+
 if _logged_in in ADMINS:
     if st.sidebar.button("⚙️ Admin Panel"):
         go_to("admin")
@@ -1094,7 +1789,7 @@ if _logged_in and st.session_state["page"] not in ("login", "attending_assessmen
     st.sidebar.markdown(f"👤 **{st.session_state.get('resident_name', '')}**")
     st.sidebar.markdown(f"_{_logged_in}_")
     st.sidebar.markdown("---")
-    if st.sidebar.button("🚪 Logout"):
+    if st.sidebar.button("🚪 Logout", key="sb_logout_resident"):
         for _k in list(st.session_state.keys()):
             del st.session_state[_k]
         st.cache_data.clear()
@@ -1116,8 +1811,33 @@ if _logged_in and st.session_state["page"] not in ("login", "attending_assessmen
         st.session_state["page"] = "home"
         st.rerun()
 
+# ── Attending-account sidebar (own login, separate from the anonymous
+# magic-link flow above) ──
+if _attending_logged_in:
+    st.sidebar.markdown(f"👤 **{st.session_state.get('attending_login_name', '')}**")
+    st.sidebar.markdown(f"_{_attending_logged_in}_")
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🚪 Logout", key="sb_logout_attending"):
+        for _k in list(st.session_state.keys()):
+            del st.session_state[_k]
+        st.cache_data.clear()
+        st.rerun()
+    st.sidebar.markdown("---")
+    if st.sidebar.button("➕ Start Assessment", key="sb_att_start"):
+        st.session_state["page"] = "attending_start"
+        st.rerun()
+    if st.sidebar.button("📊 Resident Dashboard", key="sb_att_dashboard"):
+        st.session_state["page"] = "attending_resident_dashboard"
+        st.rerun()
+    if st.sidebar.button("🏠 Back to Home", key="sb_att_home"):
+        st.session_state["page"] = "attending_home"
+        st.rerun()
+
 # ── Sidebar rating legend (shown only on relevant pages) ──
-if st.session_state.get("page") in ("start", "assessment", "dashboard", "cumulative", "attending_assessment"):
+if st.session_state.get("page") in (
+    "start", "assessment", "dashboard", "cumulative", "attending_assessment",
+    "attending_start", "attending_resident_dashboard",
+):
     st.sidebar.markdown("---")
     st.sidebar.markdown("**Rating Scale**")
     _LEGEND_ITEMS = [
@@ -1523,14 +2243,29 @@ if page == "login":
             SHEET_RESIDENTS, expected_cols=["email", "name", "specialty_id", "created_at"]
         )
         admins_lower = [a.lower() for a in ADMINS]
-        if canonical_email.strip().lower() in admins_lower:
-            st.session_state.update(resident=canonical_email, resident_name="Admin", page="admin")
-        else:
-            residents_lower = residents["email"].str.strip().str.lower()
-            row = residents.loc[residents_lower == canonical_email.strip().lower()].iloc[0]
+        email_lower = canonical_email.strip().lower()
+        residents_lower = residents["email"].str.strip().str.lower()
+        if email_lower in admins_lower:
+            st.session_state.update(resident=canonical_email, resident_name="Admin", role="admin", page="admin")
+        elif email_lower in residents_lower.values:
+            row = residents.loc[residents_lower == email_lower].iloc[0]
             st.session_state.update(
                 resident=row["email"], resident_name=row["name"],
-                specialty_id=row["specialty_id"], page="home",
+                specialty_id=row["specialty_id"], role="resident", page="home",
+            )
+        else:
+            attendings = read_sheet_df(
+                SHEET_ATTENDINGS, expected_cols=["attending_id", "attending_name", "specialty_id", "email"]
+            )
+            attendings_lower = attendings["email"].fillna("").str.strip().str.lower()
+            row = attendings.loc[attendings_lower == email_lower].iloc[0]
+            st.session_state.update(
+                role="attending",
+                attending_login_email=row["email"],
+                attending_login_name=row["attending_name"],
+                attending_login_id=row["attending_id"],
+                attending_login_specialty_id=row["specialty_id"],
+                page="attending_home",
             )
         st.rerun()
 
@@ -1565,13 +2300,20 @@ if page == "login":
                     SHEET_RESIDENTS,
                     expected_cols=["email", "name", "specialty_id", "created_at"],
                 )
+                attendings = read_sheet_df(
+                    SHEET_ATTENDINGS,
+                    expected_cols=["attending_id", "attending_name", "specialty_id", "email"],
+                )
                 email_lower = email.strip().lower()
                 admins_lower = [a.lower() for a in ADMINS]
                 residents_lower = residents["email"].str.strip().str.lower()
+                attendings_lower = attendings["email"].fillna("").str.strip().str.lower()
                 if email_lower in admins_lower:
                     canonical = ADMINS[admins_lower.index(email_lower)]
                 elif email_lower in residents_lower.values:
                     canonical = residents.loc[residents_lower == email_lower].iloc[0]["email"]
+                elif email_lower in attendings_lower.values:
+                    canonical = attendings.loc[attendings_lower == email_lower].iloc[0]["email"]
                 else:
                     canonical = None
                 if canonical is None:
@@ -1715,7 +2457,12 @@ elif page == "admin":
         with st.expander("➕ Add Attending"):
             new_att_name  = st.text_input("Attending name")
             new_att_spec  = st.selectbox("Specialty", spec_df["specialty_name"], key="add_att_spec")
-            new_att_email = st.text_input("Email (optional)")
+            new_att_email = st.text_input(
+                "Email (optional)",
+                help="Set this to give the attending their own login — they'll see only "
+                     "the residents in their specialty, and can start a blank assessment "
+                     "or view a resident's dashboard directly (no magic link needed).",
+            )
             if st.button("Add Attending", key="btn_add_att"):
                 if new_att_name:
                     _spec_match = spec_df[spec_df["specialty_name"].astype(str).str.strip() == str(new_att_spec).strip()]
@@ -1852,6 +2599,37 @@ elif page == "home":
 
 
 # ════════════════════════════════════════════════════════════
+# PAGE: ATTENDING HOME
+# ════════════════════════════════════════════════════════════
+elif page == "attending_home":
+    mobile_tip("📱 On mobile: tap the >> icon at top left to access navigation.")
+    page_header(
+        header_break_before("👋 Welcome back,", st.session_state["attending_login_name"]),
+        tier_text="👋 Welcome back,",
+    )
+    st.markdown("_What would you like to do today?_")
+    st.markdown("")
+
+    with st.container(key="home_cards"):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown('<div class="pp-card">', unsafe_allow_html=True)
+            st.markdown("### ➕ New Assessment")
+            st.markdown("Start a blank assessment for one of your residents.")
+            if st.button("Start Assessment", width="stretch", type="primary", key="att_home_start_btn"):
+                go_to("attending_start")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with c2:
+            st.markdown('<div class="pp-card">', unsafe_allow_html=True)
+            st.markdown("### 📊 Resident Dashboard")
+            st.markdown("View resident progress heatmaps and comments.")
+            if st.button("View Dashboard", width="stretch", key="att_home_dashboard_btn"):
+                go_to("attending_resident_dashboard")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ════════════════════════════════════════════════════════════
 # PAGE: START CASE
 # ════════════════════════════════════════════════════════════
 elif page == "start":
@@ -1901,30 +2679,7 @@ elif page == "start":
     _CHOOSE_PROC = "Choose Procedure"
     _CHOOSE_ATT  = "Choose Attending"
 
-    # Pinned procedures always come first, in this order (when present for
-    # the current specialty); everything else follows alphabetically.
-    # Matched case/whitespace-insensitively (normalizing runs of whitespace,
-    # including non-breaking spaces, to a single plain space) since a sheet
-    # value that differs from these only by case or stray spacing should
-    # still be recognized as the same procedure and pinned correctly.
-    _PINNED_PROCS = [
-        "Robotic Surgical Skills Feedback",
-        "Robotic Bedsiding",
-        "Open Surgical Skills Feedback",
-        "Endoscopic Surgical Skills Feedback",
-    ]
-
-    def _norm_proc(name: str) -> str:
-        return " ".join(name.replace("\xa0", " ").split()).casefold()
-
-    _pinned_rank = {_norm_proc(name): i for i, name in enumerate(_PINNED_PROCS)}
-    _proc_options = sorted(
-        proc_map.keys(),
-        key=lambda n: (
-            _pinned_rank.get(_norm_proc(n), len(_PINNED_PROCS)),
-            n if _norm_proc(n) not in _pinned_rank else "",
-        ),
-    )
+    _proc_options = _ordered_procedure_names(proc_map)
 
     attending = st.selectbox(
         "Attending",
@@ -2324,97 +3079,18 @@ elif page == "comments":
         st.stop()
 
     try:
-        cases_df = read_sheet_df(
-            SHEET_CASES,
-            expected_cols=["case_id", "resident_email", "date", "specialty_id",
-                           "procedure_id", "attending_id", "notes",
-                           "case_complexity", "overall_performance", "assessment_type",
-                           "improve", "how"],
-        )
-        procs_df = read_sheet_df(SHEET_PROCEDURES, expected_cols=["procedure_id", "procedure_name", "specialty_id"])
-        atnds_df = read_sheet_df(SHEET_ATTENDINGS, expected_cols=["attending_id", "attending_name", "specialty_id", "email"])
+        merged = _build_resident_comments_df(resident)
     except ConnectionError as exc:
         show_gs_error(exc)
         if st.button("⬅️ Back to Home"):
             go_to("home")
         st.stop()
 
-    # Normalise case_id then deduplicate to prevent fan-out from duplicate rows.
-    cases_df["case_id"] = _norm_id(cases_df["case_id"])
-    cases_df = cases_df.drop_duplicates(subset=["case_id"])
-
-    res_cases = cases_df[cases_df["resident_email"] == resident].copy()
-    # Self-assessments are the resident's own unverified entry, not an
-    # attending-confirmed one — keep them out of this dashboard, same as
-    # the cumulative heatmap.
-    res_cases = res_cases[res_cases["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment"]
-    res_cases["notes"]   = res_cases["notes"].fillna("").astype(str)
-    res_cases["improve"] = res_cases["improve"].fillna("").astype(str)
-    res_cases["how"]     = res_cases["how"].fillna("").astype(str)
-    res_cases = res_cases[
-        (res_cases["notes"].str.strip() != "")
-        | (res_cases["improve"].str.strip() != "")
-        | (res_cases["how"].str.strip() != "")
-    ]
-
-    def _build_comments(row) -> str:
-        """Plain-text Comments value (used for the Excel export): the
-        "In order to improve..." sentence (if either field was answered),
-        followed by the free-text notes."""
-        imp = row["improve"].strip()
-        how = row["how"].strip()
-        parts = []
-        if imp or how:
-            parts.append(f"In order to improve {imp or '(blank)'}.\nDo this: {how or '(blank)'}.")
-        if row["notes"].strip():
-            parts.append(row["notes"].strip())
-        return "\n\n".join(parts)
-
-    def _build_comments_html(row) -> str:
-        """HTML Comments value for the on-screen table: the resident's
-        improve/how answers are underlined, and "Do this:" starts as its
-        own sentence on a new line."""
-        imp = row["improve"].strip()
-        how = row["how"].strip()
-        parts = []
-        if imp or how:
-            imp_html = f"<u>{html.escape(imp)}</u>" if imp else "(blank)"
-            how_html = f"<u>{html.escape(how)}</u>" if how else "(blank)"
-            parts.append(f"In order to improve {imp_html}.<br>Do this: {how_html}.")
-        if row["notes"].strip():
-            parts.append(html.escape(row["notes"].strip()).replace(chr(10), "<br>"))
-        return "<br><br>".join(parts)
-
-    res_cases["comments_html"] = res_cases.apply(_build_comments_html, axis=1)
-    res_cases["notes"] = res_cases.apply(_build_comments, axis=1)
-
-    if res_cases.empty:
+    if merged.empty:
         st.info("No comments recorded yet.")
         if st.button("⬅️ Back to Home"):
             go_to("home")
     else:
-        # Resolve attending names — magic_ IDs never appear in the attendings sheet,
-        # so we decode them directly from the ID string instead of joining.
-        atnds_lookup = dict(zip(atnds_df["attending_id"], atnds_df["attending_name"]))
-        res_cases["attending_name"] = res_cases["attending_id"].apply(
-            lambda aid: attending_display_name(str(aid), atnds_lookup)
-        )
-
-        # Deduplicate procs so a fanout can't multiply rows.
-        procs_dedup = procs_df.drop_duplicates(subset=["procedure_id"])
-        merged = res_cases.merge(procs_dedup[["procedure_id", "procedure_name"]], on="procedure_id", how="left")
-        merged = merged.rename(columns={
-            "date":           "Date",
-            "procedure_name": "Procedure",
-            "attending_name": "Attending",
-            "notes":          "Comments",
-            "comments_html":  "Comments_html",
-        })
-        # Fix 1: format dates as MM-DD-YYYY — sort by datetime first, then format
-        merged["_date_sort"] = pd.to_datetime(merged["Date"], errors="coerce")
-        merged = merged[["Date", "Procedure", "Attending", "Comments", "Comments_html", "_date_sort"]].sort_values("_date_sort", ascending=False).drop(columns=["_date_sort"])
-        merged["Date"] = merged["Date"].apply(fmt_date)
-
         st.caption("💡 Tip: To screenshot the full table — on mobile use print preview; on desktop use File > Print (Cmd+P / Ctrl+P), then adjust the scale percentage down until all columns fit on one page before screenshotting.")
 
         # Fix 8: procedure/attending filter dropdowns — each one's options
@@ -2457,91 +3133,7 @@ elif page == "comments":
         _show_proc = _proc_filter == "All Procedures"
         _show_att = _att_filter == "All Attendings"
 
-        # Fix 8: render with wrapped Comments column using HTML table
-        st.markdown("""
-<style>
-.comments-tbl {width:100%;border-collapse:collapse;font-size:0.88rem;}
-.comments-tbl th {background:var(--secondary-background-color);padding:8px 10px;
-    text-align:left;border-bottom:2px solid #ccc;font-weight:600;}
-.comments-tbl td {padding:8px 10px;vertical-align:top;border-bottom:1px solid var(--secondary-background-color);}
-.comments-tbl td.date-col, .comments-tbl td.attending-col, .comments-tbl td.procedure-col {
-    white-space:nowrap;font-size:var(--cmts-sync-font, inherit);
-}
-.comments-tbl td.comments-col {white-space:pre-wrap;word-break:break-word;min-width:260px;}
-</style>""", unsafe_allow_html=True)
-
-        _rows_html = ""
-        for _, r in merged.reset_index(drop=True).iterrows():
-            _rows_html += (
-                f"<tr>"
-                f"<td class='date-col'>{html.escape(str(r['Date']))}</td>"
-                + (f"<td class='procedure-col'>{html.escape(str(r['Procedure']))}</td>" if _show_proc else "")
-                + (f"<td class='attending-col'>{html.escape(str(r['Attending']))}</td>" if _show_att else "")
-                + f"<td class='comments-col'>{r['Comments_html']}</td>"
-                f"</tr>"
-            )
-        _header_html = (
-            "<th>Date</th>"
-            + ("<th>Procedure</th>" if _show_proc else "")
-            + ("<th>Attending</th>" if _show_att else "")
-            + "<th>Comments</th>"
-        )
-        st.markdown(
-            "<table class='comments-tbl'>"
-            f"<thead><tr>{_header_html}</tr></thead>"
-            f"<tbody>{_rows_html}</tbody></table>",
-            unsafe_allow_html=True,
-        )
-        # Date, Procedure, and Attending default to the table's normal font
-        # size (the CSS above just falls back to `inherit`) and Comments
-        # absorbs the squeeze down to its own min-width first. Only if that
-        # still isn't enough room does this shrink Date/Procedure/Attending
-        # — together, to the same size as each other via one shared CSS
-        # var — just enough to fit without wrapping.
-        st.iframe(
-            """
-            <script>
-            (function() {
-                var doc = window.parent.document;
-                var tables = doc.querySelectorAll('.comments-tbl');
-                var table = tables[tables.length - 1];
-                if (!table) return;
-                function fit() {
-                    table.style.removeProperty('--cmts-sync-font');
-                    var container = table.parentElement;
-                    if (!container) return;
-                    var containerWidth = container.clientWidth;
-                    if (!containerWidth) return;
-                    var natural = table.scrollWidth;
-                    if (natural <= containerWidth) return;
-                    var dateCells = table.querySelectorAll('td.date-col');
-                    var procCells = table.querySelectorAll('td.procedure-col');
-                    var attCells = table.querySelectorAll('td.attending-col');
-                    if (!dateCells.length) return;
-                    function maxWidth(cells) {
-                        var m = 0;
-                        cells.forEach(function(c) { m = Math.max(m, c.scrollWidth); });
-                        return m;
-                    }
-                    var threeW = maxWidth(dateCells) + maxWidth(procCells) + maxWidth(attCells);
-                    if (threeW <= 0) return;
-                    var otherW = natural - threeW;
-                    var availableForThree = containerWidth - otherW;
-                    var baseSize = parseFloat(window.getComputedStyle(dateCells[0]).fontSize);
-                    var ratio = Math.min(1, availableForThree / threeW) * 0.98;
-                    var newSize = Math.max(baseSize * ratio, 9);
-                    table.style.setProperty('--cmts-sync-font', newSize + 'px');
-                }
-                fit();
-                window.parent.addEventListener('resize', fit);
-                if (window.parent.ResizeObserver) {
-                    new window.parent.ResizeObserver(fit).observe(table.parentElement);
-                }
-            })();
-            </script>
-            """,
-            height=1,
-        )
+        _render_comments_html_table(merged, _show_proc, _show_att)
 
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -2573,124 +3165,18 @@ elif page == "cumulative":
         st.stop()
 
     try:
-        cases_df  = read_sheet_df(SHEET_CASES,  expected_cols=["case_id", "resident_email", "date",
-                                                                "specialty_id", "procedure_id",
-                                                                "attending_id", "notes",
-                                                                "case_complexity", "overall_performance",
-                                                                "assessment_type"])
-        scores_df = read_sheet_df(SHEET_SCORES, expected_cols=["case_id", "step_id", "rating", "rating_num",
-                                                                "case_complexity", "overall_performance"])
-        steps_df  = read_sheet_df(SHEET_STEPS,  expected_cols=["step_id", "procedure_id", "step_order", "step_name"])
-        procs_df  = read_sheet_df(SHEET_PROCEDURES, expected_cols=["procedure_id", "procedure_name", "specialty_id"])
-        atnds_df  = read_sheet_df(SHEET_ATTENDINGS, expected_cols=["attending_id", "attending_name", "specialty_id", "email"])
+        merged, steps_df, procs_map = _build_resident_case_matrix(resident)
     except ConnectionError as exc:
         show_gs_error(exc)
         if st.button("⬅️ Back to Home"):
             go_to("home")
         st.stop()
 
-    # ── Pure-Python join pipeline (pandas-version-agnostic) ───────────────────
-    # Every case_id is coerced to a clean string at read time using native Python
-    # str() so no pandas dtype inference can silently break the join.
-
-    def _clean_id(val) -> str:
-        """str(x).strip() then remove a trailing .0 left by float→str conversion."""
-        s = str(val).strip()
-        return s[:-2] if s.endswith(".0") else s
-
-    # Build a dict of case_id → case-metadata for this resident only.
-    # Duplicates are handled by last-write-wins (same result as drop_duplicates).
-    atnds_lookup = {
-        str(r.get("attending_id", "")): str(r.get("attending_name", ""))
-        for _, r in atnds_df.iterrows()
-    }
-    procs_map = {
-        str(r.get("procedure_id", "")): str(r.get("procedure_name", ""))
-        for _, r in procs_df.iterrows()
-    }
-
-    resident_cases: dict = {}  # clean_case_id → metadata dict
-    for _, row in cases_df.iterrows():
-        if str(row.get("resident_email", "")).strip() != str(resident).strip():
-            continue
-        # Self-assessments are the resident's own unverified entry, not an
-        # attending-confirmed one — keep them out of the heatmap. Everything
-        # else (Assessed Together, and every Attending Evaluation variant —
-        # accepted as-is, changed, or from a blank link) still counts.
-        if str(row.get("assessment_type", "")).strip() == "Self-Assessment":
-            continue
-        cid = _clean_id(row.get("case_id", ""))
-        if not cid or cid == "nan":
-            continue
-        aid = str(row.get("attending_id", ""))
-        resident_cases[cid] = {
-            "case_id":             cid,
-            "date":                str(row.get("date", "")),
-            "case_procedure_id":   str(row.get("procedure_id", "")),
-            "attending_name":      attending_display_name(aid, atnds_lookup),
-            "case_complexity":     row.get("case_complexity"),
-            "overall_performance": row.get("overall_performance"),
-        }
-
-    if not resident_cases:
+    if merged.empty:
         st.info("No cases logged yet.")
         if st.button("⬅️ Back to Home"):
             go_to("home")
         st.stop()
-
-    # Build a dict of step_id → step-metadata.
-    steps_lookup: dict = {}
-    for _, row in steps_df.iterrows():
-        sid = str(row.get("step_id", "")).strip()
-        if not sid or sid == "nan":
-            continue
-        steps_lookup[sid] = {
-            "step_procedure_id": str(row.get("procedure_id", "")),
-            "step_name":         str(row.get("step_name", "")),
-            "step_order":        row.get("step_order", 0),
-        }
-
-    # Walk every score row; look up case + step with dict gets — no merge needed.
-    seen_case_step: set = set()   # deduplicate (case_id, step_id) pairs
-    merged_rows: list = []
-    for _, row in scores_df.iterrows():
-        cid = _clean_id(row.get("case_id", ""))
-        if cid not in resident_cases:
-            continue
-        sid = str(row.get("step_id", "")).strip()
-        if not sid or sid == "nan":
-            continue
-        key = (cid, sid)
-        if key in seen_case_step:
-            continue
-        seen_case_step.add(key)
-        step_meta = steps_lookup.get(sid, {})
-        merged_rows.append({
-            "case_id":             cid,
-            "step_id":             sid,
-            "rating":              str(row.get("rating", "")),
-            "rating_num":          row.get("rating_num"),
-            **resident_cases[cid],
-            "step_procedure_id":   step_meta.get("step_procedure_id", ""),
-            "step_name":           step_meta.get("step_name", ""),
-            "step_order":          step_meta.get("step_order", 0),
-        })
-
-    # Case-level filter: omit any case where every step rating is
-    # "Not Assessed" — no real signal for the heatmap.
-    _meaningful_case_ids = {r["case_id"] for r in merged_rows if r["rating"] != "Not Assessed"}
-    merged_rows = [r for r in merged_rows if r["case_id"] in _meaningful_case_ids]
-
-    if not merged_rows:
-        st.info("No assessment data yet.")
-        if st.button("⬅️ Back to Home"):
-            go_to("home")
-        st.stop()
-
-    merged = pd.DataFrame(merged_rows)
-    # Alias so the rest of the page (which references case_procedure_id) works unchanged.
-    if "case_procedure_id" not in merged.columns:
-        merged["case_procedure_id"] = ""
 
     # ── Procedure selector ────────────────────────────────
     proc_ids      = merged["case_procedure_id"].dropna().unique()
@@ -2700,430 +3186,183 @@ elif page == "cumulative":
         format_func=lambda x: procs_map.get(x, x),
     )
 
-    proc_data = merged[merged["case_procedure_id"] == selected_proc].copy()
-    ordered_steps = (
-        steps_df[steps_df["procedure_id"] == selected_proc]
-        .sort_values("step_order")["step_name"]
-        .tolist()
-    )
-
-    # Build display names for step column headers. Full names are kept
-    # untruncated \u2014 the header cell CSS (writing-mode: vertical-rl +
-    # rotate(180deg)) lets the header row grow tall enough to fit the
-    # longest label instead of clipping it with an ellipsis.
-    def _fmt_step_hdr(name):
-        return name if isinstance(name, str) else name
-
-    _step_display        = {s: _fmt_step_hdr(s) for s in ordered_steps}
-    ordered_steps_display = [_step_display[s] for s in ordered_steps]
-
-    # ── Pivot for heatmap ─────────────────────────────────
-    pivot = proc_data.pivot_table(
-        index=["date", "attending_name", "case_id", "case_complexity", "overall_performance"],
-        columns="step_name",
-        values="rating",
-        aggfunc="first",
-    ).reset_index()
-
-    for step in ordered_steps:
-        if step not in pivot.columns:
-            pivot[step] = pd.NA
-
-    pivot = pivot[["date", "attending_name", "case_id", "case_complexity", "overall_performance"] + ordered_steps]
-
-    # ── Screenshot-friendly heatmap ──────────────────────────────
-    proc_display_name = procs_map.get(selected_proc, selected_proc)
-    st.markdown(
-        f"### {proc_display_name} — Progress Heatmap\n"
-        "Most recent cases at the top. Zoom out to screenshot this grid. 📸"
-    )
-    st.caption("💡 Tip: To screenshot the full table — on mobile use print preview; on desktop use File > Print (Cmd+P / Ctrl+P), then adjust the scale percentage down until all columns fit on one page before screenshotting.")
-
-    # Sort cases by date (desc) for Most Recent computation and display
-    pivot_sorted = pivot.sort_values("date", ascending=False)
-
-    # Compute "Most Recent" summary row — per step, first non-null, non-"Not Assessed" value
-    # Label is placed in attending_name so it appears under Attending column (right side of metadata)
-    _mr = {"date": "", "attending_name": "📌 Most Recent", "case_complexity": pd.NA, "overall_performance": pd.NA}
-    for _s in ordered_steps:
-        _vals = pivot_sorted[_s].dropna()
-        _vals = _vals[_vals != "Not Assessed"]
-        _mr[_s] = _vals.iloc[0] if not _vals.empty else pd.NA
-
-    # Compute "Best" summary row — per step, highest rating_num ever
-    _best = {"date": "", "attending_name": "🏆 Best", "case_complexity": pd.NA, "overall_performance": pd.NA}
-    for _s in ordered_steps:
-        _vals = pivot_sorted[_s].dropna()
-        if _vals.empty:
-            _best[_s] = pd.NA
-        else:
-            _best[_s] = max(_vals.tolist(), key=lambda v: RATING_TO_NUM.get(v, -1))
-
-    _summary_df = pd.DataFrame([_mr, _best])
-    _meta_cols  = ["date", "attending_name", "case_complexity", "overall_performance"]
-
-    # Build display df: summary rows first, then sorted case rows (case_id dropped)
-    display_df = pd.concat(
-        [_summary_df[_meta_cols + ordered_steps],
-         pivot_sorted.drop(columns=["case_id"])[_meta_cols + ordered_steps]],
-        ignore_index=True,
-    )
-
-    # Fix 1: format dates as MM-DD-YYYY (leaves summary labels unchanged)
-    display_df["date"] = display_df["date"].apply(fmt_date)
-
-    # Fix 11: rename metadata columns; also apply display truncations to step headers
-    display_df = display_df.rename(columns={
-        "date":                "Date",
-        "attending_name":      "Attending",
-        "case_complexity":     "Case Complexity",
-        "overall_performance": "Overall Performance",
-        **_step_display,
-    })
-    all_cols = list(display_df.columns)
-
-    # Prevent "nan" text in Date/Attending for summary rows
-    display_df["Date"]      = display_df["Date"].fillna("")
-    display_df["Attending"] = display_df["Attending"].fillna("")
-
-    # Step 1: store original values for ALL rating columns before blanking
-    _rating_cols = [c for c in ordered_steps_display + ["Case Complexity", "Overall Performance"]
-                    if c in display_df.columns]
-
-    # Build _orig_vals robustly: if a column name is duplicated (due to truncation producing
-    # identical display names), display_df[col] returns a DataFrame rather than a Series —
-    # normalise to a Series and reindex to display_df.index to prevent the crash.
-    _orig_vals = {}
-    for col in _rating_cols:
-        _v = display_df[col].copy()
-        if isinstance(_v, pd.DataFrame):
-            _v = _v.iloc[:, 0]
-        _orig_vals[col] = _v.reindex(display_df.index)
-
-    # Step 2: blank ALL rating columns so no text appears in any cell
-    for _c in _rating_cols:
-        display_df[_c] = " "
-
-    # Determine "never attempted" step columns: every non-summary data cell is
-    # NaN or "Not Assessed" (step was never meaningfully attempted by this resident).
-    _never_attempted_cols = set()
-    _n_summary = 2  # rows 0 and 1 are Most Recent / Best
-    for _sc in ordered_steps_display:
-        if _sc not in _orig_vals:
-            continue
-        _data_vals = _orig_vals[_sc].iloc[_n_summary:]
-        _meaningful = _data_vals[~(_data_vals.isna() | (_data_vals == "Not Assessed"))]
-        if _meaningful.empty:
-            _never_attempted_cols.add(_sc)
-
-    # Color functions — operate on original (pre-blank) values
-    def _color_step(val, col=None):
-        """Return background-color CSS for a single step cell."""
-        _is_na = val is None or (isinstance(val, float) and np.isnan(val)) or val == ""
-        try:
-            _is_na = _is_na or pd.isna(val)
-        except (TypeError, ValueError):
-            pass
-        if col in _never_attempted_cols:
-            # Never-attempted column: Not Assessed and blank → gray; Shown/Told keeps its color
-            if _is_na or val == "Not Assessed":
-                return "background-color: #E0E0E0"
-        if _is_na:
-            return "background-color: #E0E0E0"  # blank/NaN = Never Attempted gray
-        color = RATING_HEX.get(val, "")
-        return f"background-color: {color}" if color else ""
-
-    def _color_complexity(val):
-        if pd.isna(val) or val == "":
-            return ""
-        return f"background-color: {COMPLEXITY_HEX.get(val, '')}"
-
-    def _color_o_score(val):
-        if not isinstance(val, str) or val == "":
-            return ""
-        key = val.split("-")[0].strip()
-        return f"background-color: {O_SCORE_HEX.get(key, '')}"
-
-    # Build styler — all colors from original values, display values are blank
-    try:
-        styled = display_df.style
-
-        if ordered_steps_display:
-            # Build _orig_steps_df safely, skipping any column missing from _orig_vals
-            _safe_step_cols = [c for c in ordered_steps_display if c in _orig_vals]
-            _orig_steps_df = pd.DataFrame(
-                {c: _orig_vals[c] for c in _safe_step_cols},
-                index=display_df.index,
-            )
-
-            def _color_steps_matrix(df):
-                result = {}
-                for col in df.columns:
-                    col_colors = []
-                    is_never = col in _never_attempted_cols
-                    for i, v in enumerate(_orig_steps_df[col]):
-                        _na = v is None or v == ""
-                        try:
-                            _na = _na or pd.isna(v)
-                        except (TypeError, ValueError):
-                            pass
-                        if is_never and i < _n_summary:
-                            # Summary rows in never-attempted columns → gray
-                            col_colors.append("background-color: #E0E0E0")
-                        else:
-                            col_colors.append(_color_step(v, col=col))
-                    result[col] = col_colors
-                return pd.DataFrame(result, index=df.index)
-
-            if _safe_step_cols:
-                styled = styled.apply(_color_steps_matrix, subset=_safe_step_cols, axis=None)
-
-        def _apply_complexity_colors(col):
-            return [_color_complexity(v) for v in _orig_vals["Case Complexity"]]
-
-        def _apply_o_score_colors(col):
-            return [_color_o_score(v) for v in _orig_vals["Overall Performance"]]
-
-        styled = (
-            styled
-            .apply(_apply_complexity_colors, subset=["Case Complexity"], axis=0)
-            .apply(_apply_o_score_colors,    subset=["Overall Performance"], axis=0)
-            .hide(axis="index")
-            .set_properties(
-                subset=["Date", "Attending"],
-                **{"min-width": "120px", "white-space": "nowrap"},
-            )
-            .set_properties(
-                subset=["Case Complexity", "Overall Performance"],
-                **{"min-width": "40px", "max-width": "40px", "width": "40px", "text-align": "center"},
-            )
-        )
-        if ordered_steps_display:
-            styled = styled.set_properties(
-                subset=ordered_steps_display,
-                **{"min-width": "40px", "max-width": "40px", "width": "40px", "text-align": "center"},
-            )
-
-        table_styles = [
-            {"selector": "table",       "props": [("border-collapse", "collapse"), ("margin", "0 auto"),
-                                                   ("border", "2px solid #555")]},
-            {"selector": "th, td",      "props": [("border", "1px solid #bbb"),
-                                                   ("padding", "4px"), ("font-size", "0.8rem")]},
-            # Bottom-justify all column headers
-            {"selector": "th.col_heading", "props": [("text-align", "center"), ("vertical-align", "bottom"),
-                                                       ("font-weight", "600")]},
-            # Strong border below header row
-            {"selector": "thead tr:last-child th", "props": [("border-bottom", "2px solid #555")]},
-            # Strong horizontal borders between data rows
-            {"selector": "tbody tr", "props": [("border-bottom", "1px solid #bbb")]},
-            # Summary rows (first two) — strong bottom border
-            {"selector": "tbody tr:nth-child(1)", "props": [("border-bottom", "2px solid #555")]},
-            {"selector": "tbody tr:nth-child(2)", "props": [("border-bottom", "2px solid #555")]},
-            # Summary row labels: right-justify in the Attending (2nd) column;
-            # visually merge Date+Attending by removing their shared border.
-            {"selector": "tbody tr:nth-child(1) td:nth-child(1)",
-             "props": [("border-right", "none")]},
-            {"selector": "tbody tr:nth-child(2) td:nth-child(1)",
-             "props": [("border-right", "none")]},
-            {"selector": "tbody tr:nth-child(1) td:nth-child(2)",
-             "props": [("text-align", "right"), ("font-weight", "600"),
-                       ("padding-right", "6px"), ("border-left", "none")]},
-            {"selector": "tbody tr:nth-child(2) td:nth-child(2)",
-             "props": [("text-align", "right"), ("font-weight", "600"),
-                       ("padding-right", "6px"), ("border-left", "none")]},
-        ]
-        # Vertical step headers: writing-mode + rotate(180deg) makes text read
-        # bottom-to-top. vertical-align: bottom anchors text to the visual
-        # bottom of the header cell. Horizontal centering is done via an
-        # inner <div> (see _wrap_vheader_labels below) rather than
-        # display:flex directly on the <th> — overriding a table cell's own
-        # display to flex makes browsers drop it out of normal table column
-        # layout, which collapsed every such header onto the same column
-        # position instead of keeping them side by side.
-        #
-        # Header row height is capped so at least half of these vertical labels fit
-        # on one line at the base font size. Labels that don't fit wrap onto a
-        # second line and, only if that's still not enough, shrink their font —
-        # the column's width (36px) never changes either way, only the header
-        # row's height and that column's own font-size adapt.
-        _vheader_cols  = [c for c in all_cols
-                           if c in ordered_steps_display or c in ("Case Complexity", "Overall Performance")]
-        _BASE_FONT_PX  = 12   # 0.75rem
-        _PX_PER_CHAR   = 7    # rough vertical advance per character at base font size
-        _CELL_PAD_PX   = 12   # vertical padding/slack allowance
-        _MIN_HEADER_PX = 180  # never shrink the row below this, even if every label is short
-        _MIN_FONT_PX   = 7    # never shrink a wrapped label's font below this
-
-        def _label_len(c):
-            return len(c) if isinstance(c, str) else 0
-
-        if _vheader_cols:
-            _estimates = sorted(_label_len(c) * _PX_PER_CHAR + _CELL_PAD_PX for c in _vheader_cols)
-            _half_idx = -(-len(_estimates) // 2) - 1  # index of the value s.t. >= half the labels are <= it
-            _max_header_px = max(_estimates[_half_idx], _MIN_HEADER_PX)
-        else:
-            _max_header_px = _MIN_HEADER_PX
-
-        for idx, col_name in enumerate(all_cols):
-            if col_name in _vheader_cols:
-                _need_px = _label_len(col_name) * _PX_PER_CHAR + _CELL_PAD_PX
-                _props = [
-                    ("writing-mode", "vertical-rl"),
-                    ("transform", "rotate(180deg)"),
-                    ("vertical-align", "bottom"),
-                    ("text-align", "left"),
-                    ("padding", "4px 2px"),
-                    ("width", "36px"),
-                    ("min-width", "36px"),
-                    ("max-width", "36px"),
-                    ("max-height", f"{_max_header_px}px"),
-                    ("height", f"{_max_header_px}px"),
-                ]
-                if _need_px <= _max_header_px:
-                    # Fits on one line at the base font size — leave it alone.
-                    _props += [
-                        ("white-space", "nowrap"),
-                        ("font-size", "0.75rem"),
-                    ]
-                else:
-                    # Doesn't fit on one line: wrap onto a second line first,
-                    # and only shrink the font as far as still needed to make
-                    # that second line fit within the capped row height.
-                    _per_line_px = _need_px / 2
-                    _scale = min(1.0, _max_header_px / _per_line_px) if _per_line_px else 1.0
-                    _font_px = max(_MIN_FONT_PX, round(_BASE_FONT_PX * _scale))
-                    _props += [
-                        ("white-space", "normal"),
-                        ("overflow-wrap", "break-word"),
-                        ("word-break", "break-word"),
-                        ("line-height", "1.05"),
-                        ("font-size", f"{_font_px}px"),
-                    ]
-                table_styles.append({
-                    "selector": f"th.col_heading.level0.col{idx}",
-                    "props": _props,
-                })
-
-        # Horizontal centering for the vertical headers: wrap each one's text
-        # in an inner <div> and center it with flexbox, rather than touching
-        # the <th>'s own display (see comment above). Note plain margin:auto
-        # centering doesn't work here — margin-left/right on a block resolve
-        # to 0 rather than splitting the leftover space when its ancestor
-        # chain is in this vertical writing mode, so flex (on the div, which
-        # isn't a table-structural element and is therefore safe) is used
-        # instead: align-items:center centers along the header's physical
-        # width, and justify-content:flex-start reproduces the same
-        # bottom-anchored vertical position th's vertical-align:bottom gives.
-        table_styles.append({
-            "selector": "th.col_heading .pp-vhdr-inner",
-            "props": [
-                ("display", "flex"),
-                ("align-items", "center"),
-                ("justify-content", "flex-start"),
-                ("width", "100%"),
-                ("height", "100%"),
-            ],
-        })
-
-        def _wrap_vheader_labels(html_str, vheader_indices):
-            """Wrap the text of each vertical-header <th> (by column index) in
-            a .pp-vhdr-inner <div> so it can be centered independently of the
-            <th>'s own table-cell layout. Leaves every other <th>/<td> as-is."""
-            if not vheader_indices:
-                return html_str
-            _col_idx_re = re.compile(r"\bcol(\d+)\b")
-
-            def _wrap(m):
-                open_tag, inner, close_tag = m.group(1), m.group(2), m.group(3)
-                if "col_heading" not in open_tag:
-                    return m.group(0)
-                idx_match = _col_idx_re.search(open_tag)
-                if not idx_match or int(idx_match.group(1)) not in vheader_indices:
-                    return m.group(0)
-                return f'{open_tag}<div class="pp-vhdr-inner">{inner}</div>{close_tag}'
-
-            return re.sub(r"(<th\b[^>]*>)(.*?)(</th>)", _wrap, html_str, flags=re.DOTALL)
-
-        styled = styled.set_table_styles(table_styles)
-        _vheader_idx = {idx for idx, c in enumerate(all_cols) if c in _vheader_cols}
-        st.markdown(_wrap_vheader_labels(styled.to_html(), _vheader_idx), unsafe_allow_html=True)
-
-    except Exception as _heatmap_err:
-        st.warning(
-            f"⚠️ Could not render the heatmap for this procedure: {_heatmap_err}\n\n"
-            "Please try a different procedure, or contact your program coordinator."
-        )
-
-    # ── Legends ───────────────────────────────────────────
-    def _swatch(color, label, border=""):
-        _bdr = f"border:{border};" if border else ""
-        return (
-            f'<span class="legend-item">'
-            f'<span class="legend-swatch" style="background-color:{color};{_bdr}"></span>{label}'
-            f'</span>'
-        )
-
-    st.markdown("#### Ratings Legend")
-    _rating_legend_html = "".join(
-        _swatch(v, k, "1px solid #aaa" if k == "Not Assessed" else "")
-        for k, v in RATING_HEX.items()
-    )
-    _rating_legend_html += _swatch("#E0E0E0", "Never Attempted")
-    st.markdown('<div class="legend-row">' + _rating_legend_html + "</div>", unsafe_allow_html=True)
-
-    st.markdown("#### Case Complexity")
-    st.markdown(
-        '<div class="legend-row">' +
-        "".join(_swatch(v, k) for k, v in COMPLEXITY_HEX.items()) +
-        "</div>",
-        unsafe_allow_html=True,
-    )
-
-    # ── Excel export ──────────────────────────────────────
-    st.markdown("---")
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        # Rename pivot columns for readability; fix 1: date as MM-DD-YYYY
-        pivot_excel = pivot.copy()
-        pivot_excel["date"] = pivot_excel["date"].apply(fmt_date)
-        pivot_excel = pivot_excel.rename(columns={
-            "date":                "Date",
-            "attending_name":      "Attending",
-            "case_id":             "Case ID",
-            "case_complexity":     "Case Complexity",
-            "overall_performance": "Overall Performance",
-        })
-        pivot_excel.to_excel(writer, index=False, sheet_name="Cumulative")
-        ws_xl = writer.sheets["Cumulative"]
-        from openpyxl.styles import PatternFill, Font
-
-        step_fill_map = {k: v.lstrip("#") for k, v in RATING_HEX.items() if k not in ("Not Assessed",)}
-        step_fill_map["Not Assessed"] = "E0E0E0"  # light gray in Excel
-
-        start_col = 6
-        for xl_row in ws_xl.iter_rows(
-            min_row=2, max_row=ws_xl.max_row,
-            min_col=start_col, max_col=5 + len(ordered_steps),
-        ):
-            for cell in xl_row:
-                val = cell.value
-                if val in step_fill_map:
-                    cell.fill = PatternFill(
-                        start_color=step_fill_map[val],
-                        end_color=step_fill_map[val],
-                        fill_type="solid",
-                    )
-                    cell.font = Font(color="FFFFFF" if val in ("Not Yet", "Auto") else "000000")
-
-    st.download_button(
-        label=f"📥 Download Excel — {procs_map.get(selected_proc, selected_proc)}",
-        data=output.getvalue(),
-        file_name=f"{resident}_{selected_proc}_cumulative.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
+    _render_resident_heatmap(merged, steps_df, procs_map, selected_proc, filename_stub=resident)
 
     if st.button("⬅️ Back to Home"):
         go_to("home")
+
+
+# ════════════════════════════════════════════════════════════
+# PAGE: ATTENDING START ASSESSMENT
+# ════════════════════════════════════════════════════════════
+elif page == "attending_start":
+    mobile_tip("📱 On mobile: tap the >> icon at top left to view the sidebar.")
+    page_header("📋 Start Assessment")
+    if st.button("🏠 Back to Home", key="att_start_home_top"):
+        go_to("attending_home")
+
+    specialty_id = st.session_state.get("attending_login_specialty_id")
+    if not specialty_id:
+        st.error("No specialty assigned. Contact an admin.")
+        st.stop()
+
+    try:
+        _, proc_df, _, _ = load_refs()
+        residents_df = read_sheet_df(
+            SHEET_RESIDENTS, expected_cols=["email", "name", "specialty_id", "created_at"]
+        )
+    except ConnectionError as exc:
+        show_gs_error(exc)
+        if st.button("⬅️ Back to Home", key="att_start_home_err"):
+            go_to("attending_home")
+        st.stop()
+
+    my_residents = residents_df[residents_df["specialty_id"] == specialty_id]
+    procs = proc_df[proc_df["specialty_id"] == specialty_id]
+
+    if my_residents.empty:
+        st.warning("⚠️ No residents configured for your specialty.")
+        if st.button("⬅️ Back to Home", key="att_start_no_res"):
+            go_to("attending_home")
+        st.stop()
+    if procs.empty:
+        st.warning("⚠️ No procedures configured for your specialty.")
+        if st.button("⬅️ Back to Home", key="att_start_no_proc"):
+            go_to("attending_home")
+        st.stop()
+
+    res_map  = dict(zip(my_residents["name"], my_residents["email"]))
+    proc_map = dict(zip(procs["procedure_name"], procs["procedure_id"]))
+
+    _CHOOSE_RES  = "Choose Resident"
+    _CHOOSE_PROC = "Choose Procedure"
+
+    resident_choice = st.selectbox(
+        "Resident",
+        [_CHOOSE_RES] + sorted(res_map.keys(), key=lambda n: n.split()[-1] if n.split() else n),
+    )
+    procedure_choice = st.selectbox("Procedure", [_CHOOSE_PROC] + _ordered_procedure_names(proc_map))
+    case_date = st.date_input("Date", st.session_state["date"])
+    st.session_state["date"] = case_date
+
+    resident_chosen  = resident_choice != _CHOOSE_RES
+    procedure_chosen = procedure_choice != _CHOOSE_PROC
+
+    if not (resident_chosen and procedure_chosen):
+        st.info("Choose a resident and a procedure to continue.")
+
+    st.markdown("---")
+
+    if st.button("Start Assessment", type="primary", width="stretch",
+                 disabled=not (resident_chosen and procedure_chosen)):
+        # Reuses the same session keys — and the same blank assessment
+        # page — the anonymous "Blank Magic Link" flow feeds into, just
+        # populated directly instead of via a link's query params.
+        st.session_state["resident"]            = res_map[resident_choice]
+        st.session_state["procedure_id"]        = proc_map[procedure_choice]
+        st.session_state["specialty_id"]        = specialty_id
+        st.session_state["attending_name"]      = st.session_state.get("attending_login_name", "").replace(" ", "_")
+        st.session_state["draft_id"]            = ""
+        st.session_state["attending_link_date"] = str(case_date)
+        go_to("attending_assessment")
+
+    st.markdown("---")
+    if st.button("⬅️ Back to Home", key="att_start_bottom_home"):
+        go_to("attending_home")
+
+
+# ════════════════════════════════════════════════════════════
+# PAGE: ATTENDING RESIDENT DASHBOARD
+# ════════════════════════════════════════════════════════════
+elif page == "attending_resident_dashboard":
+    mobile_tip("📱 On mobile: tap the >> icon at top left to view the sidebar.")
+    page_header("📊 Resident Dashboard")
+    if st.button("🏠 Back to Home", key="att_dash_home_top"):
+        go_to("attending_home")
+
+    specialty_id = st.session_state.get("attending_login_specialty_id")
+    if not specialty_id:
+        st.error("No specialty assigned. Contact an admin.")
+        st.stop()
+
+    try:
+        _, proc_df, _, _ = load_refs()
+        residents_df = read_sheet_df(
+            SHEET_RESIDENTS, expected_cols=["email", "name", "specialty_id", "created_at"]
+        )
+    except ConnectionError as exc:
+        show_gs_error(exc)
+        if st.button("⬅️ Back to Home", key="att_dash_home_err"):
+            go_to("attending_home")
+        st.stop()
+
+    my_residents = residents_df[residents_df["specialty_id"] == specialty_id]
+    if my_residents.empty:
+        st.warning("⚠️ No residents configured for your specialty.")
+        if st.button("⬅️ Back to Home", key="att_dash_no_res"):
+            go_to("attending_home")
+        st.stop()
+
+    res_map = dict(zip(my_residents["name"], my_residents["email"]))
+    _CHOOSE_RES = "Choose Resident"
+    resident_choice = st.selectbox(
+        "Resident",
+        [_CHOOSE_RES] + sorted(res_map.keys(), key=lambda n: n.split()[-1] if n.split() else n),
+        key="att_dash_resident",
+    )
+    if resident_choice == _CHOOSE_RES:
+        st.info("Choose a resident to view their comments and progress.")
+        st.stop()
+
+    resident_email = res_map[resident_choice]
+
+    procs = proc_df[proc_df["specialty_id"] == specialty_id]
+    proc_map = dict(zip(procs["procedure_name"], procs["procedure_id"]))
+    _ALL_PROCS = "All Procedures"
+    procedure_choice = st.selectbox(
+        "Procedure (optional)",
+        [_ALL_PROCS] + _ordered_procedure_names(proc_map),
+        key="att_dash_procedure",
+    )
+    procedure_id = proc_map.get(procedure_choice) if procedure_choice != _ALL_PROCS else None
+
+    st.caption("💡 Tip: this page is print-friendly — on desktop use File > Print (Cmd+P / Ctrl+P); on mobile use print preview.")
+    st.markdown("---")
+
+    st.markdown(f"### 💬 Comments — {resident_choice}")
+    try:
+        comments_df = _build_resident_comments_df(resident_email)
+    except ConnectionError as exc:
+        show_gs_error(exc)
+        st.stop()
+
+    if procedure_id and not comments_df.empty:
+        comments_df = comments_df[comments_df["Procedure"] == procedure_choice]
+
+    if comments_df.empty:
+        st.info("No comments recorded yet.")
+    else:
+        _render_comments_html_table(comments_df, show_proc=(procedure_id is None), show_att=True)
+
+    if procedure_id:
+        st.markdown("---")
+        st.markdown(f"### 📊 Progress Heatmap — {resident_choice}")
+        try:
+            case_matrix, steps_df, procs_map = _build_resident_case_matrix(resident_email)
+        except ConnectionError as exc:
+            show_gs_error(exc)
+            st.stop()
+        if case_matrix.empty:
+            st.info("No assessment data yet for this resident.")
+        else:
+            _render_resident_heatmap(
+                case_matrix, steps_df, procs_map, procedure_id,
+                filename_stub=resident_choice.replace(" ", "_"),
+            )
+
+    st.markdown("---")
+    if st.button("⬅️ Back to Home", key="att_dash_bottom_home"):
+        go_to("attending_home")
 
 
 # ════════════════════════════════════════════════════════════
@@ -3353,13 +3592,23 @@ elif page == "attending_assessment":
                                      "Attending Evaluation (Pre-filled, Changes Made)")
             else:
                 _assessment_type = "Attending Evaluation (Blank)"
+            # A logged-in attending has a real attending_id — use it so the
+            # case is attributed properly (filters/exports by Attending, a
+            # future "my submissions" view, etc.). The anonymous magic-link
+            # flow has no such account, so it keeps the decodable magic_
+            # prefix instead.
+            _attending_id_for_save = (
+                st.session_state.get("attending_login_id")
+                if st.session_state.get("role") == "attending" and st.session_state.get("attending_login_id")
+                else f"magic_{attending_name}"
+            )
             try:
                 case_id = save_case(
                     resident_email=resident_email,
                     date=case_date,
                     specialty_id=specialty_id,
                     procedure_id=procedure_id,
-                    attending_id=f"magic_{attending_name}",   # magic_ prefix; decoded on display
+                    attending_id=_attending_id_for_save,
                     scores_dict=scores,
                     notes=notes,
                     case_complexity=case_complexity,
@@ -3440,7 +3689,17 @@ elif page == "attending_confirmation":
     st.dataframe(style_df(summary_df, "Rating"), width="stretch")
 
     st.markdown("---")
-    st.markdown("_You may now close this window. The resident can view the evaluation in their dashboard._")
+    if st.session_state.get("role") == "attending" and st.session_state.get("attending_login_email"):
+        st.markdown("_The resident can view this evaluation in their dashboard._")
+        _att_confirm_cols = st.columns(2)
+        with _att_confirm_cols[0]:
+            if st.button("➕ Start Another Assessment", type="primary", width="stretch", key="att_confirm_another"):
+                go_to("attending_start")
+        with _att_confirm_cols[1]:
+            if st.button("🏠 Back to Home", width="stretch", key="att_confirm_home"):
+                go_to("attending_home")
+    else:
+        st.markdown("_You may now close this window. The resident can view the evaluation in their dashboard._")
 
 
 # Runs after every page render, regardless of which page/branch above
