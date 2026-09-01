@@ -2427,7 +2427,10 @@ elif page == "comments":
         _proc_pool = merged if _att_selected == "All Attendings" else merged[merged["Attending"] == _att_selected]
         _proc_opts = ["All Procedures"] + sorted(_proc_pool["Procedure"].dropna().unique().tolist())
         _att_pool = merged if _proc_selected == "All Procedures" else merged[merged["Procedure"] == _proc_selected]
-        _att_opts = ["All Attendings"] + sorted(_att_pool["Attending"].dropna().unique().tolist())
+        _att_opts = ["All Attendings"] + sorted(
+            _att_pool["Attending"].dropna().unique().tolist(),
+            key=lambda n: n.split()[-1] if n.split() else n,
+        )
 
         # A previously-selected filter value can fall out of the newly
         # narrowed options (because the other filter now excludes it) —
