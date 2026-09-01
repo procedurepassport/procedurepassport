@@ -627,16 +627,29 @@ def suppress_picker_keyboards() -> None:
     re-renders an input (e.g. after a selection), since a plain
     one-time pass would only catch whatever's in the DOM at that
     instant. Called once, after every page render (see the bottom of
-    this file), same as fit_all_button_labels()."""
+    this file), same as fit_all_button_labels().
+
+    The date input also gets readonly: inputmode="none" alone wasn't
+    enough to stop it opening the keyboard — confirmed it renders as a
+    plain type="text" input, where mobile browser support for
+    respecting inputmode="none" is inconsistent. readonly blocks any
+    on-screen keyboard unconditionally, and (verified directly) doesn't
+    stop it from being clicked/tapped to open the calendar popup, which
+    is the only way this field is meant to be filled in anyway.
+    Selectboxes don't get readonly: they support typing to search/
+    filter their own option list, which readonly would break."""
     st.iframe(
         """
         <script>
         (function() {
             var doc = window.parent.document;
-            var selector = '[data-testid="stSelectbox"] input, [data-testid="stDateInput"] input';
             function apply() {
-                doc.querySelectorAll(selector).forEach(function(el) {
+                doc.querySelectorAll('[data-testid="stSelectbox"] input').forEach(function(el) {
                     el.setAttribute('inputmode', 'none');
+                });
+                doc.querySelectorAll('[data-testid="stDateInput"] input').forEach(function(el) {
+                    el.setAttribute('inputmode', 'none');
+                    el.setAttribute('readonly', 'readonly');
                 });
             }
             apply();
