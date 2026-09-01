@@ -1964,15 +1964,23 @@ elif page == "start":
     # legible at typical widths instead of relying on that shrink alone.
     _start_cols = st.columns([1] if is_admin else [0.85, 1.3, 0.85])
     with _start_cols[0]:
-        if st.button("Assess Together (Resident + Attending)", type="primary", width="stretch", key="start_together_btn", disabled=_selection_incomplete):
+        # Two trailing spaces before \n is Markdown's hard-break syntax —
+        # renders as a real <br>, forcing exactly two lines regardless of
+        # width (never collapses to one, and white-space:nowrap on
+        # button p keeps either line from wrapping into a third).
+        # fit_all_button_labels() shrinks the font if the wider of the
+        # two lines would otherwise overflow, so neither line ever ends
+        # in an ellipsis either — verified at both desktop and cramped
+        # widths before applying.
+        if st.button("Assess Together  \nResident + Attending", type="primary", width="stretch", key="start_together_btn", disabled=_selection_incomplete):
             _reset_and_start("together")
 
     if not is_admin:
         with _start_cols[1]:
-            if st.button("Self-Assess 🔗 Pre-Filled Magic Link for Attending", width="stretch", key="start_self_btn", disabled=_selection_incomplete):
+            if st.button("Self-Assess  \nPre-Filled Magic Link for Attending", width="stretch", key="start_self_btn", disabled=_selection_incomplete):
                 _reset_and_start("self")
         with _start_cols[2]:
-            if st.button("🔗 Blank Magic-Link for Attending", width="stretch", key="start_blank_link_btn", disabled=_selection_incomplete):
+            if st.button("Blank Magic Link  \nSend to Attending", width="stretch", key="start_blank_link_btn", disabled=_selection_incomplete):
                 _att_match = atnds[atnds["attending_id"].astype(str).str.strip()
                                     == str(st.session_state.get("attending_id", "")).strip()]
                 safe_att = _att_match["attending_name"].values[0].replace(" ", "_") if len(_att_match) > 0 else "Unknown"
