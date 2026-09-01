@@ -1459,9 +1459,11 @@ def page_header(text: str, tier_text: str | None = None) -> None:
     width depends on which letters are in it, not just how many, so a
     constant safe enough to avoid ever wrapping always left a visible
     gap for shorter/narrower strings. Measuring the actual rendered
-    width removes that guesswork entirely, and also sets
-    --pp-substep-font so the Step-Level Ratings expander label (see the
-    CSS rule using it) stays proportionally smaller than this header.
+    width removes that guesswork entirely. Field labels, dropdown values,
+    Step-Level Ratings, and Improve/How no longer scale off this header's
+    size (see --pp-substep-font's own static definition) — a long title
+    forcing the header down to avoid wrapping used to shrink everything
+    else on the page right along with it.
 
     tier_text: text to base _header_max()'s length tier on, if different
     from what's actually displayed — e.g. a variable suffix (a resident's
@@ -1551,9 +1553,6 @@ def page_header(text: str, tier_text: str | None = None) -> None:
                     ? maxPx
                     : Math.max(1, maxPx * (containerWidth / widest) * safety);
                 el.style.fontSize = finalPx + 'px';
-                doc.documentElement.style.setProperty(
-                    '--pp-substep-font', (finalPx * 0.75) + 'px'
-                );
             }}
             fit();
             window.parent.addEventListener('resize', fit);
@@ -1984,10 +1983,10 @@ button p {
     font-size: clamp(0.7rem, 8.5cqw, 0.875rem);
 }
 /* Step-Level Ratings expander: label styled like a smaller page header.
-   --pp-substep-font sets its size (on desktop, page_header()'s injected
-   script sets it to 0.75x the main header's own measured size; on
-   mobile it's pinned to a fixed floor — see the media query above —
-   independent of the header entirely). white-space: normal overrides
+   --pp-substep-font sets its size — a fixed value (see its own
+   definition below), independent of the main header's size, so a long
+   procedure/resident name that shrinks the header doesn't shrink this
+   too. white-space: normal overrides
    Streamlit's own default (nowrap + ellipsis) for expander summary
    labels, which is otherwise sized for the typical short, single-line
    case — label_break_after_for() keeps "Step-Level Ratings for"
@@ -2030,22 +2029,17 @@ button p {
     overflow-wrap: break-word;
     text-overflow: ellipsis;
 }
-/* --pp-substep-font ties a whole hierarchy of form text (field labels,
-   dropdown values, Step-Level Ratings, Improve/How, the mobile tip) to
-   the page header's own live-measured size — deliberately, on desktop,
-   so the page scales as one unit with window width. On a narrow phone
-   screen that's counterproductive: a long procedure/resident name can
-   force the header down quite small to avoid wrapping (by design, see
-   page_header() — no floor there), and everything tied to it shrinks
-   right along with it, well past comfortable reading size. Pin the
-   variable back to its own static default below this breakpoint,
-   overriding the script's inline value (a plain inline style loses to
-   an !important rule) — the header itself keeps shrinking as needed,
-   but the actual form fields stay legible regardless of title length. */
-@media (max-width: 600px) {
-    :root {
-        --pp-substep-font: 1.3125rem !important;
-    }
+/* --pp-substep-font sizes a whole hierarchy of form text (field labels,
+   dropdown values, Step-Level Ratings, Improve/How, the mobile tip).
+   It used to be tied to the page header's own live-measured size, so
+   the page scaled as one unit with window width — but a long procedure/
+   resident name could force the header down quite small to avoid
+   wrapping (by design, see page_header() — no floor there), and
+   everything tied to it shrank right along with it, well past
+   comfortable reading size, on desktop as much as mobile. Fixed at all
+   widths now, independent of the header entirely. */
+:root {
+    --pp-substep-font: 1.3125rem;
 }
 /* Assessment page top nav: Streamlit stacks columns onto separate rows
    below a width breakpoint (each stColumn gets min-width: ~100%). Force
@@ -2882,10 +2876,9 @@ elif page == "assessment":
     _proc_name = _proc_rows[0] if len(_proc_rows) else "Assessment"
     mobile_tip("📱 On mobile: tap the >> icon at top left to view the sidebar.")
     # tier_text excludes the resident's name from _header_max()'s length
-    # tier so a long name doesn't needlessly drop the whole header (and
-    # --pp-substep-font, which everything else on the page scales off of)
-    # into a smaller ceiling; the fit script still measures and shrinks
-    # the full displayed text (name included) if it doesn't actually fit.
+    # tier so a long name doesn't needlessly drop the header into a
+    # smaller ceiling; the fit script still measures and shrinks the
+    # full displayed text (name included) if it doesn't actually fit.
     page_header(
         header_break_before(f"📝 {_proc_name}", f"Assessment for {st.session_state['resident_name']}"),
         tier_text=f"📝 {_proc_name} Assessment",
