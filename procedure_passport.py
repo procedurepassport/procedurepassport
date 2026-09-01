@@ -1520,68 +1520,66 @@ if page == "login":
             )
         st.rerun()
 
-    col_c, col_r = st.columns([1, 1])
-    with col_c:
-        page_header("🩺 Procedure Passport")
-        st.markdown("_Track your surgical skills journey, one procedure at a time._")
-        st.markdown("---")
+    page_header("🩺 Procedure Passport")
+    st.markdown("_Track your surgical skills journey, one procedure at a time._")
+    st.markdown("---")
 
-        # Email and password on one screen, submitted together — whether
-        # this is a first-ever login (no password on file yet) or a
-        # returning one is only known once the email is looked up, which
-        # only happens on submit, so both fields are always shown up
-        # front rather than password appearing as a separate step after
-        # the email is entered.
-        email = st.text_input("Email address", placeholder="you@hospital.org", key="login_email_input")
-        pw = st.text_input("Password", type="password", key="login_pw_input")
-        st.caption(
-            "First time here, or no password set yet? Leave Password blank and "
-            "click Log In — you'll be prompted to choose one (8+ characters)."
-        )
-        if st.button("Log In →", width="stretch", type="primary"):
-            if not email.strip():
-                st.error("Please enter your email address.")
-            else:
-                # Password isn't required just to submit — whether one's
-                # even needed depends on whether this account has one on
-                # file yet, which isn't known until after the lookup
-                # below. A first-time user can submit with the password
-                # field left blank; they're told to choose one once
-                # that's confirmed, without ever leaving this page.
-                try:
-                    residents = read_sheet_df(
-                        SHEET_RESIDENTS,
-                        expected_cols=["email", "name", "specialty_id", "created_at"],
-                    )
-                    email_lower = email.strip().lower()
-                    admins_lower = [a.lower() for a in ADMINS]
-                    residents_lower = residents["email"].str.strip().str.lower()
-                    if email_lower in admins_lower:
-                        canonical = ADMINS[admins_lower.index(email_lower)]
-                    elif email_lower in residents_lower.values:
-                        canonical = residents.loc[residents_lower == email_lower].iloc[0]["email"]
-                    else:
-                        canonical = None
-                    if canonical is None:
-                        st.error("❌ Email not recognised. Ask an admin to add you.")
-                    elif get_password_row(canonical) is not None:
-                        if not pw:
-                            st.error("Please enter your password.")
-                        elif verify_password(canonical, pw):
-                            _complete_login(canonical)
-                        else:
-                            st.error("❌ Incorrect password.")
-                    elif len(pw) < 8:
-                        st.info(
-                            f"👋 First time logging in as **{canonical}** — "
-                            "enter a password above (8+ characters) and log in again "
-                            "to set it as your password."
-                        )
-                    else:
-                        set_password(canonical, pw)
+    # Email and password on one screen, submitted together — whether
+    # this is a first-ever login (no password on file yet) or a
+    # returning one is only known once the email is looked up, which
+    # only happens on submit, so both fields are always shown up
+    # front rather than password appearing as a separate step after
+    # the email is entered.
+    email = st.text_input("Email address", placeholder="you@hospital.org", key="login_email_input")
+    pw = st.text_input("Password", type="password", key="login_pw_input")
+    st.caption(
+        "First time here, or no password set yet? Leave Password blank and "
+        "click Log In — you'll be prompted to choose one (8+ characters)."
+    )
+    if st.button("Log In →", width="stretch", type="primary"):
+        if not email.strip():
+            st.error("Please enter your email address.")
+        else:
+            # Password isn't required just to submit — whether one's
+            # even needed depends on whether this account has one on
+            # file yet, which isn't known until after the lookup
+            # below. A first-time user can submit with the password
+            # field left blank; they're told to choose one once
+            # that's confirmed, without ever leaving this page.
+            try:
+                residents = read_sheet_df(
+                    SHEET_RESIDENTS,
+                    expected_cols=["email", "name", "specialty_id", "created_at"],
+                )
+                email_lower = email.strip().lower()
+                admins_lower = [a.lower() for a in ADMINS]
+                residents_lower = residents["email"].str.strip().str.lower()
+                if email_lower in admins_lower:
+                    canonical = ADMINS[admins_lower.index(email_lower)]
+                elif email_lower in residents_lower.values:
+                    canonical = residents.loc[residents_lower == email_lower].iloc[0]["email"]
+                else:
+                    canonical = None
+                if canonical is None:
+                    st.error("❌ Email not recognised. Ask an admin to add you.")
+                elif get_password_row(canonical) is not None:
+                    if not pw:
+                        st.error("Please enter your password.")
+                    elif verify_password(canonical, pw):
                         _complete_login(canonical)
-                except ConnectionError as exc:
-                    show_gs_error(exc)
+                    else:
+                        st.error("❌ Incorrect password.")
+                elif len(pw) < 8:
+                    st.info(
+                        f"👋 First time logging in as **{canonical}** — "
+                        "enter a password above (8+ characters) and log in again "
+                        "to set it as your password."
+                    )
+                else:
+                    set_password(canonical, pw)
+                    _complete_login(canonical)
+            except ConnectionError as exc:
+                show_gs_error(exc)
 
 
 # ════════════════════════════════════════════════════════════
