@@ -639,9 +639,12 @@ def suppress_picker_keyboards() -> None:
     Selectboxes don't get readonly: they support typing to search/
     filter their own option list, which readonly would break.
 
-    Still reported reaching a real phone's keyboard despite that. Two
-    more layers, in case readonly itself isn't honored consistently
-    (confirmed on a real device it wasn't):
+    Confirmed on a real Android phone (both Chrome and Edge — same
+    Chromium engine, so consistent with an Android/Chromium-level
+    behavior rather than a browser-specific quirk) that none of that
+    stopped the keyboard, which stayed up until manually dismissed.
+    Two more layers were tried and kept as defense-in-depth, but the
+    one that actually solves it for a real touch is the last one below:
 
     1. BaseWeb (the underlying component library) can reset an input's
        own DOM attributes on a React re-render faster than the
@@ -658,7 +661,23 @@ def suppress_picker_keyboards() -> None:
        is in flight without dismissing the popup — an immediate
        (0ms) blur was tried first and closed the popup too, so the
        delay is deliberate: long enough for the popup's own
-       open-on-focus effect to have already run."""
+       open-on-focus effect to have already run.
+
+    3. The actual fix: a real touch landing directly on an editable
+       input is what triggers a mobile OS keyboard, regardless of
+       readonly/inputmode/blur timing — so stop a real touch from ever
+       reaching the input at all. The input gets pointer-events: none,
+       and an invisible same-sized overlay div sits on top of it inside
+       its immediate wrapper (BaseWeb's own [data-baseweb="base-input"]
+       div, sized to match the input already, so the overlay's CSS
+       inset:0 tracks it through any resize with no JS recalculation
+       needed); tapping the overlay calls el.focus() programmatically
+       instead. A script-triggered focus that didn't originate from a
+       direct touch on that specific element is the one thing that
+       reliably does NOT bring up the keyboard on Android Chrome/Edge —
+       and (verified directly) still opens the calendar popup and
+       supports picking a date from it, same as a real click always
+       did."""
     st.iframe(
         """
         <script>
@@ -671,19 +690,36 @@ def suppress_picker_keyboards() -> None:
                 doc.querySelectorAll('[data-testid="stDateInput"] input').forEach(function(el) {
                     el.setAttribute('inputmode', 'none');
                     el.setAttribute('readonly', 'readonly');
-                    if (el.__ppKeyboardGuard || !window.parent.MutationObserver) return;
+                    if (el.__ppKeyboardGuard) return;
                     el.__ppKeyboardGuard = true;
-                    new window.parent.MutationObserver(function() {
-                        if (el.getAttribute('inputmode') !== 'none') {
-                            el.setAttribute('inputmode', 'none');
-                        }
-                        if (!el.hasAttribute('readonly')) {
-                            el.setAttribute('readonly', 'readonly');
-                        }
-                    }).observe(el, {attributes: true, attributeFilter: ['inputmode', 'readonly']});
+                    if (window.parent.MutationObserver) {
+                        new window.parent.MutationObserver(function() {
+                            if (el.getAttribute('inputmode') !== 'none') {
+                                el.setAttribute('inputmode', 'none');
+                            }
+                            if (!el.hasAttribute('readonly')) {
+                                el.setAttribute('readonly', 'readonly');
+                            }
+                        }).observe(el, {attributes: true, attributeFilter: ['inputmode', 'readonly']});
+                    }
                     el.addEventListener('focus', function() {
                         setTimeout(function() { el.blur(); }, 50);
                     });
+                    var wrapper = el.closest('[data-baseweb="base-input"]') || el.parentElement;
+                    if (window.parent.getComputedStyle(wrapper).position === 'static') {
+                        wrapper.style.position = 'relative';
+                    }
+                    el.style.pointerEvents = 'none';
+                    var overlay = doc.createElement('div');
+                    overlay.style.position = 'absolute';
+                    overlay.style.inset = '0';
+                    overlay.style.zIndex = '5';
+                    overlay.style.cursor = 'pointer';
+                    overlay.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        el.focus();
+                    });
+                    wrapper.appendChild(overlay);
                 });
             }
             apply();
