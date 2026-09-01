@@ -3499,7 +3499,6 @@ elif page == "attending_resident_dashboard":
 
     if procedure_id:
         st.markdown("---")
-        st.markdown(f"### 📊 Progress Heatmap — {resident_choice}")
         try:
             case_matrix, steps_df, procs_map = _build_resident_case_matrix(resident_email)
         except ConnectionError as exc:
