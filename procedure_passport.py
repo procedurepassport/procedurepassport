@@ -3178,10 +3178,17 @@ elif page == "attending_assessment":
         header_break_before(f"📝 {_att_proc_name}", f"Assessment for {_resident_display_name}"),
         tier_text=f"📝 {_att_proc_name} Assessment",
     )
-    assessment_instructions_note()
     if _draft:
-        st.info("📋 This form has been pre-filled from the resident's self-assessment. "
-                 "Review and adjust anything before submitting.")
+        st.markdown(
+            '<div style="border: 2px solid #1E88E5; background-color: #FFFFFF; '
+            'color: #000000; border-radius: 0.5rem; padding: 0.75rem 1rem; '
+            'margin-bottom: 0.75rem;">'
+            "📋 This form has been pre-filled from the resident's self-assessment. "
+            "Review and adjust anything before submitting."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+    assessment_instructions_note()
 
     st.markdown("---")
 
