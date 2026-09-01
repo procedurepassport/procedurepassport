@@ -817,9 +817,23 @@ def page_header(text: str, tier_text: str | None = None) -> None:
                         measureWidth(fullText.slice(breakIdx + 1), maxPx)
                       )
                     : measureWidth(fullText, maxPx);
+                // The two-segment (breakIdx > -1) case approximates two
+                // separate wrapped lines from single-line nowrap probe
+                // measurements of each segment — each segment (kept
+                // unbreakable internally via nbsp) still has to survive
+                // the browser's own multi-line layout afterward, which
+                // can round a hair differently than the probe. An
+                // unusually long unbroken segment (e.g. a long combined
+                // first+last name) could then overflow its line by a
+                // pixel or two and get pushed onto a clipped 3rd line by
+                // the CSS's -webkit-line-clamp safety net. The plain
+                // single-line case doesn't have that extra layout step,
+                // so it keeps the tighter margin that was already tuned
+                // to fill the header's width precisely.
+                var safety = breakIdx > -1 ? 0.9 : 0.96;
                 var finalPx = widest <= containerWidth
                     ? maxPx
-                    : Math.max(1, maxPx * (containerWidth / widest) * 0.96);
+                    : Math.max(1, maxPx * (containerWidth / widest) * safety);
                 el.style.fontSize = finalPx + 'px';
                 doc.documentElement.style.setProperty(
                     '--pp-substep-font', (finalPx * 0.75) + 'px'
@@ -1798,7 +1812,15 @@ elif page == "admin":
 # ════════════════════════════════════════════════════════════
 elif page == "home":
     mobile_tip("📱 On mobile: tap the >> icon at top left to access navigation and rating legend.")
-    page_header(f"👋 Welcome back, {st.session_state['resident_name']}")
+    # tier_text excludes the resident's name from _header_max()'s length
+    # tier so a long name doesn't needlessly drop the whole header into a
+    # smaller ceiling; header_break_before() also protects every other
+    # space so that if this does wrap, it can only break right after the
+    # comma, never mid-name.
+    page_header(
+        header_break_before("👋 Welcome back,", st.session_state["resident_name"]),
+        tier_text="👋 Welcome back,",
+    )
     st.markdown("_What would you like to do today?_")
     st.markdown("")
 
