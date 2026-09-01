@@ -639,14 +639,26 @@ def suppress_picker_keyboards() -> None:
     Selectboxes don't get readonly: they support typing to search/
     filter their own option list, which readonly would break.
 
-    Still reported reaching a real phone's keyboard despite that,
-    likely because BaseWeb (the underlying component library) can
-    reset an input's own DOM attributes on a React re-render faster
-    than the childList/subtree observer below reacts to it — that
-    observer only fires on nodes being added/removed, not on an
-    existing node's attributes changing. Each date input additionally
-    gets its own dedicated attribute-level observer, which reacts to
-    exactly that case."""
+    Still reported reaching a real phone's keyboard despite that. Two
+    more layers, in case readonly itself isn't honored consistently
+    (confirmed on a real device it wasn't):
+
+    1. BaseWeb (the underlying component library) can reset an input's
+       own DOM attributes on a React re-render faster than the
+       childList/subtree observer below reacts to it — that observer
+       only fires on nodes being added/removed, not on an existing
+       node's attributes changing. Each date input additionally gets
+       its own dedicated attribute-level observer, which reacts to
+       exactly that case.
+
+    2. A focus listener that blurs the input ~50ms after it's focused.
+       Confirmed directly that the calendar popup opens on focus but
+       doesn't close again on blur (its open state isn't tied to
+       staying focused), so this dismisses whatever keyboard attempt
+       is in flight without dismissing the popup — an immediate
+       (0ms) blur was tried first and closed the popup too, so the
+       delay is deliberate: long enough for the popup's own
+       open-on-focus effect to have already run."""
     st.iframe(
         """
         <script>
@@ -669,6 +681,9 @@ def suppress_picker_keyboards() -> None:
                             el.setAttribute('readonly', 'readonly');
                         }
                     }).observe(el, {attributes: true, attributeFilter: ['inputmode', 'readonly']});
+                    el.addEventListener('focus', function() {
+                        setTimeout(function() { el.blur(); }, 50);
+                    });
                 });
             }
             apply();
