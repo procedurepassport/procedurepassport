@@ -3410,12 +3410,16 @@ elif page == "attending_resident_dashboard":
 
     res_map = dict(zip(my_residents["name"], my_residents["email"]))
     _CHOOSE_RES = "Choose Resident"
-    resident_choice = st.selectbox(
-        "Resident",
-        [_CHOOSE_RES] + sorted(res_map.keys(), key=lambda n: n.split()[-1] if n.split() else n),
-        key="att_dash_resident",
-    )
+    _res_col, _proc_col = st.columns(2)
+    with _res_col:
+        resident_choice = st.selectbox(
+            "Resident",
+            [_CHOOSE_RES] + sorted(res_map.keys(), key=lambda n: n.split()[-1] if n.split() else n),
+            key="att_dash_resident",
+        )
     if resident_choice == _CHOOSE_RES:
+        with _proc_col:
+            st.selectbox("Procedure (optional)", ["Choose a resident first"], disabled=True)
         st.info("Choose a resident to view their comments and progress.")
         st.stop()
 
@@ -3435,11 +3439,19 @@ elif page == "attending_resident_dashboard":
     ]
     proc_map = dict(zip(procs["procedure_name"], procs["procedure_id"]))
     _ALL_PROCS = "All Procedures"
-    procedure_choice = st.selectbox(
-        "Procedure (optional)",
-        [_ALL_PROCS] + _ordered_procedure_names(proc_map),
-        key="att_dash_procedure",
-    )
+    _proc_opts = [_ALL_PROCS] + _ordered_procedure_names(proc_map)
+    # A procedure picked for the previous resident can fall outside this
+    # resident's options — reset it rather than letting st.selectbox raise
+    # on a default no longer in its options (same guard as the Comments
+    # Dashboard's Procedure/Attending filters above).
+    if st.session_state.get("att_dash_procedure") not in _proc_opts:
+        st.session_state["att_dash_procedure"] = _ALL_PROCS
+    with _proc_col:
+        procedure_choice = st.selectbox(
+            "Procedure (optional)",
+            _proc_opts,
+            key="att_dash_procedure",
+        )
     procedure_id = proc_map.get(procedure_choice) if procedure_choice != _ALL_PROCS else None
 
     st.caption("💡 Tip: this page is print-friendly — on desktop use File > Print (Cmd+P / Ctrl+P); on mobile use print preview.")
