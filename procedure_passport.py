@@ -939,8 +939,13 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     pivot = pivot[["date", "attending_name", "case_id", "case_complexity", "overall_performance"] + ordered_steps]
 
     proc_display_name = procs_map.get(selected_proc, selected_proc)
+    # One deliberate break point (see header_break_before): stays on one
+    # line when it fits, and if it doesn't, wraps with "Progress Heatmap"
+    # intact on the second line rather than splitting the procedure name
+    # or "Progress"/"Heatmap" from each other.
+    _heatmap_heading = header_break_before(f"{proc_display_name} —", "Progress Heatmap")
     st.markdown(
-        f"### {proc_display_name} — Progress Heatmap\n"
+        f"### {_heatmap_heading}\n"
         "Most recent cases at the top. Zoom out to screenshot this grid. 📸"
     )
     st.caption("💡 Tip: To screenshot the full table — on mobile use print preview; on desktop use File > Print (Cmd+P / Ctrl+P), then adjust the scale percentage down until all columns fit on one page before screenshotting.")
