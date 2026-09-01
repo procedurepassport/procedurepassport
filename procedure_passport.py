@@ -3470,26 +3470,32 @@ elif page == "attending_resident_dashboard":
     st.caption("💡 Tip: this page is print-friendly — on desktop use File > Print (Cmd+P / Ctrl+P); on mobile use print preview.")
     st.markdown("---")
 
-    st.markdown(f"### 💬 Comments — {resident_choice}")
-    if procedure_id:
-        _toggle_label = "Show All Comments" if not show_all_comments else f"Show Only {procedure_choice} Comments"
-        if st.button(_toggle_label, key="att_dash_comments_toggle"):
-            st.session_state["att_dash_show_all_comments"] = not show_all_comments
-            st.rerun()
-
     try:
-        comments_df = _build_resident_comments_df(resident_email)
+        all_comments_df = _build_resident_comments_df(resident_email)
     except ConnectionError as exc:
         show_gs_error(exc)
         st.stop()
 
-    if procedure_id and not show_all_comments and not comments_df.empty:
-        comments_df = comments_df[comments_df["Procedure"] == procedure_choice]
-
-    if comments_df.empty:
-        st.info("No comments recorded yet.")
+    if all_comments_df.empty:
+        # Nothing to filter or toggle — skip the section header/button
+        # entirely rather than showing controls over an empty table.
+        st.info("💬 No comments recorded for this resident yet.")
     else:
-        _render_comments_html_table(comments_df, show_proc=show_all_comments, show_att=True)
+        st.markdown(f"### 💬 Comments — {resident_choice}")
+        if procedure_id:
+            _toggle_label = "Show All Comments" if not show_all_comments else f"Show Only {procedure_choice} Comments"
+            if st.button(_toggle_label, key="att_dash_comments_toggle"):
+                st.session_state["att_dash_show_all_comments"] = not show_all_comments
+                st.rerun()
+
+        comments_df = all_comments_df
+        if procedure_id and not show_all_comments:
+            comments_df = comments_df[comments_df["Procedure"] == procedure_choice]
+
+        if comments_df.empty:
+            st.info("No comments recorded yet.")
+        else:
+            _render_comments_html_table(comments_df, show_proc=show_all_comments, show_att=True)
 
     if procedure_id:
         st.markdown("---")
