@@ -1076,14 +1076,14 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
 
         # Every colored cell (step ratings, Case Complexity, Overall
         # Performance — all blanked to a single space, the color is the
-        # only content) reads as square: width is fixed at this table's
-        # actual rendered row height (still ~25px despite the fixed
-        # height/line-height props above — a table cell's height is only
-        # ever a minimum, and other cells in the same row can still push
-        # it taller) plus 5px, rather than chasing the row's real height
-        # down to exactly 25px through CSS alone.
+        # only content) reads as square: width is fixed relative to this
+        # table's actual rendered row height (still ~25px despite the
+        # fixed height/line-height props above — a table cell's height is
+        # only ever a minimum, and other cells in the same row can still
+        # push it taller), tuned by eye rather than chasing the row's
+        # real height down to exactly 25px through CSS alone.
         _COLOR_CELL_HEIGHT_PX = 25
-        _COLOR_CELL_WIDTH_PX  = _COLOR_CELL_HEIGHT_PX + 5
+        _COLOR_CELL_WIDTH_PX  = _COLOR_CELL_HEIGHT_PX - 5
         _COLOR_CELL_PROPS = {
             "width": f"{_COLOR_CELL_WIDTH_PX}px", "min-width": f"{_COLOR_CELL_WIDTH_PX}px",
             "max-width": f"{_COLOR_CELL_WIDTH_PX}px",
