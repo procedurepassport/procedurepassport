@@ -2155,6 +2155,16 @@ button p {
     flex: 0 0 auto !important;
     width: auto !important;
 }
+/* Streamlit gives stMarkdownContainer a built-in -16px bottom margin
+   (its own vertical-rhythm spacing trick) — that collapses this
+   column's layout height down below the text's own rendered height,
+   so it visually overflows out the bottom of its (collapsed) box
+   instead of the row's align-items:center above actually centering
+   it against the checkboxes (same issue/fix as assess_improve_how's
+   label column). */
+.st-key-assess_robo_row [data-testid="stMarkdownContainer"] {
+    margin-bottom: 0 !important;
+}
 .st-key-assess_robo_row [data-testid="stMarkdownContainer"] p {
     white-space: nowrap;
     margin: 0;
