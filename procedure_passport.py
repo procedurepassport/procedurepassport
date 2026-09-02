@@ -637,13 +637,16 @@ def _on_robo_checkbox_change(value_key: str, widget_keys: dict, clicked_label: s
 
 
 def render_robo_type_picker(value_key: str, default: str = "Xi") -> str:
-    """Renders the Xi/SP/DV5 robot-platform checkboxes in one row and
-    returns the current selection (also left in
-    st.session_state[value_key] for save_case()/save_draft() to read).
-    `default` only takes effect the first time `value_key` is ever set
-    for this session — e.g. seeded from a pre-fill draft's own
-    "robo_type" on the attending's page — and is ignored on every later
-    rerun once the form has actually been interacted with."""
+    """Renders "Robot:" and the Xi/SP/DV5 checkboxes inline in one tight
+    row (the .st-key-assess_robo_row CSS rule shrinks each column to its
+    own content instead of stretching evenly across the full row, which
+    is what st.columns() does by default) and returns the current
+    selection (also left in st.session_state[value_key] for
+    save_case()/save_draft() to read). `default` only takes effect the
+    first time `value_key` is ever set for this session — e.g. seeded
+    from a pre-fill draft's own "robo_type" on the attending's page —
+    and is ignored on every later rerun once the form has actually been
+    interacted with."""
     _labels = ["Xi", "SP", "DV5"]
     if st.session_state.get(value_key) not in _labels:
         st.session_state[value_key] = default if default in _labels else "Xi"
@@ -652,14 +655,17 @@ def render_robo_type_picker(value_key: str, default: str = "Xi") -> str:
     for label, k in _widget_keys.items():
         if k not in st.session_state:
             st.session_state[k] = (label == _current)
-    _cols = st.columns(len(_labels))
-    for _col, label in zip(_cols, _labels):
-        with _col:
-            st.checkbox(
-                label, key=_widget_keys[label],
-                on_change=_on_robo_checkbox_change,
-                args=(value_key, _widget_keys, label),
-            )
+    with st.container(key="assess_robo_row"):
+        _label_col, *_cb_cols = st.columns(1 + len(_labels))
+        with _label_col:
+            st.markdown("**Robot:**")
+        for _col, label in zip(_cb_cols, _labels):
+            with _col:
+                st.checkbox(
+                    label, key=_widget_keys[label],
+                    on_change=_on_robo_checkbox_change,
+                    args=(value_key, _widget_keys, label),
+                )
     return st.session_state[value_key]
 
 
@@ -2133,6 +2139,26 @@ button p {
 .st-key-assess_top_nav button p {
     white-space: nowrap;
 }
+/* Robot picker row ("Robot:" plus the Xi/SP/DV5 checkboxes): same
+   shrink-to-content trick as the top nav above, so the label and all
+   three checkboxes sit close together on the left instead of each
+   getting an even (and mostly empty) 1/4 of the row's full width —
+   plus a tighter gap between them and vertical centering so the
+   "Robot:" label lines up with the checkboxes beside it. */
+.st-key-assess_robo_row [data-testid="stHorizontalBlock"] {
+    flex-wrap: nowrap !important;
+    gap: 0.5rem !important;
+    align-items: center !important;
+}
+.st-key-assess_robo_row [data-testid="stColumn"] {
+    min-width: 0 !important;
+    flex: 0 0 auto !important;
+    width: auto !important;
+}
+.st-key-assess_robo_row [data-testid="stMarkdownContainer"] p {
+    white-space: nowrap;
+    margin: 0;
+}
 /* "On mobile: tap the >> icon..." tip: shrink padding, and match the text
    size to "Daily Preparation" and similar field labels (0.75x --pp-substep-font)
    so it's part of the same live, width-responsive size hierarchy instead
@@ -3115,7 +3141,6 @@ elif page == "assessment":
             )
 
     if _is_robotic_procedure(_proc_name):
-        st.markdown("**Robot**")
         render_robo_type_picker("robo_type", default=st.session_state.get("robo_type", "Xi"))
 
     with st.expander(
@@ -3923,7 +3948,6 @@ elif page == "attending_assessment":
             case_preparation = st.selectbox("Daily Preparation", _att_cp_opts, index=_att_cp_idx, key="assess_preparation")
 
     if _is_robotic_procedure(_att_proc_name):
-        st.markdown("**Robot**")
         robo_type = render_robo_type_picker("robo_type", default=_d.get("robo_type", "Xi"))
     else:
         robo_type = None
