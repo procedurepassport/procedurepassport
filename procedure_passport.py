@@ -1078,12 +1078,16 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         # Performance — all blanked to a single space, the color is the
         # only content) is a square roughly the size of one line of this
         # table's own 0.8rem/4px-padded text (see the "th, td" rule
-        # below), rather than a wide rectangle. box-sizing: border-box
-        # so the fixed size already includes that padding and border.
+        # below), rather than a wide rectangle. box-sizing: border-box so
+        # the fixed size already includes that padding and border; a
+        # table cell's height is otherwise only a minimum, so it still
+        # grows past that fixed value (taller than wide) if the content's
+        # own line-height needs more room than the box leaves for it —
+        # line-height: 1 keeps that from happening.
         _COLOR_CELL_PROPS = {
             "width": "25px", "min-width": "25px", "max-width": "25px",
             "height": "25px", "min-height": "25px", "max-height": "25px",
-            "text-align": "center", "box-sizing": "border-box",
+            "text-align": "center", "box-sizing": "border-box", "line-height": "1",
         }
         styled = (
             styled
