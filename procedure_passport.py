@@ -1099,7 +1099,13 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             .hide(axis="index")
             .set_properties(
                 subset=["Date", "Attending"],
-                **{"min-width": "120px", "white-space": "nowrap"},
+                # font-size/line-height set directly here (inline, same as
+                # the colored cells' own props below) rather than relying
+                # on the table-wide "th, td" rule to reach these two
+                # columns — Date/Attending's text was still forcing the
+                # row taller than the colored cells' own 25px square.
+                **{"min-width": "120px", "white-space": "nowrap",
+                   "font-size": "0.7rem", "line-height": "1"},
             )
             .set_properties(
                 subset=["Case Complexity", "Overall Performance"],
