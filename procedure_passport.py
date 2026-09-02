@@ -1079,11 +1079,14 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         # only content) is a square roughly the size of one line of this
         # table's own 0.8rem/4px-padded text (see the "th, td" rule
         # below), rather than a wide rectangle. box-sizing: border-box so
-        # the fixed size already includes that padding and border; a
-        # table cell's height is otherwise only a minimum, so it still
-        # grows past that fixed value (taller than wide) if the content's
-        # own line-height needs more room than the box leaves for it —
-        # line-height: 1 keeps that from happening.
+        # the fixed size already includes that padding and border. A
+        # table cell's height is otherwise only a minimum, and — since
+        # every cell in a row shares that row's rendered height — even a
+        # colored cell sized exactly right on its own still comes out
+        # taller than wide if some OTHER cell in the same row (Date,
+        # Attending, ...) needs more vertical room for its own text.
+        # The "th, td" rule's line-height: 1 (not just this cell's own)
+        # is what actually keeps every cell in the row this compact.
         _COLOR_CELL_PROPS = {
             "width": "25px", "min-width": "25px", "max-width": "25px",
             "height": "25px", "min-height": "25px", "max-height": "25px",
@@ -1113,7 +1116,8 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             {"selector": "table",       "props": [("border-collapse", "collapse"), ("margin", "0 auto"),
                                                    ("border", "2px solid #555")]},
             {"selector": "th, td",      "props": [("border", "1px solid #bbb"),
-                                                   ("padding", "4px"), ("font-size", "0.8rem")]},
+                                                   ("padding", "4px"), ("font-size", "0.8rem"),
+                                                   ("line-height", "1")]},
             {"selector": "th.col_heading", "props": [("text-align", "center"), ("vertical-align", "bottom"),
                                                        ("font-weight", "600")]},
             {"selector": "thead tr:last-child th", "props": [("border-bottom", "2px solid #555")]},
