@@ -920,7 +920,14 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     )
 
     def _fmt_step_hdr(name):
-        return name if isinstance(name, str) else name
+        """Column label shown above the heatmap: any "(...)" parenthetical
+        is dropped, e.g. "Suture Placement (interrupted vs. running)"
+        displays as just "Suture Placement". The full name is still used
+        everywhere else (pivot table columns, dict keys) — this only
+        changes what's shown in the header."""
+        if not isinstance(name, str):
+            return name
+        return re.sub(r"\s*\([^)]*\)", "", name).strip()
 
     _step_display        = {s: _fmt_step_hdr(s) for s in ordered_steps}
     ordered_steps_display = [_step_display[s] for s in ordered_steps]
