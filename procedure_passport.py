@@ -1074,6 +1074,17 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         def _apply_o_score_colors(col):
             return [_color_o_score(v) for v in _orig_vals["Overall Performance"]]
 
+        # Every colored cell (step ratings, Case Complexity, Overall
+        # Performance — all blanked to a single space, the color is the
+        # only content) is a square roughly the size of one line of this
+        # table's own 0.8rem/4px-padded text (see the "th, td" rule
+        # below), rather than a wide rectangle. box-sizing: border-box
+        # so the fixed size already includes that padding and border.
+        _COLOR_CELL_PROPS = {
+            "width": "25px", "min-width": "25px", "max-width": "25px",
+            "height": "25px", "min-height": "25px", "max-height": "25px",
+            "text-align": "center", "box-sizing": "border-box",
+        }
         styled = (
             styled
             .apply(_apply_complexity_colors, subset=["Case Complexity"], axis=0)
@@ -1085,13 +1096,13 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             )
             .set_properties(
                 subset=["Case Complexity", "Overall Performance"],
-                **{"min-width": "40px", "max-width": "40px", "width": "40px", "text-align": "center"},
+                **_COLOR_CELL_PROPS,
             )
         )
         if ordered_steps_display:
             styled = styled.set_properties(
                 subset=ordered_steps_display,
-                **{"min-width": "40px", "max-width": "40px", "width": "40px", "text-align": "center"},
+                **_COLOR_CELL_PROPS,
             )
 
         table_styles = [
@@ -1134,9 +1145,9 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
                         ("vertical-align", "bottom"),
                         ("text-align", "left"),
                         ("padding", "4px 2px"),
-                        ("width", "36px"),
-                        ("min-width", "36px"),
-                        ("max-width", "36px"),
+                        ("width", "25px"),
+                        ("min-width", "25px"),
+                        ("max-width", "25px"),
                         ("white-space", "nowrap"),
                         ("font-size", "0.75rem"),
                     ],
