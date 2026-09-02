@@ -1083,19 +1083,25 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
 
         # Every colored cell (step ratings, Case Complexity, Overall
         # Performance — all blanked to a single space, the color is the
-        # only content) reads as square: width/height fixed independently
-        # of this table's actual rendered row height (a table cell's
-        # height is only ever a minimum, and other cells in the same row
-        # can still push it taller) and tuned by eye.
+        # only content) has a fixed width/height independent of this
+        # table's actual rendered row height (a table cell's height is
+        # only ever a minimum, and other cells in the same row can still
+        # push it taller), tuned by eye. Case Complexity/Overall
+        # Performance get their own, wider column than the step cells.
         _COLOR_CELL_HEIGHT_PX = 20
-        _COLOR_CELL_WIDTH_PX  = 25
-        _COLOR_CELL_PROPS = {
-            "width": f"{_COLOR_CELL_WIDTH_PX}px", "min-width": f"{_COLOR_CELL_WIDTH_PX}px",
-            "max-width": f"{_COLOR_CELL_WIDTH_PX}px",
-            "height": f"{_COLOR_CELL_HEIGHT_PX}px", "min-height": f"{_COLOR_CELL_HEIGHT_PX}px",
-            "max-height": f"{_COLOR_CELL_HEIGHT_PX}px",
-            "text-align": "center", "box-sizing": "border-box", "line-height": "1",
-        }
+        _STEP_CELL_WIDTH_PX = 25
+        _META_CELL_WIDTH_PX = 40  # Case Complexity / Overall Performance
+
+        def _color_cell_props(width_px):
+            return {
+                "width": f"{width_px}px", "min-width": f"{width_px}px", "max-width": f"{width_px}px",
+                "height": f"{_COLOR_CELL_HEIGHT_PX}px", "min-height": f"{_COLOR_CELL_HEIGHT_PX}px",
+                "max-height": f"{_COLOR_CELL_HEIGHT_PX}px",
+                "text-align": "center", "box-sizing": "border-box", "line-height": "1",
+            }
+
+        _STEP_CELL_PROPS = _color_cell_props(_STEP_CELL_WIDTH_PX)
+        _META_CELL_PROPS = _color_cell_props(_META_CELL_WIDTH_PX)
         styled = (
             styled
             .apply(_apply_complexity_colors, subset=["Case Complexity"], axis=0)
@@ -1113,13 +1119,13 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             )
             .set_properties(
                 subset=["Case Complexity", "Overall Performance"],
-                **_COLOR_CELL_PROPS,
+                **_META_CELL_PROPS,
             )
         )
         if ordered_steps_display:
             styled = styled.set_properties(
                 subset=ordered_steps_display,
-                **_COLOR_CELL_PROPS,
+                **_STEP_CELL_PROPS,
             )
 
         table_styles = [
@@ -1155,6 +1161,10 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         # header row uncomfortably tall.
         for idx, col_name in enumerate(all_cols):
             if col_name in _vheader_cols:
+                _hdr_width_px = (
+                    _META_CELL_WIDTH_PX if col_name in ("Case Complexity", "Overall Performance")
+                    else _STEP_CELL_WIDTH_PX
+                )
                 table_styles.append({
                     "selector": f"th.col_heading.level0.col{idx}",
                     "props": [
@@ -1163,9 +1173,9 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
                         ("vertical-align", "bottom"),
                         ("text-align", "left"),
                         ("padding", "4px 2px"),
-                        ("width", f"{_COLOR_CELL_WIDTH_PX}px"),
-                        ("min-width", f"{_COLOR_CELL_WIDTH_PX}px"),
-                        ("max-width", f"{_COLOR_CELL_WIDTH_PX}px"),
+                        ("width", f"{_hdr_width_px}px"),
+                        ("min-width", f"{_hdr_width_px}px"),
+                        ("max-width", f"{_hdr_width_px}px"),
                         ("white-space", "nowrap"),
                         ("font-size", "0.75rem"),
                     ],
