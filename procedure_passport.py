@@ -3086,6 +3086,10 @@ elif page == "assessment":
         with _top_cols_assess[1]:
             if st.button("🏠 Home", key="assess_home_top"):
                 go_to("home")
+
+    if _is_robotic_procedure(_proc_name):
+        render_robo_type_picker("robo_type", default=st.session_state.get("robo_type", "Xi"))
+
     st.markdown("---")
 
     with st.container(key="assess_improve_how"):
@@ -3139,9 +3143,6 @@ elif page == "assessment":
                 index=_cp_idx,
                 key="assess_preparation",
             )
-
-    if _is_robotic_procedure(_proc_name):
-        render_robo_type_picker("robo_type", default=st.session_state.get("robo_type", "Xi"))
 
     with st.expander(
         header_break_before("Step-Level Ratings for", _proc_name),
@@ -3878,6 +3879,11 @@ elif page == "attending_assessment":
         )
     assessment_instructions_note()
 
+    if _is_robotic_procedure(_att_proc_name):
+        robo_type = render_robo_type_picker("robo_type", default=(_draft or {}).get("robo_type", "Xi"))
+    else:
+        robo_type = None
+
     st.markdown("---")
 
     steps = steps_df[steps_df["procedure_id"] == procedure_id].sort_values("step_order")
@@ -3946,11 +3952,6 @@ elif page == "attending_assessment":
             _att_cp_default = _d.get("case_preparation", "Not Assessed")
             _att_cp_idx = _att_cp_opts.index(_att_cp_default) if _att_cp_default in _att_cp_opts else 0
             case_preparation = st.selectbox("Daily Preparation", _att_cp_opts, index=_att_cp_idx, key="assess_preparation")
-
-    if _is_robotic_procedure(_att_proc_name):
-        robo_type = render_robo_type_picker("robo_type", default=_d.get("robo_type", "Xi"))
-    else:
-        robo_type = None
 
     _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
     _att_cc_default = _d.get("case_complexity", "— Select complexity —")
