@@ -933,7 +933,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     ordered_steps_display = [_step_display[s] for s in ordered_steps]
 
     pivot = proc_data.pivot_table(
-        index=["date", "attending_name", "case_id", "case_complexity", "overall_performance"],
+        index=["date", "attending_name", "case_id", "overall_performance", "case_complexity"],
         columns="step_name",
         values="rating",
         aggfunc="first",
@@ -943,7 +943,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         if step not in pivot.columns:
             pivot[step] = pd.NA
 
-    pivot = pivot[["date", "attending_name", "case_id", "case_complexity", "overall_performance"] + ordered_steps]
+    pivot = pivot[["date", "attending_name", "case_id", "overall_performance", "case_complexity"] + ordered_steps]
 
     proc_display_name = procs_map.get(selected_proc, selected_proc)
     # One deliberate break point (see header_break_before): stays on one
@@ -974,7 +974,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             _best[_s] = max(_vals.tolist(), key=lambda v: RATING_TO_NUM.get(v, -1))
 
     _summary_df = pd.DataFrame([_mr, _best])
-    _meta_cols  = ["date", "attending_name", "case_complexity", "overall_performance"]
+    _meta_cols  = ["date", "attending_name", "overall_performance", "case_complexity"]
 
     display_df = pd.concat(
         [_summary_df[_meta_cols + ordered_steps],
