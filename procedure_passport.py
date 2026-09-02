@@ -2155,27 +2155,27 @@ button p {
     flex: 0 0 auto !important;
     width: auto !important;
 }
-/* Streamlit gives stMarkdownContainer a built-in -16px bottom margin
-   (its own vertical-rhythm spacing trick) — that collapses this
-   column's layout height down below the text's own rendered height,
-   so it visually overflows out the bottom of its (collapsed) box
-   instead of the row's align-items:center above actually centering
-   it against the checkboxes (same issue/fix as assess_improve_how's
-   label column). */
+/* The label column gets its own fixed-height flexbox (~a checkbox
+   widget's natural height) and centers its text inside that box
+   directly, rather than depending on the row's align-items: center
+   above to line the two up — cancelling stMarkdownContainer's built-in
+   -16px bottom margin (needed so the box's real height isn't collapsed
+   out from under the text) also grew this column taller, which grew
+   the *row's* height to match and pushed the checkboxes down with it
+   (they'd previously defined the row's height on their own). Fixing
+   the label's own box height instead keeps the row's height — and the
+   checkboxes' position — exactly as it was without this column at all. */
+.st-key-assess_robo_row [data-testid="stColumn"]:has([data-testid="stMarkdownContainer"]) {
+    display: flex;
+    align-items: center;
+    height: 2.5rem;
+}
 .st-key-assess_robo_row [data-testid="stMarkdownContainer"] {
     margin-bottom: 0 !important;
 }
 .st-key-assess_robo_row [data-testid="stMarkdownContainer"] p {
     white-space: nowrap;
     margin: 0;
-    /* Cancelling the container's -16px margin above made the box height
-       match the text, but the checkbox widget's own box still isn't
-       exactly the same height as a bare line of text — align-items:
-       center on the row lines up the two boxes' centers, not
-       necessarily what looks visually centered against the checkbox
-       square/label itself. This nudges the text down those last few
-       pixels; adjust if it still doesn't quite land. */
-    transform: translateY(6px);
 }
 /* "On mobile: tap the >> icon..." tip: shrink padding, and match the text
    size to "Daily Preparation" and similar field labels (0.75x --pp-substep-font)
