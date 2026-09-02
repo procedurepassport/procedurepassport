@@ -1076,20 +1076,19 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
 
         # Every colored cell (step ratings, Case Complexity, Overall
         # Performance — all blanked to a single space, the color is the
-        # only content) is a square roughly the size of one line of this
-        # table's own 0.8rem/4px-padded text (see the "th, td" rule
-        # below), rather than a wide rectangle. box-sizing: border-box so
-        # the fixed size already includes that padding and border. A
-        # table cell's height is otherwise only a minimum, and — since
-        # every cell in a row shares that row's rendered height — even a
-        # colored cell sized exactly right on its own still comes out
-        # taller than wide if some OTHER cell in the same row (Date,
-        # Attending, ...) needs more vertical room for its own text.
-        # The "th, td" rule's line-height: 1 (not just this cell's own)
-        # is what actually keeps every cell in the row this compact.
+        # only content) reads as square: width is fixed at this table's
+        # actual rendered row height (still ~25px despite the fixed
+        # height/line-height props above — a table cell's height is only
+        # ever a minimum, and other cells in the same row can still push
+        # it taller) plus 5px, rather than chasing the row's real height
+        # down to exactly 25px through CSS alone.
+        _COLOR_CELL_HEIGHT_PX = 25
+        _COLOR_CELL_WIDTH_PX  = _COLOR_CELL_HEIGHT_PX + 5
         _COLOR_CELL_PROPS = {
-            "width": "25px", "min-width": "25px", "max-width": "25px",
-            "height": "25px", "min-height": "25px", "max-height": "25px",
+            "width": f"{_COLOR_CELL_WIDTH_PX}px", "min-width": f"{_COLOR_CELL_WIDTH_PX}px",
+            "max-width": f"{_COLOR_CELL_WIDTH_PX}px",
+            "height": f"{_COLOR_CELL_HEIGHT_PX}px", "min-height": f"{_COLOR_CELL_HEIGHT_PX}px",
+            "max-height": f"{_COLOR_CELL_HEIGHT_PX}px",
             "text-align": "center", "box-sizing": "border-box", "line-height": "1",
         }
         styled = (
@@ -1159,9 +1158,9 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
                         ("vertical-align", "bottom"),
                         ("text-align", "left"),
                         ("padding", "4px 2px"),
-                        ("width", "25px"),
-                        ("min-width", "25px"),
-                        ("max-width", "25px"),
+                        ("width", f"{_COLOR_CELL_WIDTH_PX}px"),
+                        ("min-width", f"{_COLOR_CELL_WIDTH_PX}px"),
+                        ("max-width", f"{_COLOR_CELL_WIDTH_PX}px"),
                         ("white-space", "nowrap"),
                         ("font-size", "0.75rem"),
                     ],
