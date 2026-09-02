@@ -2622,28 +2622,84 @@ elif page == "admin":
                 _proc_match = procs_df[procs_df["procedure_name"].astype(str).str.strip() == str(edit_proc).strip()]
                 sel_proc_id  = _proc_match["procedure_id"].values[0] if len(_proc_match) > 0 else None
                 new_pname    = st.text_input("Updated name", value=edit_proc, key="edit_proc_name")
-                new_steps_ra = st.text_area("Updated steps (blank = keep current)", key="edit_proc_steps")
-                new_edit_stp = [s.strip() for s in new_steps_ra.split("\n") if s.strip()]
+
+                # Pre-filled, per-step editor rather than retyping the whole
+                # step list as plain text: renaming or reordering a step no
+                # longer regenerates its step_id (which used to bake in its
+                # position, e.g. S_CIRC_01/02/03 — so ANY edit anywhere in
+                # the list shifted every step after it onto a new ID, silently
+                # cutting that step's historical ratings loose from it). Order
+                # is a plain editable number rather than relying on drag-to-
+                # reorder (data_editor doesn't support that) — retype a row's
+                # Order to move it anywhere, including fractional values like
+                # 2.5 to insert a new step between steps 2 and 3.
+                _all_steps_df   = read_sheet_df(
+                    SHEET_STEPS, expected_cols=["step_id", "procedure_id", "step_order", "step_name"]
+                )
+                _proc_steps_df  = _all_steps_df[_all_steps_df["procedure_id"] == sel_proc_id].sort_values("step_order")
+                _existing_step_ids = set(_proc_steps_df["step_id"])
+                _steps_editor_df = pd.DataFrame({
+                    "step_id": _proc_steps_df["step_id"].tolist(),
+                    "Order":   list(range(1, len(_proc_steps_df) + 1)),
+                    "Step":    _proc_steps_df["step_name"].tolist(),
+                })
+                st.caption(
+                    "Rename or reorder existing steps — their rating history stays "
+                    "linked either way. Add a row for a new step; give it an Order "
+                    "number to place it anywhere (e.g. 2.5 inserts it between "
+                    "steps 2 and 3). Delete a row to remove that step."
+                )
+                _edited_steps_df = st.data_editor(
+                    _steps_editor_df,
+                    column_config={
+                        "step_id": None,  # identity only — never shown or hand-edited
+                        "Order": st.column_config.NumberColumn(
+                            "Order", help="Position in the sequence. Fractional values are fine.",
+                        ),
+                        "Step": st.column_config.TextColumn("Step", required=True),
+                    },
+                    num_rows="dynamic",
+                    hide_index=True,
+                    width="stretch",
+                    key=f"edit_proc_steps_editor_{sel_proc_id}",
+                )
 
                 if st.button("Update Procedure", key="btn_upd_proc"):
                     procs_df.loc[procs_df["procedure_id"] == sel_proc_id, "procedure_name"] = new_pname
                     write_sheet_df(SHEET_PROCEDURES, procs_df)
-                    if new_edit_stp:
-                        steps_df = read_sheet_df(
-                            SHEET_STEPS, expected_cols=["step_id", "procedure_id", "step_order", "step_name"]
+
+                    _clean_steps = _edited_steps_df.dropna(subset=["Step"]).copy()
+                    _clean_steps = _clean_steps[_clean_steps["Step"].astype(str).str.strip() != ""]
+                    if _clean_steps.empty:
+                        st.error("A procedure needs at least one step — add one before updating.")
+                    else:
+                        # Stable sort: rows with no Order (a just-added row
+                        # left blank) fall to the end rather than the top.
+                        _clean_steps["Order"] = pd.to_numeric(_clean_steps["Order"], errors="coerce")
+                        _blank_order_fill = (
+                            _clean_steps["Order"].max() + 1 if _clean_steps["Order"].notna().any() else 1
                         )
-                        steps_df = steps_df[steps_df["procedure_id"] != sel_proc_id]
-                        updated_steps = pd.DataFrame([{
-                            "step_id":      f"S_{sel_proc_id}_{i+1:02d}",
-                            "procedure_id": sel_proc_id,
-                            "step_order":   i + 1,
-                            "step_name":    s,
-                        } for i, s in enumerate(new_edit_stp)])
+                        _clean_steps["Order"] = _clean_steps["Order"].fillna(_blank_order_fill)
+                        _clean_steps = _clean_steps.sort_values("Order", kind="stable").reset_index(drop=True)
+
+                        _new_step_rows = []
+                        for i, _row in _clean_steps.iterrows():
+                            _sid = _row["step_id"]
+                            if not isinstance(_sid, str) or not _sid.strip() or _sid not in _existing_step_ids:
+                                _sid = f"S_{sel_proc_id}_{uuid.uuid4().hex[:8]}"
+                            _new_step_rows.append({
+                                "step_id":      _sid,
+                                "procedure_id": sel_proc_id,
+                                "step_order":   i + 1,
+                                "step_name":    str(_row["Step"]).strip(),
+                            })
+                        updated_steps = pd.DataFrame(_new_step_rows)
+                        steps_df = _all_steps_df[_all_steps_df["procedure_id"] != sel_proc_id]
                         steps_df = pd.concat([steps_df, updated_steps], ignore_index=True)
                         write_sheet_df(SHEET_STEPS, steps_df)
-                    st.success(f"✅ Updated '{new_pname}'")
-                    time.sleep(0.5)
-                    st.rerun()
+                        st.success(f"✅ Updated '{new_pname}'")
+                        time.sleep(0.5)
+                        st.rerun()
     except ConnectionError as exc:
         show_gs_error(exc)
 
