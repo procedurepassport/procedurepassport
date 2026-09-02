@@ -2168,6 +2168,14 @@ button p {
 .st-key-assess_robo_row [data-testid="stMarkdownContainer"] p {
     white-space: nowrap;
     margin: 0;
+    /* Cancelling the container's -16px margin above made the box height
+       match the text, but the checkbox widget's own box still isn't
+       exactly the same height as a bare line of text — align-items:
+       center on the row lines up the two boxes' centers, not
+       necessarily what looks visually centered against the checkbox
+       square/label itself. This nudges the text down those last few
+       pixels; adjust if it still doesn't quite land. */
+    transform: translateY(6px);
 }
 /* "On mobile: tap the >> icon..." tip: shrink padding, and match the text
    size to "Daily Preparation" and similar field labels (0.75x --pp-substep-font)
