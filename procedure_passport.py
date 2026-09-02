@@ -2072,7 +2072,7 @@ button p {
     white-space: nowrap;
 }
 /* "On mobile: tap the >> icon..." tip: shrink padding, and match the text
-   size to "Preparation" and similar field labels (0.75x --pp-substep-font)
+   size to "Daily Preparation" and similar field labels (0.75x --pp-substep-font)
    so it's part of the same live, width-responsive size hierarchy instead
    of a fixed size of its own. It's now the first element on its page, so
    pull it up out of Streamlit's default ~96px block-container top padding
@@ -2114,7 +2114,7 @@ button p {
     align-items: center !important;
     align-self: center !important;
 }
-/* Assessment page field labels (Preparation, Overall Performance Rating,
+/* Assessment page field labels (Daily Preparation, Overall Performance Rating,
    Development/Improvement/Feed-Forward) and every label inside the
    Step-Level Ratings expander (Case Complexity, then each procedure
    step): sized relative to that expander's own header (--pp-substep-font,
@@ -2127,7 +2127,7 @@ button p {
 .st-key-step_ratings_expander_attending [data-testid="stWidgetLabel"] p {
     font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.75);
 }
-/* Dropdown value text (Preparation, Overall Performance Rating, and every
+/* Dropdown value text (Daily Preparation, Overall Performance Rating, and every
    Step-Level Ratings entry incl. Case Complexity): 0.8x its own label's
    size above, i.e. 0.6x --pp-substep-font overall. The options popup
    itself renders in a portal under <body>, outside these scoped
@@ -2207,7 +2207,7 @@ button p {
     margin-top: -16px !important;
     margin-bottom: -32px !important;
 }
-/* Same idea for the Overall/Preparation row (Case Complexity now
+/* Same idea for the Overall/Daily Preparation row (Case Complexity now
    lives inside the Step-Level Ratings expander below): its default
    gaps to the divider above (32px) and the expander below (16px)
    weren't equal — pull/push its wrapper so the gap above lands at
@@ -2954,7 +2954,7 @@ elif page == "assessment":
             _cp_default = st.session_state.get("case_preparation", "Not Assessed")
             _cp_idx = _cp_opts.index(_cp_default) if _cp_default in _cp_opts else 0
             st.session_state["case_preparation"] = st.selectbox(
-                "Preparation",
+                "Daily Preparation",
                 _cp_opts,
                 index=_cp_idx,
                 key="assess_preparation",
@@ -3109,7 +3109,7 @@ elif page == "dashboard":
     with meta_col1:
         st.markdown(f"**Date:** {fmt_date(st.session_state.get('date', ''))}")
         st.markdown(f"**Case Complexity:** {st.session_state.get('case_complexity', '—')}")
-        st.markdown(f"**Preparation:** {st.session_state.get('case_preparation', '—')}")
+        st.markdown(f"**Daily Preparation:** {st.session_state.get('case_preparation', '—')}")
     with meta_col2:
         st.markdown(f"**Overall Performance:** {st.session_state.get('overall_performance', '—')}")
         st.markdown(f"**Basis:** {st.session_state.get('last_assessment_type', '—')}")
@@ -3751,7 +3751,7 @@ elif page == "attending_assessment":
                             "Adequately Prepared", "Well Prepared", "Highly Prepared"]
             _att_cp_default = _d.get("case_preparation", "Not Assessed")
             _att_cp_idx = _att_cp_opts.index(_att_cp_default) if _att_cp_default in _att_cp_opts else 0
-            case_preparation = st.selectbox("Preparation", _att_cp_opts, index=_att_cp_idx, key="assess_preparation")
+            case_preparation = st.selectbox("Daily Preparation", _att_cp_opts, index=_att_cp_idx, key="assess_preparation")
 
     _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
     _att_cc_default = _d.get("case_complexity", "— Select complexity —")
