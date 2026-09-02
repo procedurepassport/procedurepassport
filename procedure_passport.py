@@ -1118,56 +1118,28 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         ]
         _vheader_cols  = [c for c in all_cols
                            if c in ordered_steps_display or c in ("Case Complexity", "Overall Performance")]
-        _BASE_FONT_PX  = 12
-        _PX_PER_CHAR   = 7
-        _CELL_PAD_PX   = 12
-        _MIN_HEADER_PX = 180
-        _MIN_FONT_PX   = 7
 
-        def _label_len(c):
-            return len(c) if isinstance(c, str) else 0
-
-        if _vheader_cols:
-            _estimates = sorted(_label_len(c) * _PX_PER_CHAR + _CELL_PAD_PX for c in _vheader_cols)
-            _half_idx = -(-len(_estimates) // 2) - 1
-            _max_header_px = max(_estimates[_half_idx], _MIN_HEADER_PX)
-        else:
-            _max_header_px = _MIN_HEADER_PX
-
+        # Rotated column headers: forced to one line (no wrapping, no
+        # shrink-to-fit) with no cap on the header row's height — a long
+        # label just makes that row taller instead of wrapping or
+        # shrinking. Revisit if very long labels end up making the
+        # header row uncomfortably tall.
         for idx, col_name in enumerate(all_cols):
             if col_name in _vheader_cols:
-                _need_px = _label_len(col_name) * _PX_PER_CHAR + _CELL_PAD_PX
-                _props = [
-                    ("writing-mode", "vertical-rl"),
-                    ("transform", "rotate(180deg)"),
-                    ("vertical-align", "bottom"),
-                    ("text-align", "left"),
-                    ("padding", "4px 2px"),
-                    ("width", "36px"),
-                    ("min-width", "36px"),
-                    ("max-width", "36px"),
-                    ("max-height", f"{_max_header_px}px"),
-                    ("height", f"{_max_header_px}px"),
-                ]
-                if _need_px <= _max_header_px:
-                    _props += [
-                        ("white-space", "nowrap"),
-                        ("font-size", "0.75rem"),
-                    ]
-                else:
-                    _per_line_px = _need_px / 2
-                    _scale = min(1.0, _max_header_px / _per_line_px) if _per_line_px else 1.0
-                    _font_px = max(_MIN_FONT_PX, round(_BASE_FONT_PX * _scale))
-                    _props += [
-                        ("white-space", "normal"),
-                        ("overflow-wrap", "break-word"),
-                        ("word-break", "break-word"),
-                        ("line-height", "1.05"),
-                        ("font-size", f"{_font_px}px"),
-                    ]
                 table_styles.append({
                     "selector": f"th.col_heading.level0.col{idx}",
-                    "props": _props,
+                    "props": [
+                        ("writing-mode", "vertical-rl"),
+                        ("transform", "rotate(180deg)"),
+                        ("vertical-align", "bottom"),
+                        ("text-align", "left"),
+                        ("padding", "4px 2px"),
+                        ("width", "36px"),
+                        ("min-width", "36px"),
+                        ("max-width", "36px"),
+                        ("white-space", "nowrap"),
+                        ("font-size", "0.75rem"),
+                    ],
                 })
 
         table_styles.append({
