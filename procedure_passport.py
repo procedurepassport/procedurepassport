@@ -177,8 +177,8 @@ PBKDF2_ITERATIONS = 200_000
 DRAFT_COLS = [
     "draft_id", "resident_email", "date", "specialty_id", "procedure_id",
     "attending_id", "case_complexity", "case_preparation",
-    "overall_performance", "improve", "how", "notes", "scores_json",
-    "created_at",
+    "overall_performance", "robo_type", "improve", "how", "notes",
+    "scores_json", "created_at",
 ]
 
 # ─────────────────────────────────────────────
@@ -379,6 +379,7 @@ def save_case(
     case_complexity=None,
     case_preparation=None,
     overall_performance=None,
+    robo_type=None,
     improve: str = "",
     how: str = "",
     assessment_type: str = "",
@@ -389,13 +390,16 @@ def save_case(
     "Self-Assessment" for a resident's own entry (Finish & Save, or the
     dual-save that happens when generating a pre-filled magic link) vs
     "Attending Evaluation" for the attending's magic-link submission.
+
+    robo_type ("Xi"/"SP"/"DV5") is only meaningful for a robotic
+    procedure (see _is_robotic_procedure) — None otherwise.
     """
     case_id   = uuid.uuid4().hex[:12]
 
     case_cols = ["case_id", "resident_email", "date", "specialty_id",
                  "procedure_id", "attending_id", "notes",
                  "case_complexity", "case_preparation", "overall_performance",
-                 "improve", "how", "assessment_type"]
+                 "robo_type", "improve", "how", "assessment_type"]
     cases_df  = read_sheet_df(SHEET_CASES, expected_cols=case_cols)
     cases_df  = pd.concat([cases_df, pd.DataFrame([{
         "case_id":             case_id,
@@ -408,6 +412,7 @@ def save_case(
         "case_complexity":     case_complexity,
         "case_preparation":    case_preparation,
         "overall_performance": overall_performance,
+        "robo_type":           robo_type,
         "improve":             improve,
         "how":                 how,
         "assessment_type":     assessment_type,
@@ -446,6 +451,7 @@ def save_draft(
     case_complexity=None,
     case_preparation=None,
     overall_performance=None,
+    robo_type=None,
     improve: str = "",
     how: str = "",
 ) -> str:
@@ -463,6 +469,7 @@ def save_draft(
         "case_complexity":      case_complexity,
         "case_preparation":     case_preparation,
         "overall_performance":  overall_performance,
+        "robo_type":            robo_type,
         "improve":              improve,
         "how":                  how,
         "notes":                notes,
@@ -507,6 +514,7 @@ def load_draft(draft_id: str):
         "case_complexity":      row.get("case_complexity"),
         "case_preparation":     row.get("case_preparation"),
         "overall_performance":  row.get("overall_performance"),
+        "robo_type":            row.get("robo_type"),
         "improve":              _clean(row.get("improve")),
         "how":                  _clean(row.get("how")),
         "notes":                _clean(row.get("notes")),
@@ -599,6 +607,60 @@ def _ordered_procedure_names(proc_map: dict) -> list:
             n if _norm_proc(n) not in _pinned_rank else "",
         ),
     )
+
+
+def _is_robotic_procedure(procedure_name: str) -> bool:
+    """True if a procedure's name suggests it's done on a robotic
+    platform, so the assessment form should show the Xi/SP/DV5 robot
+    picker (see render_robo_type_picker). "robotic"/"robo" match
+    case-insensitively anywhere in the name; "RAL" is matched only as
+    an exact-case substring — case-insensitively it would false-positive
+    on ordinary words that happen to end in "ral", e.g. "General"."""
+    name = str(procedure_name or "")
+    lname = name.lower()
+    return "robotic" in lname or "robo" in lname or "RAL" in name
+
+
+def _on_robo_checkbox_change(value_key: str, widget_keys: dict, clicked_label: str) -> None:
+    """Keeps the Xi/SP/DV5 checkbox trio behaving like a single-select
+    group even though st.checkbox has no native radio-group mode:
+    checking one unchecks the other two and becomes the recorded
+    selection; trying to uncheck the only checked one is refused (there
+    must always be exactly one) by immediately re-checking it."""
+    if st.session_state[widget_keys[clicked_label]]:
+        for label, k in widget_keys.items():
+            if label != clicked_label:
+                st.session_state[k] = False
+        st.session_state[value_key] = clicked_label
+    else:
+        st.session_state[widget_keys[clicked_label]] = True
+
+
+def render_robo_type_picker(value_key: str, default: str = "Xi") -> str:
+    """Renders the Xi/SP/DV5 robot-platform checkboxes in one row and
+    returns the current selection (also left in
+    st.session_state[value_key] for save_case()/save_draft() to read).
+    `default` only takes effect the first time `value_key` is ever set
+    for this session — e.g. seeded from a pre-fill draft's own
+    "robo_type" on the attending's page — and is ignored on every later
+    rerun once the form has actually been interacted with."""
+    _labels = ["Xi", "SP", "DV5"]
+    if st.session_state.get(value_key) not in _labels:
+        st.session_state[value_key] = default if default in _labels else "Xi"
+    _current = st.session_state[value_key]
+    _widget_keys = {label: f"{value_key}_cb_{label}" for label in _labels}
+    for label, k in _widget_keys.items():
+        if k not in st.session_state:
+            st.session_state[k] = (label == _current)
+    _cols = st.columns(len(_labels))
+    for _col, label in zip(_cols, _labels):
+        with _col:
+            st.checkbox(
+                label, key=_widget_keys[label],
+                on_change=_on_robo_checkbox_change,
+                args=(value_key, _widget_keys, label),
+            )
+    return st.session_state[value_key]
 
 
 def show_gs_error(exc: Exception) -> None:
@@ -3052,6 +3114,10 @@ elif page == "assessment":
                 key="assess_preparation",
             )
 
+    if _is_robotic_procedure(_proc_name):
+        st.markdown("**Robot**")
+        render_robo_type_picker("robo_type", default=st.session_state.get("robo_type", "Xi"))
+
     with st.expander(
         header_break_before("Step-Level Ratings for", _proc_name),
         expanded=False,
@@ -3098,6 +3164,11 @@ elif page == "assessment":
             or st.session_state.get("how", "").strip() != ""
         )
 
+    # Only meaningful for a robotic procedure — st.session_state["robo_type"]
+    # could otherwise still hold a stale Xi/SP/DV5 pick left over from a
+    # different, earlier robotic procedure this same session.
+    _robo_type_to_save = st.session_state.get("robo_type") if _is_robotic_procedure(_proc_name) else None
+
     def _save_own_case(assessment_type: str) -> str:
         """Save the resident's own entry, tagged with how it was taken."""
         return save_case(
@@ -3110,6 +3181,7 @@ elif page == "assessment":
             case_complexity=st.session_state["case_complexity"],
             case_preparation=st.session_state["case_preparation"],
             overall_performance=st.session_state["overall_performance"],
+            robo_type=_robo_type_to_save,
             notes=st.session_state.get("notes", ""),
             improve=st.session_state.get("improve", ""),
             how=st.session_state.get("how", ""),
@@ -3155,6 +3227,7 @@ elif page == "assessment":
                         case_complexity=st.session_state["case_complexity"],
                         case_preparation=st.session_state["case_preparation"],
                         overall_performance=st.session_state["overall_performance"],
+                        robo_type=_robo_type_to_save,
                         notes=st.session_state.get("notes", ""),
                         improve=st.session_state.get("improve", ""),
                         how=st.session_state.get("how", ""),
@@ -3181,12 +3254,14 @@ elif page == "assessment":
 # ════════════════════════════════════════════════════════════
 elif page == "dashboard":
     try:
-        _, _, steps_df, _ = load_refs()
+        _, proc_df, steps_df, _ = load_refs()
     except ConnectionError as exc:
         show_gs_error(exc)
         st.stop()
 
     steps = steps_df[steps_df["procedure_id"] == st.session_state["procedure_id"]].sort_values("step_order")
+    _dash_proc_rows = proc_df.loc[proc_df["procedure_id"] == st.session_state["procedure_id"], "procedure_name"].values
+    _dash_proc_name = _dash_proc_rows[0] if len(_dash_proc_rows) else ""
 
     page_header("✅ Case Saved")
     st.success(f"Case ID: `{st.session_state.get('current_case_id', '—')}`")
@@ -3205,6 +3280,8 @@ elif page == "dashboard":
     with meta_col2:
         st.markdown(f"**Overall Performance:** {st.session_state.get('overall_performance', '—')}")
         st.markdown(f"**Basis:** {st.session_state.get('last_assessment_type', '—')}")
+        if _is_robotic_procedure(_dash_proc_name):
+            st.markdown(f"**Robot:** {st.session_state.get('robo_type', '—')}")
 
     if st.session_state.get("improve", "").strip() or st.session_state.get("how", "").strip():
         st.markdown(f"**In order to improve this:** {st.session_state.get('improve', '') or '_(blank)_'}.")
@@ -3845,6 +3922,12 @@ elif page == "attending_assessment":
             _att_cp_idx = _att_cp_opts.index(_att_cp_default) if _att_cp_default in _att_cp_opts else 0
             case_preparation = st.selectbox("Daily Preparation", _att_cp_opts, index=_att_cp_idx, key="assess_preparation")
 
+    if _is_robotic_procedure(_att_proc_name):
+        st.markdown("**Robot**")
+        robo_type = render_robo_type_picker("robo_type", default=_d.get("robo_type", "Xi"))
+    else:
+        robo_type = None
+
     _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
     _att_cc_default = _d.get("case_complexity", "— Select complexity —")
     _att_cc_idx = _att_cc_opts.index(_att_cc_default) if _att_cc_default in _att_cc_opts else 0
@@ -3961,6 +4044,7 @@ elif page == "attending_assessment":
                     case_complexity=case_complexity,
                     case_preparation=case_preparation,
                     overall_performance=o_score,
+                    robo_type=robo_type,
                     improve=improve,
                     how=how,
                     assessment_type=_assessment_type,
@@ -3979,6 +4063,7 @@ elif page == "attending_assessment":
                     "case_complexity":     case_complexity,
                     "case_preparation":    case_preparation,
                     "overall_performance": o_score,
+                    "robo_type":           robo_type,
                     "notes":               notes,
                     "improve":             improve,
                     "how":                 how,
@@ -4003,6 +4088,7 @@ elif page == "attending_confirmation":
     page_header("✅ Evaluation Submitted")
     st.success("Thank you! Your evaluation has been recorded.")
 
+    _robo_type_line = f'<br><b>Robot:</b> {sub["robo_type"]}' if sub.get("robo_type") else ""
     st.markdown(
         f'<div class="pp-card">'
         f'<b>Resident:</b> {sub.get("resident_name", sub["resident_email"])}<br>'
@@ -4010,6 +4096,7 @@ elif page == "attending_confirmation":
         f'<b>Procedure:</b> {sub.get("procedure_name", sub["procedure_id"])}<br>'
         f'<b>Date:</b> {fmt_date(sub["date"])}<br>'
         f'<b>Overall Performance:</b> {sub["overall_performance"]}'
+        f'{_robo_type_line}'
         f'</div>',
         unsafe_allow_html=True,
     )
