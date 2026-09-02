@@ -3409,14 +3409,23 @@ elif page == "attending_resident_dashboard":
 
     resident_email = res_map[resident_choice]
 
-    # procedure_id is compared as a string, not the raw dtype — the cases
-    # and procedures sheets can disagree on int vs. float vs. string for
-    # the same ID (see _norm_id above), so a raw .isin() can silently
-    # drop real matches.
-    resident_procedure_ids = set(
-        confirmed_cases.loc[confirmed_cases["resident_email"] == resident_email, "procedure_id"]
-        .astype(str)
-    )
+    # Fetched once here and reused below at the heatmap section — same
+    # data, no need to ask for it twice.
+    try:
+        case_matrix, steps_df, procs_map = _build_resident_case_matrix(resident_email)
+    except ConnectionError as exc:
+        show_gs_error(exc)
+        st.stop()
+
+    # Only list procedures with actual step-level ratings data — i.e. ones
+    # that would actually produce a heatmap, not just an attending-
+    # confirmed case whose steps were all left "Not Assessed" (see
+    # _build_resident_case_matrix's own docstring). procedure_id is
+    # compared as a string, not the raw dtype — the cases and procedures
+    # sheets can disagree on int vs. float vs. string for the same ID
+    # (see _norm_id above), so a raw .isin() can silently drop real
+    # matches.
+    resident_procedure_ids = set(case_matrix["case_procedure_id"]) if not case_matrix.empty else set()
     procs = proc_df[
         (proc_df["specialty_id"] == specialty_id)
         & (proc_df["procedure_id"].astype(str).isin(resident_procedure_ids))
@@ -3483,18 +3492,13 @@ elif page == "attending_resident_dashboard":
 
     if procedure_id:
         st.markdown("---")
-        try:
-            case_matrix, steps_df, procs_map = _build_resident_case_matrix(resident_email)
-        except ConnectionError as exc:
-            show_gs_error(exc)
-            st.stop()
-        if case_matrix.empty:
-            st.info("No assessment data yet for this resident.")
-        else:
-            _render_resident_heatmap(
-                case_matrix, steps_df, procs_map, procedure_id,
-                filename_stub=resident_choice.replace(" ", "_"),
-            )
+        # case_matrix was already fetched above, and the dropdown only
+        # ever offers a procedure_id that's in it, so it's never empty
+        # here.
+        _render_resident_heatmap(
+            case_matrix, steps_df, procs_map, procedure_id,
+            filename_stub=resident_choice.replace(" ", "_"),
+        )
 
     st.markdown("---")
     if st.button("⬅️ Back to Home", key="att_dash_bottom_home"):
