@@ -3432,20 +3432,29 @@ elif page == "attending_resident_dashboard":
     ]
     proc_map = dict(zip(procs["procedure_name"], procs["procedure_id"]))
     _ALL_PROCS = "Choose Procedure for Heat Map"
-    _proc_opts = [_ALL_PROCS] + _ordered_procedure_names(proc_map)
-    # A procedure picked for the previous resident can fall outside this
-    # resident's options — reset it rather than letting st.selectbox raise
-    # on a default no longer in its options (same guard as the Comments
-    # Dashboard's Procedure/Attending filters above).
-    if st.session_state.get("att_dash_procedure") not in _proc_opts:
-        st.session_state["att_dash_procedure"] = _ALL_PROCS
-    with _proc_col:
-        procedure_choice = st.selectbox(
-            "Procedure (optional)",
-            _proc_opts,
-            key="att_dash_procedure",
-        )
-    procedure_id = proc_map.get(procedure_choice) if procedure_choice != _ALL_PROCS else None
+
+    if not proc_map:
+        # No procedure for this resident has step-level ratings data — the
+        # dropdown would otherwise offer nothing but its own placeholder.
+        with _proc_col:
+            st.selectbox("Procedure (optional)", ["No heat maps available"], disabled=True)
+        st.info(f"📊 No heat maps available for {resident_choice} yet — no step-level ratings recorded.")
+        procedure_choice, procedure_id = _ALL_PROCS, None
+    else:
+        _proc_opts = [_ALL_PROCS] + _ordered_procedure_names(proc_map)
+        # A procedure picked for the previous resident can fall outside this
+        # resident's options — reset it rather than letting st.selectbox
+        # raise on a default no longer in its options (same guard as the
+        # Comments Dashboard's Procedure/Attending filters above).
+        if st.session_state.get("att_dash_procedure") not in _proc_opts:
+            st.session_state["att_dash_procedure"] = _ALL_PROCS
+        with _proc_col:
+            procedure_choice = st.selectbox(
+                "Procedure (optional)",
+                _proc_opts,
+                key="att_dash_procedure",
+            )
+        procedure_id = proc_map.get(procedure_choice) if procedure_choice != _ALL_PROCS else None
 
     # Whether the Comments table is narrowed to the chosen procedure or
     # showing every procedure, independent of the dropdown itself — the
