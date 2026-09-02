@@ -2707,40 +2707,35 @@ elif page == "admin":
         # go edit. Doesn't touch any data.
         with st.expander("🔍 Find Steps by Name"):
             st.caption(
-                "Search every procedure's steps at once. One term per line — "
-                "each matches case-insensitively, as a substring anywhere in "
-                "the step name, so \"prep\" also catches \"Case Preparation\" "
-                "or \"Daily Prep\"."
+                "Pick one or more step names — each exact name that appears "
+                "anywhere shows every procedure that has it, so you can spot "
+                "one reused (or near-duplicated, e.g. \"Case Preparation\" vs. "
+                "\"Daily Preparation\") across procedures before deciding which "
+                "to go edit or delete."
             )
-            _search_raw = st.text_area(
-                "Step name(s) to search",
-                key="step_search_terms",
-                placeholder="Case Preparation\nDaily Prep",
+            _search_steps_df = read_sheet_df(
+                SHEET_STEPS, expected_cols=["step_id", "procedure_id", "step_order", "step_name"]
             )
-            _search_terms = [t.strip() for t in _search_raw.split("\n") if t.strip()]
-            if st.button("Search", key="btn_search_steps"):
-                if not _search_terms:
-                    st.info("Enter at least one step name to search for.")
-                else:
-                    _search_steps_df = read_sheet_df(
-                        SHEET_STEPS, expected_cols=["step_id", "procedure_id", "step_order", "step_name"]
-                    )
-                    _proc_name_lookup = dict(zip(procs_df["procedure_id"], procs_df["procedure_name"]))
-                    for term in _search_terms:
-                        _hits = _search_steps_df[
-                            _search_steps_df["step_name"].astype(str).str.strip().str.lower()
-                            .str.contains(re.escape(term.lower()), na=False)
-                        ].sort_values(["procedure_id", "step_order"])
-                        st.markdown(f"**\"{term}\"** — {len(_hits)} match{'es' if len(_hits) != 1 else ''}")
-                        if _hits.empty:
-                            st.caption("No procedures have a step matching this.")
-                        else:
-                            _hits_display = pd.DataFrame({
-                                "Procedure": _hits["procedure_id"].map(_proc_name_lookup).fillna(_hits["procedure_id"]),
-                                "Step":      _hits["step_name"],
-                                "Order":     _hits["step_order"],
-                            })
-                            st.dataframe(_hits_display, width="stretch", hide_index=True)
+            _all_step_names = sorted(
+                _search_steps_df["step_name"].dropna().astype(str).str.strip().unique().tolist(),
+                key=str.lower,
+            )
+            _search_terms = st.multiselect(
+                "Step name(s) to search", _all_step_names, key="step_search_terms",
+            )
+            if _search_terms:
+                _proc_name_lookup = dict(zip(procs_df["procedure_id"], procs_df["procedure_name"]))
+                for term in _search_terms:
+                    _hits = _search_steps_df[
+                        _search_steps_df["step_name"].astype(str).str.strip() == term
+                    ].sort_values(["procedure_id", "step_order"])
+                    st.markdown(f"**\"{term}\"** — {len(_hits)} match{'es' if len(_hits) != 1 else ''}")
+                    _hits_display = pd.DataFrame({
+                        "Procedure": _hits["procedure_id"].map(_proc_name_lookup).fillna(_hits["procedure_id"]),
+                        "Step":      _hits["step_name"],
+                        "Order":     _hits["step_order"],
+                    })
+                    st.dataframe(_hits_display, width="stretch", hide_index=True)
     except ConnectionError as exc:
         show_gs_error(exc)
 
