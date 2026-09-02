@@ -2176,6 +2176,13 @@ button p {
 .st-key-assess_robo_row [data-testid="stMarkdownContainer"] p {
     white-space: nowrap;
     margin: 0;
+    /* The label column now centers within its own fixed-height box
+       (decoupled from the checkboxes' position — see the comment
+       above), but still sits a little higher than the checkboxes
+       themselves. A small isolated nudge, since it's a transform: it
+       only repositions this text visually, without affecting layout
+       or the checkboxes' own position at all. */
+    transform: translateY(4px);
 }
 /* "On mobile: tap the >> icon..." tip: shrink padding, and match the text
    size to "Daily Preparation" and similar field labels (0.75x --pp-substep-font)
