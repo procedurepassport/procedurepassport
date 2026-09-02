@@ -2305,6 +2305,11 @@ button p {
     margin-top: -8px !important;
     margin-bottom: 16px !important;
 }
+/* Same idea for the Robot picker row: pull its wrapper down to close
+   up most of its default ~32px gap to the divider right below it. */
+[data-testid="stLayoutWrapper"]:has(> .st-key-assess_robo_row) {
+    margin-bottom: -16px !important;
+}
 /* Step-Level Ratings expander: a divider now sits between it and
    Development/Improvement/Feed-Forward below, so its default ~48px
    gap to that divider needs pulling in — to 32px, matching the
