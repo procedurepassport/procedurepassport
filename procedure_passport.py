@@ -2015,6 +2015,21 @@ button p {
     overflow-wrap: break-word;
     text-overflow: ellipsis;
 }
+/* Attending pre-filled-form notice: font-size is set by its own
+   injected script (see the "if _draft:" block on the attending
+   assessment page), which tries the whole notice on one line first,
+   only shrinking down to a floor before allowing the deliberate
+   two-line break header_break_before() marks. This is the CSS-only
+   fallback/safety net (script disabled, or before its first paint):
+   still capped at two lines. */
+.pp-prefill-notice-text {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.3;
+    overflow-wrap: break-word;
+}
 /* --pp-substep-font sizes a whole hierarchy of form text (field labels,
    dropdown values, Step-Level Ratings, Improve/How, the mobile tip).
    It used to be tied to the page header's own live-measured size, so
@@ -3565,14 +3580,96 @@ elif page == "attending_assessment":
         tier_text=f"📝 {_att_proc_name} Assessment",
     )
     if _draft:
+        # One deliberate break point (see header_break_before): the
+        # script below tries the whole notice on one line first, only
+        # falling back to two lines — starting with "Review and
+        # adjust..." — once shrinking the font hits a floor.
+        _notice_text = header_break_before(
+            "📋 This form has been pre-filled from the resident's self-assessment.",
+            "Review and adjust before submitting.",
+        )
         st.markdown(
-            '<div style="border: 2px solid #1E88E5; background-color: #FFFFFF; '
-            'color: #000000; border-radius: 0.5rem; padding: 0.75rem 1rem; '
-            'margin-bottom: 0.75rem;">'
-            "📋 This form has been pre-filled from the resident's self-assessment. "
-            "Review and adjust anything before submitting."
+            '<div class="pp-prefill-notice-wrap" style="border: 2px solid #1E88E5; '
+            'background-color: #FFFFFF; color: #000000; border-radius: 0.5rem; '
+            'padding: 0.75rem 1rem; margin-bottom: 0.75rem;">'
+            f'<span class="pp-prefill-notice-text">{html.escape(_notice_text)}</span>'
             "</div>",
             unsafe_allow_html=True,
+        )
+        st.iframe(
+            """
+            <script>
+            (function() {
+                var doc = window.parent.document;
+                var wraps = doc.querySelectorAll('.pp-prefill-notice-wrap');
+                var wrap = wraps[wraps.length - 1];
+                if (!wrap) return;
+                var el = wrap.querySelector('.pp-prefill-notice-text');
+                if (!el) return;
+                var oneLineMaxPx = 16;   // 1rem ceiling on one line
+                var floorPx = 12;        // 0.75rem — below this, switch to two lines instead
+                var twoLineMaxPx = 15;   // 0.9375rem ceiling once wrapped
+                // Measures a string's rendered single-line width at a
+                // given font size via a detached, invisible probe.
+                function measureWidth(str, fontPx) {
+                    var probe = doc.createElement('span');
+                    probe.style.position = 'absolute';
+                    probe.style.visibility = 'hidden';
+                    probe.style.whiteSpace = 'nowrap';
+                    probe.style.fontSize = fontPx + 'px';
+                    var computed = window.parent.getComputedStyle(el);
+                    probe.style.fontFamily = computed.fontFamily;
+                    probe.style.fontWeight = computed.fontWeight;
+                    probe.textContent = str;
+                    doc.body.appendChild(probe);
+                    var w = probe.scrollWidth;
+                    doc.body.removeChild(probe);
+                    return w;
+                }
+                function fit() {
+                    var containerWidth = wrap.clientWidth;
+                    if (!containerWidth) return;
+                    var fullText = el.textContent;
+                    // header_break_before() leaves exactly one regular
+                    // space (everything else is nbsp) — that's the one
+                    // deliberate wrap point, right before "Review...".
+                    var breakIdx = fullText.indexOf(' ');
+                    var oneLineWidth = measureWidth(fullText, oneLineMaxPx);
+                    if (oneLineWidth <= containerWidth) {
+                        el.style.whiteSpace = 'nowrap';
+                        el.style.fontSize = oneLineMaxPx + 'px';
+                        return;
+                    }
+                    var oneLineFit = Math.max(1, oneLineMaxPx * (containerWidth / oneLineWidth));
+                    if (oneLineFit >= floorPx) {
+                        el.style.whiteSpace = 'nowrap';
+                        el.style.fontSize = (oneLineFit * 0.96) + 'px';
+                        return;
+                    }
+                    // Doesn't comfortably fit one line even shrunk to the
+                    // floor — allow the wrap, sized so each of the two
+                    // resulting lines fits its own width.
+                    el.style.whiteSpace = 'normal';
+                    var widest = breakIdx > -1
+                        ? Math.max(
+                            measureWidth(fullText.slice(0, breakIdx), twoLineMaxPx),
+                            measureWidth(fullText.slice(breakIdx + 1), twoLineMaxPx)
+                          )
+                        : measureWidth(fullText, twoLineMaxPx);
+                    var finalPx = widest <= containerWidth
+                        ? twoLineMaxPx
+                        : Math.max(1, twoLineMaxPx * (containerWidth / widest) * 0.9);
+                    el.style.fontSize = finalPx + 'px';
+                }
+                fit();
+                window.parent.addEventListener('resize', fit);
+                if (window.parent.ResizeObserver) {
+                    new window.parent.ResizeObserver(fit).observe(wrap);
+                }
+            })();
+            </script>
+            """,
+            height=1,
         )
     assessment_instructions_note()
 
