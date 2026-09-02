@@ -1090,7 +1090,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         # Performance get their own, wider column than the step cells.
         _COLOR_CELL_HEIGHT_PX = 20
         _STEP_CELL_WIDTH_PX = 25
-        _META_CELL_WIDTH_PX = 40  # Case Complexity / Overall Performance
+        _META_CELL_WIDTH_PX = 30  # Case Complexity / Overall Performance
 
         def _color_cell_props(width_px):
             return {
