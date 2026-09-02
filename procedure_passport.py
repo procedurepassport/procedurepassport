@@ -638,16 +638,16 @@ def _build_comments(row) -> str:
 
 
 def _build_comments_html(row) -> str:
-    """HTML Comments value for the on-screen table: the resident's
-    improve/how answers are underlined, and "Do this:" starts as its
-    own sentence on a new line."""
+    """HTML Comments value for the on-screen table: "In order to
+    improve" and "Do this:" are bold labels, each starting its own
+    line; the resident's own answers are underlined, not bold."""
     imp = row["improve"].strip()
     how = row["how"].strip()
     parts = []
     if imp or how:
         imp_html = f"<u>{html.escape(imp)}</u>" if imp else "(blank)"
         how_html = f"<u>{html.escape(how)}</u>" if how else "(blank)"
-        parts.append(f"In order to improve {imp_html}.<br>Do this: {how_html}.")
+        parts.append(f"<b>In order to improve</b> {imp_html}.<br><b>Do this:</b> {how_html}.")
     if row["notes"].strip():
         parts.append(html.escape(row["notes"].strip()).replace(chr(10), "<br>"))
     return "<br><br>".join(parts)
@@ -3089,10 +3089,8 @@ elif page == "dashboard":
         st.markdown(f"**Basis:** {st.session_state.get('last_assessment_type', '—')}")
 
     if st.session_state.get("improve", "").strip() or st.session_state.get("how", "").strip():
-        st.markdown(
-            f"**In order to improve** {st.session_state.get('improve', '') or '_(blank)_'}, "
-            f"**do this:** {st.session_state.get('how', '') or '_(blank)_'}."
-        )
+        st.markdown(f"**In order to improve** {st.session_state.get('improve', '') or '_(blank)_'}.")
+        st.markdown(f"**Do this:** {st.session_state.get('how', '') or '_(blank)_'}.")
 
     if st.session_state.get("notes", "").strip():
         st.markdown("**Comments:**")
@@ -3817,10 +3815,8 @@ elif page == "attending_confirmation":
     )
 
     if sub.get("improve", "").strip() or sub.get("how", "").strip():
-        st.markdown(
-            f"**In order to improve** {sub.get('improve', '') or '_(blank)_'}, "
-            f"**do this:** {sub.get('how', '') or '_(blank)_'}."
-        )
+        st.markdown(f"**In order to improve** {sub.get('improve', '') or '_(blank)_'}.")
+        st.markdown(f"**Do this:** {sub.get('how', '') or '_(blank)_'}.")
 
     if sub["notes"].strip():
         st.markdown("**Comments submitted:**")
