@@ -1342,6 +1342,18 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             {"selector": "tbody tr:nth-child(1)", "props": [("border-bottom", "2px solid #555")]},
             {"selector": "tbody tr:nth-child(2)", "props": [("border-bottom", "2px solid #555")]},
         ]
+        # Bold divider between Attending and Overall Performance — only
+        # from the fourth row down (tbody's 3rd child on): the header is
+        # row 1, and tbody rows 1-2 are the merged Most Recent/Best
+        # summary cells, which have no separate Attending/Overall
+        # Performance cells to put a border between at all (that whole
+        # span is one cell). :nth-child(n+3) selects tbody row 3
+        # onward — the first real case and every one after it.
+        _attending_idx = all_cols.index("Attending")
+        table_styles.append({
+            "selector": f"tbody tr:nth-child(n+3) td.col{_attending_idx}",
+            "props": [("border-right", "2px solid #555")],
+        })
         if "Daily Preparation" in all_cols and ordered_steps_display:
             # Bold divider between the meta columns and the actual step
             # columns — same weight as the table's other bold rules
