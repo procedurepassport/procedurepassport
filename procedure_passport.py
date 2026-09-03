@@ -1267,11 +1267,11 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         )
 
     st.markdown("#### Ratings Legend")
-    _rating_legend_html = "".join(
+    _rating_legend_html = _swatch("#E0E0E0", "Never Attempted")
+    _rating_legend_html += "".join(
         _swatch(v, k, "1px solid #aaa" if k == "Not Assessed" else "")
         for k, v in RATING_HEX.items()
     )
-    _rating_legend_html += _swatch("#E0E0E0", "Never Attempted")
     st.markdown('<div class="legend-row">' + _rating_legend_html + "</div>", unsafe_allow_html=True)
 
     st.markdown("#### Case Complexity")
@@ -1902,6 +1902,7 @@ if st.session_state.get("page") in (
     st.sidebar.markdown("---")
     st.sidebar.markdown("**Rating Scale**")
     _LEGEND_ITEMS = [
+        ("Never Attempted","#E0E0E0", ""),
         ("Not Assessed",   "#FAFAFA", "1px solid #aaa"),
         ("Shown/Told",     "#9E9E9E", ""),
         ("Not Yet",        "#378ADD", ""),
@@ -1909,7 +1910,6 @@ if st.session_state.get("page") in (
         ("Prompt",         "#FFD633", ""),
         ("Back up",        "#99E699", ""),
         ("Auto",           "#33CC33", ""),
-        ("Never Attempted","#E0E0E0", ""),
     ]
     for _label, _color, _border in _LEGEND_ITEMS:
         _border_css = f"border:{_border};" if _border else ""
