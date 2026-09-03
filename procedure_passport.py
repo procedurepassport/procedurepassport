@@ -2176,6 +2176,10 @@ button p {
     [data-testid="stMarkdownContainer"] p {
     white-space: nowrap;
     margin: 0;
+    /* Now that this selector is properly isolated from the checkboxes'
+       own labels (see the comment above), this transform only ever
+       repositions "Robot:" itself. */
+    transform: translateY(9px);
 }
 /* "On mobile: tap the >> icon..." tip: shrink padding, and match the text
    size to "Daily Preparation" and similar field labels (0.75x --pp-substep-font)
