@@ -1077,25 +1077,12 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     for _c in _rating_cols:
         display_df[_c] = " "
 
-    _never_attempted_cols = set()
-    _n_summary = 2
-    for _sc in ordered_steps_display:
-        if _sc not in _orig_vals:
-            continue
-        _data_vals = _orig_vals[_sc].iloc[_n_summary:]
-        _meaningful = _data_vals[~(_data_vals.isna() | (_data_vals == "Not Assessed"))]
-        if _meaningful.empty:
-            _never_attempted_cols.add(_sc)
-
-    def _color_step(val, col=None):
+    def _color_step(val):
         _is_na = val is None or (isinstance(val, float) and np.isnan(val)) or val == ""
         try:
             _is_na = _is_na or pd.isna(val)
         except (TypeError, ValueError):
             pass
-        if col in _never_attempted_cols:
-            if _is_na or val == "Not Assessed":
-                return "background-color: #E0E0E0"
         if _is_na:
             return "background-color: #E0E0E0"
         color = RATING_HEX.get(val, "")
@@ -1117,31 +1104,12 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
 
         if ordered_steps_display:
             _safe_step_cols = [c for c in ordered_steps_display if c in _orig_vals]
-            _orig_steps_df = pd.DataFrame(
-                {c: _orig_vals[c] for c in _safe_step_cols},
-                index=display_df.index,
-            )
 
-            def _color_steps_matrix(df):
-                result = {}
-                for col in df.columns:
-                    col_colors = []
-                    is_never = col in _never_attempted_cols
-                    for i, v in enumerate(_orig_steps_df[col]):
-                        _na = v is None or v == ""
-                        try:
-                            _na = _na or pd.isna(v)
-                        except (TypeError, ValueError):
-                            pass
-                        if is_never and i < _n_summary:
-                            col_colors.append("background-color: #E0E0E0")
-                        else:
-                            col_colors.append(_color_step(v, col=col))
-                    result[col] = col_colors
-                return pd.DataFrame(result, index=df.index)
+            def _apply_step_colors(col):
+                return [_color_step(v) for v in _orig_vals[col.name]]
 
             if _safe_step_cols:
-                styled = styled.apply(_color_steps_matrix, subset=_safe_step_cols, axis=None)
+                styled = styled.apply(_apply_step_colors, subset=_safe_step_cols, axis=0)
 
         def _apply_complexity_colors(col):
             return [_color_complexity(v) for v in _orig_vals["Case Complexity"]]
