@@ -92,7 +92,7 @@ RATING_TO_NUM  = {
     "Auto":          5,
 }
 RATING_HEX = {
-    "Not Assessed": "#FAFAFA",  # near-white — explicitly rated as not assessed
+    "Not Assessed": "#F0F0F0",  # light gray — explicitly rated as not assessed
     "Shown/Told":   "#9E9E9E",  # dark gray — explicitly shown or told
     "Not Yet":      "#5B8DB8",
     "Steer":        "#FF944D",
@@ -1977,7 +1977,7 @@ if st.session_state.get("page") in (
     st.sidebar.markdown("**Rating Scale**")
     _LEGEND_ITEMS = [
         ("Never Attempted","#E0E0E0", ""),
-        ("Not Assessed",   "#FAFAFA", "1px solid #aaa"),
+        ("Not Assessed",   "#F0F0F0", "1px solid #aaa"),
         ("Shown/Told",     "#9E9E9E", ""),
         ("Not Yet",        "#378ADD", ""),
         ("Steer",          "#FF944D", ""),
