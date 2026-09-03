@@ -1342,6 +1342,21 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             {"selector": "tbody tr:nth-child(1)", "props": [("border-bottom", "2px solid #555")]},
             {"selector": "tbody tr:nth-child(2)", "props": [("border-bottom", "2px solid #555")]},
         ]
+        if "Daily Preparation" in all_cols and ordered_steps_display:
+            # Bold divider between the meta columns and the actual step
+            # columns — same weight as the table's other bold rules
+            # (outer border, header/summary-row separators). Starts from
+            # the second row down: td.col{idx} only ever matches <td>
+            # body cells, never the <th> header cell, so the header row
+            # itself is left with its normal (thin) border. The merged
+            # Most Recent/Best summary cells get the same bold edge via
+            # _merge_summary_label_cells' own extra_style below, since
+            # their Daily Preparation <td> no longer exists separately
+            # to be matched by this selector.
+            _daily_prep_idx = all_cols.index("Daily Preparation")
+            table_styles.append(
+                {"selector": f"td.col{_daily_prep_idx}", "props": [("border-right", "2px solid #555")]}
+            )
         _vheader_cols  = [c for c in all_cols
                            if c in ordered_steps_display or c in _META_COL_NAMES]
 
@@ -1383,7 +1398,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             ],
         })
 
-        def _merge_summary_label_cells(html_str, n_summary_rows, first_col, last_col, label_col):
+        def _merge_summary_label_cells(html_str, n_summary_rows, first_col, last_col, label_col, extra_style=""):
             """Merges the <td> cells from first_col..last_col (0-indexed,
             inclusive) into one, in each of the first n_summary_rows
             <tbody> rows — used to let the "📌 Most Recent"/"🏆 Best"
@@ -1407,7 +1422,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
                     )
                 html_str = re.sub(
                     rf'(<td id="[^"]*_row{row}_col{label_col}"[^>]*)(>)',
-                    rf'\1 colspan="{span}" style="text-align:right;font-weight:600;padding-right:6px;"\2',
+                    rf'\1 colspan="{span}" style="text-align:right;font-weight:600;padding-right:6px;{extra_style}"\2',
                     html_str, count=1,
                 )
             return html_str
@@ -1435,6 +1450,10 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             _heatmap_html, n_summary_rows=2,
             first_col=all_cols.index("Date"), last_col=all_cols.index("Daily Preparation"),
             label_col=all_cols.index("Attending"),
+            # Matches the same bold meta/steps divider added below for
+            # the real case rows — this merged cell's own right edge is
+            # that same boundary (it ends exactly at Daily Preparation).
+            extra_style="border-right:2px solid #555;" if ordered_steps_display else "",
         )
         _heatmap_html = _wrap_vheader_labels(_heatmap_html, _vheader_idx)
         st.markdown(_heatmap_html, unsafe_allow_html=True)
