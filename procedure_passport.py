@@ -1028,12 +1028,19 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     pivot_sorted = pivot.sort_values("date", ascending=False)
 
     def _is_na(val) -> bool:
-        _na = val is None or (isinstance(val, float) and np.isnan(val)) or val == ""
+        # pd.isna() must be checked (and short-circuit) before anything
+        # that compares val itself, e.g. val == "" — pandas' NA sentinel
+        # (distinct from plain NaN/None, and increasingly what actually
+        # shows up here) returns pd.NA rather than True/False from such a
+        # comparison, and Python raises "boolean value of NA is
+        # ambiguous" the moment something tries to use that as a bool
+        # (here, `or`'s implicit truth test).
         try:
-            _na = _na or pd.isna(val)
+            if pd.isna(val):
+                return True
         except (TypeError, ValueError):
             pass
-        return _na
+        return isinstance(val, str) and val.strip() == ""
 
     # "Not Done" isn't one of RATING_OPTIONS/RATING_HEX — it doesn't
     # appear anywhere in this file — but shows up as raw data in some
