@@ -171,6 +171,12 @@ O_SCORE_OPTIONS = [
 ]
 
 SHEET_RESIDENTS  = "residents"
+# last_seen_evaluations_at drives the "new evaluation" badge (see
+# get_resident_last_seen()/mark_resident_evaluations_seen()) — every
+# read of this sheet that later writes it back must use this same full
+# column list, or a write-back drops whatever isn't in its own narrower
+# list, silently wiping this field for every OTHER resident.
+RESIDENT_COLS = ["email", "name", "specialty_id", "created_at", "last_seen_evaluations_at"]
 SHEET_ATTENDINGS = "attendings"
 SHEET_PROCEDURES = "procedures"
 SHEET_STEPS      = "steps"
@@ -335,7 +341,7 @@ def clear_password(email: str) -> None:
 
 
 def ensure_resident(email: str, name: str = "", specialty_id=None) -> None:
-    cols = ["email", "name", "specialty_id", "created_at"]
+    cols = RESIDENT_COLS
     df   = read_sheet_df(SHEET_RESIDENTS, expected_cols=cols)
     if email not in df["email"].values:
         df = pd.concat([df, pd.DataFrame([{
@@ -345,6 +351,58 @@ def ensure_resident(email: str, name: str = "", specialty_id=None) -> None:
             "created_at":   datetime.datetime.utcnow().isoformat(),
         }])], ignore_index=True)
         write_sheet_df(SHEET_RESIDENTS, df)   # also clears cache
+
+
+def get_resident_last_seen(email: str):
+    """The timestamp a resident last had their "new evaluation" badge
+    (see count_new_evaluations_for_resident()) cleared, or None if
+    they've never had one recorded yet (a brand-new resident, or one
+    from before this field existed)."""
+    residents_df = read_sheet_df(SHEET_RESIDENTS, expected_cols=RESIDENT_COLS)
+    email_norm = str(email).strip().lower()
+    match = residents_df[residents_df["email"].astype(str).str.strip().str.lower() == email_norm]
+    if match.empty:
+        return None
+    raw = match.iloc[0].get("last_seen_evaluations_at")
+    ts = pd.to_datetime(raw, errors="coerce", utc=True)
+    return None if pd.isna(ts) else ts
+
+
+def mark_resident_evaluations_seen(email: str) -> None:
+    """Stamp last_seen_evaluations_at to now for this resident — clears
+    their "new evaluation" badge until the next attending submission."""
+    residents_df = read_sheet_df(SHEET_RESIDENTS, expected_cols=RESIDENT_COLS)
+    email_norm = str(email).strip().lower()
+    mask = residents_df["email"].astype(str).str.strip().str.lower() == email_norm
+    if not mask.any():
+        return
+    residents_df.loc[mask, "last_seen_evaluations_at"] = datetime.datetime.utcnow().isoformat()
+    write_sheet_df(SHEET_RESIDENTS, residents_df)
+
+
+def count_new_evaluations_for_resident(email: str) -> int:
+    """How many attending-confirmed cases (never a resident's own
+    Self-Assessment) have been submitted for this resident since their
+    last_seen_evaluations_at. A resident with no last-seen timestamp
+    yet (brand new, or predating this field) is treated as having zero
+    new ones — mark_resident_evaluations_seen() is expected to run
+    right after this is read, which sets that timestamp going forward;
+    otherwise every historical case would count as "new" the first time
+    this ships, rather than only genuinely new activity from here on."""
+    last_seen = get_resident_last_seen(email)
+    if last_seen is None:
+        return 0
+    cases_df = read_sheet_df(
+        SHEET_CASES,
+        expected_cols=["case_id", "resident_email", "assessment_type", "submitted_at"],
+    )
+    email_norm = str(email).strip().lower()
+    mine = cases_df[
+        (cases_df["resident_email"].astype(str).str.strip().str.lower() == email_norm)
+        & (cases_df["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment")
+    ]
+    submitted = pd.to_datetime(mine["submitted_at"], errors="coerce", utc=True)
+    return int((submitted > last_seen).sum())
 
 
 def ensure_attending(name: str, specialty_id: str, email: str = "") -> None:
@@ -415,7 +473,7 @@ def save_case(
     case_cols = ["case_id", "resident_email", "date", "specialty_id",
                  "procedure_id", "attending_id", "notes",
                  "case_complexity", "case_preparation", "overall_performance",
-                 "robo_type", "improve", "how", "assessment_type"]
+                 "robo_type", "improve", "how", "assessment_type", "submitted_at"]
     cases_df  = read_sheet_df(SHEET_CASES, expected_cols=case_cols)
     cases_df  = pd.concat([cases_df, pd.DataFrame([{
         "case_id":             case_id,
@@ -432,6 +490,12 @@ def save_case(
         "improve":             improve,
         "how":                 how,
         "assessment_type":     assessment_type,
+        # Distinct from `date` (the procedure's own date, picked by
+        # whoever filled the form — can be well in the past) — this is
+        # when the row was actually saved, which the "new evaluation"
+        # badge (see count_new_evaluations_for_resident()) compares
+        # against a resident's own last-seen timestamp.
+        "submitted_at":        datetime.datetime.utcnow().isoformat(),
     }])], ignore_index=True)
     write_sheet_df(SHEET_CASES, cases_df)  # clears cache
 
@@ -2644,7 +2708,7 @@ if page == "login":
         """Password verified (or just created) — resolve the account and
         drop into the app proper."""
         residents = read_sheet_df(
-            SHEET_RESIDENTS, expected_cols=["email", "name", "specialty_id", "created_at"]
+            SHEET_RESIDENTS, expected_cols=RESIDENT_COLS
         )
         admins_lower = [a.lower() for a in ADMINS]
         email_lower = canonical_email.strip().lower()
@@ -2700,7 +2764,7 @@ if page == "login":
             try:
                 residents = read_sheet_df(
                     SHEET_RESIDENTS,
-                    expected_cols=["email", "name", "specialty_id", "created_at"],
+                    expected_cols=RESIDENT_COLS,
                 )
                 attendings = _read_attendings_df()
                 email_lower = email.strip().lower()
@@ -2786,7 +2850,7 @@ elif page == "admin":
         spec_name_to_id = dict(zip(spec_df["specialty_name"], spec_df["specialty_id"]))
 
         residents = read_sheet_df(
-            SHEET_RESIDENTS, expected_cols=["email", "name", "specialty_id", "created_at"]
+            SHEET_RESIDENTS, expected_cols=RESIDENT_COLS
         )
         disp = residents.merge(spec_df, how="left", on="specialty_id")
         st.dataframe(disp[["email", "name", "specialty_name", "created_at"]], width="stretch")
@@ -3133,6 +3197,26 @@ elif page == "home":
         header_break_before("👋 Welcome back,", st.session_state["resident_name"]),
         tier_text="👋 Welcome back,",
     )
+
+    # "New evaluation" badge: how many attending-confirmed cases have
+    # landed since this resident's last Home visit. Only actually writes
+    # (mark_resident_evaluations_seen) when there's something to clear,
+    # or to bootstrap a resident who's never had a last-seen timestamp
+    # recorded yet — not on every routine visit once steady-state.
+    _resident_email = st.session_state["resident"]
+    try:
+        _last_seen_before = get_resident_last_seen(_resident_email)
+        _new_eval_count = count_new_evaluations_for_resident(_resident_email)
+        if _last_seen_before is None or _new_eval_count > 0:
+            mark_resident_evaluations_seen(_resident_email)
+        if _new_eval_count > 0:
+            st.success(
+                f"🔔 You have {_new_eval_count} new evaluation"
+                f"{'s' if _new_eval_count != 1 else ''} since your last visit!"
+            )
+    except ConnectionError:
+        pass  # badge is a nice-to-have — don't block the Home page over it
+
     st.markdown("_What would you like to do today?_")
     st.markdown("")
 
@@ -3786,7 +3870,7 @@ elif page == "attending_start":
     try:
         _, proc_df, _, _ = load_refs()
         residents_df = read_sheet_df(
-            SHEET_RESIDENTS, expected_cols=["email", "name", "specialty_id", "created_at"]
+            SHEET_RESIDENTS, expected_cols=RESIDENT_COLS
         )
     except ConnectionError as exc:
         show_gs_error(exc)
@@ -3865,7 +3949,7 @@ elif page == "attending_resident_dashboard":
     try:
         _, proc_df, _, _ = load_refs()
         residents_df = read_sheet_df(
-            SHEET_RESIDENTS, expected_cols=["email", "name", "specialty_id", "created_at"]
+            SHEET_RESIDENTS, expected_cols=RESIDENT_COLS
         )
         cases_df = read_sheet_df(
             SHEET_CASES,
@@ -4052,7 +4136,7 @@ elif page == "attending_assessment":
     # name, so look it up; fall back to the email if that fails.
     try:
         _residents_df = read_sheet_df(
-            SHEET_RESIDENTS, expected_cols=["email", "name", "specialty_id", "created_at"]
+            SHEET_RESIDENTS, expected_cols=RESIDENT_COLS
         )
         _resident_match = _residents_df.loc[
             _residents_df["email"].astype(str).str.strip().str.lower() == resident_email.strip().lower()
