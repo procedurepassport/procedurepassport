@@ -1354,6 +1354,10 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             {"selector": "tbody tr", "props": [("border-bottom", "1px solid #bbb")]},
             {"selector": "tbody tr:nth-child(1)", "props": [("border-bottom", "2px solid #555")]},
             {"selector": "tbody tr:nth-child(2)", "props": [("border-bottom", "2px solid #555")]},
+            # Bold bottom edge, same as the left/right ones below —
+            # :last-child always resolves to whichever row actually ends
+            # up last regardless of case count.
+            {"selector": "tbody tr:last-child td", "props": [("border-bottom", "2px solid #555")]},
         ]
         # Bold divider between Attending and Overall Performance — only
         # from the fourth row down (tbody's 3rd child on): the header is
