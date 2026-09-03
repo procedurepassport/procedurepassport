@@ -91,6 +91,15 @@ RATING_TO_NUM  = {
     "Back up":       4,
     "Auto":          5,
 }
+# Subtle diagonal-hatch pattern layered over "Never Attempted" cells (see
+# _render_resident_heatmap's _color_step) so they read as visually
+# distinct from a flat "Not Assessed" gray at a glance, not just a
+# slightly different shade — used both on the heatmap itself and in both
+# rating legends, so all three stay in sync.
+NEVER_ATTEMPTED_STRIPE_CSS = (
+    "repeating-linear-gradient(45deg, rgba(0,0,0,0.06) 0, "
+    "rgba(0,0,0,0.06) 1px, transparent 1px, transparent 6px)"
+)
 RATING_HEX = {
     "Not Assessed": "#E0E0E0",  # gray — explicitly rated as not assessed
     "Shown/Told":   "#9E9E9E",  # dark gray — explicitly shown or told
@@ -1147,8 +1156,9 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         # Attempted" instead (a distinct, lighter gray) — see
         # _never_attempted_positions.
         if _is_unrated(val):
-            color = "#FAFAFA" if never_attempted else RATING_HEX["Not Assessed"]
-            return f"background-color: {color}"
+            if never_attempted:
+                return f"background-color: #FAFAFA; background-image: {NEVER_ATTEMPTED_STRIPE_CSS};"
+            return f"background-color: {RATING_HEX['Not Assessed']}"
         color = RATING_HEX.get(val, "")
         return f"background-color: {color}" if color else ""
 
@@ -1332,16 +1342,17 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             "Please try a different procedure, or contact your program coordinator."
         )
 
-    def _swatch(color, label, border=""):
+    def _swatch(color, label, border="", pattern=""):
         _bdr = f"border:{border};" if border else ""
+        _pat = f"background-image:{pattern};" if pattern else ""
         return (
             f'<span class="legend-item">'
-            f'<span class="legend-swatch" style="background-color:{color};{_bdr}"></span>{label}'
+            f'<span class="legend-swatch" style="background-color:{color};{_bdr}{_pat}"></span>{label}'
             f'</span>'
         )
 
     st.markdown("#### Ratings Legend")
-    _rating_legend_html = _swatch("#FAFAFA", "Never Attempted")
+    _rating_legend_html = _swatch("#FAFAFA", "Never Attempted", pattern=NEVER_ATTEMPTED_STRIPE_CSS)
     _rating_legend_html += "".join(
         _swatch(v, k, "1px solid #aaa" if k == "Not Assessed" else "")
         for k, v in RATING_HEX.items()
@@ -1976,20 +1987,21 @@ if st.session_state.get("page") in (
     st.sidebar.markdown("---")
     st.sidebar.markdown("**Rating Scale**")
     _LEGEND_ITEMS = [
-        ("Never Attempted","#FAFAFA", ""),
-        ("Not Assessed",   "#E0E0E0", "1px solid #aaa"),
-        ("Shown/Told",     "#9E9E9E", ""),
-        ("Not Yet",        "#378ADD", ""),
-        ("Steer",          "#FF944D", ""),
-        ("Prompt",         "#FFD633", ""),
-        ("Back up",        "#99E699", ""),
-        ("Auto",           "#33CC33", ""),
+        ("Never Attempted","#FAFAFA", "", NEVER_ATTEMPTED_STRIPE_CSS),
+        ("Not Assessed",   "#E0E0E0", "1px solid #aaa", ""),
+        ("Shown/Told",     "#9E9E9E", "", ""),
+        ("Not Yet",        "#378ADD", "", ""),
+        ("Steer",          "#FF944D", "", ""),
+        ("Prompt",         "#FFD633", "", ""),
+        ("Back up",        "#99E699", "", ""),
+        ("Auto",           "#33CC33", "", ""),
     ]
-    for _label, _color, _border in _LEGEND_ITEMS:
+    for _label, _color, _border, _pattern in _LEGEND_ITEMS:
         _border_css = f"border:{_border};" if _border else ""
+        _pattern_css = f"background-image:{_pattern};" if _pattern else ""
         st.sidebar.markdown(
             f'<span style="display:inline-block;width:13px;height:13px;'
-            f'background:{_color};{_border_css}border-radius:2px;'
+            f'background:{_color};{_border_css}{_pattern_css}border-radius:2px;'
             f'margin-right:6px;vertical-align:middle;"></span>{_label}',
             unsafe_allow_html=True,
         )
