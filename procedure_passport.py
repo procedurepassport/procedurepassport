@@ -147,6 +147,13 @@ COMPLEXITY_HEX = {
     "Moderate":         "#FFF59D",
     "Complex":          "#FFAB91",
 }
+PREP_HEX = {
+    "Unprepared":          "#FF8A80",
+    "Poorly Prepared":     "#FFAB91",
+    "Adequately Prepared": "#FFD633",
+    "Well Prepared":       "#99E699",
+    "Highly Prepared":     "#33CC33",
+}
 O_SCORE_HEX = {
     "1": "#378ADD",
     "2": "#FF944D",
@@ -889,7 +896,7 @@ def _build_resident_case_matrix(resident_email: str):
                                                              "specialty_id", "procedure_id",
                                                              "attending_id", "notes",
                                                              "case_complexity", "overall_performance",
-                                                             "assessment_type"])
+                                                             "case_preparation", "assessment_type"])
     scores_df = read_sheet_df(SHEET_SCORES, expected_cols=["case_id", "step_id", "rating", "rating_num",
                                                              "case_complexity", "overall_performance"])
     steps_df  = read_sheet_df(SHEET_STEPS,  expected_cols=["step_id", "procedure_id", "step_order", "step_name"])
@@ -926,6 +933,7 @@ def _build_resident_case_matrix(resident_email: str):
             "attending_name":      attending_display_name(aid, atnds_lookup),
             "case_complexity":     row.get("case_complexity"),
             "overall_performance": row.get("overall_performance"),
+            "case_preparation":    row.get("case_preparation"),
         }
 
     if not resident_cases:
@@ -990,6 +998,16 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         st.info("No assessment data yet for this procedure.")
         return
 
+    # pivot_table (below) uses this as one of its index/group-by keys —
+    # pandas silently drops any row whose group-by key is NaN, which
+    # would otherwise erase a whole older case (predating this field, or
+    # simply never touched) from the entire heatmap, not just leave its
+    # Daily Preparation column blank.
+    if "case_preparation" not in proc_data.columns:
+        proc_data["case_preparation"] = "Not Assessed"
+    else:
+        proc_data["case_preparation"] = proc_data["case_preparation"].fillna("Not Assessed")
+
     ordered_steps = (
         steps_df[steps_df["procedure_id"] == selected_proc]
         .sort_values("step_order")["step_name"]
@@ -1010,7 +1028,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     ordered_steps_display = [_step_display[s] for s in ordered_steps]
 
     pivot = proc_data.pivot_table(
-        index=["date", "attending_name", "case_id", "overall_performance", "case_complexity"],
+        index=["date", "attending_name", "case_id", "overall_performance", "case_complexity", "case_preparation"],
         columns="step_name",
         values="rating",
         aggfunc="first",
@@ -1020,7 +1038,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         if step not in pivot.columns:
             pivot[step] = pd.NA
 
-    pivot = pivot[["date", "attending_name", "case_id", "overall_performance", "case_complexity"] + ordered_steps]
+    pivot = pivot[["date", "attending_name", "case_id", "overall_performance", "case_complexity", "case_preparation"] + ordered_steps]
 
     proc_display_name = procs_map.get(selected_proc, selected_proc)
     # One deliberate break point (see header_break_before): stays on one
@@ -1066,13 +1084,15 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         with nothing meaningfully observed."""
         return _is_na(val) or (isinstance(val, str) and val.strip() in _UNRATED_VALUES)
 
-    _mr = {"date": "", "attending_name": "📌 Most Recent", "case_complexity": pd.NA, "overall_performance": pd.NA}
+    _mr = {"date": "", "attending_name": "📌 Most Recent", "case_complexity": pd.NA,
+           "overall_performance": pd.NA, "case_preparation": pd.NA}
     for _s in ordered_steps:
         _vals = pivot_sorted[_s]
         _vals = _vals[~_vals.apply(_is_unrated)]
         _mr[_s] = _vals.iloc[0] if not _vals.empty else pd.NA
 
-    _best = {"date": "", "attending_name": "🏆 Best", "case_complexity": pd.NA, "overall_performance": pd.NA}
+    _best = {"date": "", "attending_name": "🏆 Best", "case_complexity": pd.NA,
+             "overall_performance": pd.NA, "case_preparation": pd.NA}
     for _s in ordered_steps:
         _vals = pivot_sorted[_s]
         _vals = _vals[~_vals.apply(_is_unrated)]
@@ -1082,7 +1102,10 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             _best[_s] = max(_vals.tolist(), key=lambda v: RATING_TO_NUM.get(v, -1))
 
     _summary_df = pd.DataFrame([_mr, _best])
-    _meta_cols  = ["date", "attending_name", "overall_performance", "case_complexity"]
+    # Daily Preparation is the third meta column after Overall
+    # Performance/Case Complexity — never reported for the two summary
+    # rows above (pd.NA, same as the other two), only per real case.
+    _meta_cols  = ["date", "attending_name", "overall_performance", "case_complexity", "case_preparation"]
 
     display_df = pd.concat(
         [_summary_df[_meta_cols + ordered_steps],
@@ -1097,6 +1120,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         "attending_name":      "Attending",
         "case_complexity":     "Case Complexity",
         "overall_performance": "Overall Performance",
+        "case_preparation":    "Daily Preparation",
         **_step_display,
     })
     all_cols = list(display_df.columns)
@@ -1104,7 +1128,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     display_df["Date"]      = display_df["Date"].fillna("")
     display_df["Attending"] = display_df["Attending"].fillna("")
 
-    _rating_cols = [c for c in ordered_steps_display + ["Case Complexity", "Overall Performance"]
+    _rating_cols = [c for c in ordered_steps_display + ["Case Complexity", "Overall Performance", "Daily Preparation"]
                     if c in display_df.columns]
 
     _orig_vals = {}
@@ -1173,6 +1197,14 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         key = val.split("-")[0].strip()
         return f"background-color: {O_SCORE_HEX.get(key, '')}"
 
+    def _color_prep(val):
+        # "Not Assessed" isn't in PREP_HEX (deliberately, same as Case
+        # Complexity's own placeholder falling through .get(..., '')) so
+        # it renders with no color, same as an unset selection.
+        if not isinstance(val, str) or val == "":
+            return ""
+        return f"background-color: {PREP_HEX.get(val, '')}"
+
     try:
         styled = display_df.style
 
@@ -1205,16 +1237,21 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         def _apply_o_score_colors(col):
             return [_color_o_score(v) for v in _orig_vals["Overall Performance"]]
 
+        def _apply_prep_colors(col):
+            return [_color_prep(v) for v in _orig_vals["Daily Preparation"]]
+
         # Every colored cell (step ratings, Case Complexity, Overall
-        # Performance — all blanked to a single space, the color is the
-        # only content) has a fixed width/height independent of this
-        # table's actual rendered row height (a table cell's height is
-        # only ever a minimum, and other cells in the same row can still
-        # push it taller), tuned by eye. Case Complexity/Overall
-        # Performance get their own, wider column than the step cells.
+        # Performance, Daily Preparation — all blanked to a single space,
+        # the color is the only content) has a fixed width/height
+        # independent of this table's actual rendered row height (a
+        # table cell's height is only ever a minimum, and other cells in
+        # the same row can still push it taller), tuned by eye. Case
+        # Complexity/Overall Performance/Daily Preparation share one,
+        # wider column width than the step cells.
         _COLOR_CELL_HEIGHT_PX = 20
         _STEP_CELL_WIDTH_PX = 25
-        _META_CELL_WIDTH_PX = 30  # Case Complexity / Overall Performance
+        _META_CELL_WIDTH_PX = 30
+        _META_COL_NAMES = ("Case Complexity", "Overall Performance", "Daily Preparation")
 
         def _color_cell_props(width_px):
             return {
@@ -1230,6 +1267,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             styled
             .apply(_apply_complexity_colors, subset=["Case Complexity"], axis=0)
             .apply(_apply_o_score_colors,    subset=["Overall Performance"], axis=0)
+            .apply(_apply_prep_colors,       subset=["Daily Preparation"], axis=0)
             .hide(axis="index")
             .set_properties(
                 subset=["Date", "Attending"],
@@ -1242,7 +1280,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
                    "font-size": "0.7rem", "line-height": "1"},
             )
             .set_properties(
-                subset=["Case Complexity", "Overall Performance"],
+                subset=list(_META_COL_NAMES),
                 **_META_CELL_PROPS,
             )
         )
@@ -1266,7 +1304,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             {"selector": "tbody tr:nth-child(2)", "props": [("border-bottom", "2px solid #555")]},
         ]
         _vheader_cols  = [c for c in all_cols
-                           if c in ordered_steps_display or c in ("Case Complexity", "Overall Performance")]
+                           if c in ordered_steps_display or c in _META_COL_NAMES]
 
         # Rotated column headers: forced to one line (no wrapping, no
         # shrink-to-fit) with no cap on the header row's height — a long
@@ -1276,7 +1314,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         for idx, col_name in enumerate(all_cols):
             if col_name in _vheader_cols:
                 _hdr_width_px = (
-                    _META_CELL_WIDTH_PX if col_name in ("Case Complexity", "Overall Performance")
+                    _META_CELL_WIDTH_PX if col_name in _META_COL_NAMES
                     else _STEP_CELL_WIDTH_PX
                 )
                 table_styles.append({
@@ -1393,6 +1431,14 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         unsafe_allow_html=True,
     )
 
+    st.markdown("#### Daily Preparation")
+    st.markdown(
+        '<div class="legend-row">' +
+        "".join(_swatch(v, k) for k, v in PREP_HEX.items()) +
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
     st.markdown("---")
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -1404,6 +1450,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             "case_id":             "Case ID",
             "case_complexity":     "Case Complexity",
             "overall_performance": "Overall Performance",
+            "case_preparation":    "Daily Preparation",
         })
         pivot_excel.to_excel(writer, index=False, sheet_name="Cumulative")
         ws_xl = writer.sheets["Cumulative"]
@@ -1412,10 +1459,12 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         step_fill_map = {k: v.lstrip("#") for k, v in RATING_HEX.items() if k not in ("Not Assessed",)}
         step_fill_map["Not Assessed"] = "E0E0E0"
 
-        start_col = 6
+        # 6 meta columns now precede the steps: Date, Attending, Case ID,
+        # Overall Performance, Case Complexity, Daily Preparation.
+        start_col = 7
         for xl_row in ws_xl.iter_rows(
             min_row=2, max_row=ws_xl.max_row,
-            min_col=start_col, max_col=5 + len(ordered_steps),
+            min_col=start_col, max_col=6 + len(ordered_steps),
         ):
             for cell in xl_row:
                 val = cell.value
