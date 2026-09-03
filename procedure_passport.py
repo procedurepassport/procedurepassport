@@ -1102,6 +1102,12 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
                     return mapped
             return cp
         pivot["case_preparation"] = pivot.apply(_effective_prep, axis=1)
+        # Already folded into Daily Preparation above — don't also show it
+        # as its own step column (on-screen or in the Excel export, both
+        # built from this same `pivot`).
+        pivot = pivot.drop(columns=[_case_prep_step])
+        ordered_steps = [s for s in ordered_steps if s != _case_prep_step]
+        ordered_steps_display = [_step_display[s] for s in ordered_steps]
 
     proc_display_name = procs_map.get(selected_proc, selected_proc)
     # One deliberate break point (see header_break_before): stays on one
