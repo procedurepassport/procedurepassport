@@ -1314,8 +1314,12 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
                 # the colored cells' own props below) rather than relying
                 # on the table-wide "th, td" rule to reach it — Date/
                 # Attending's text was still forcing the row taller than
-                # the colored cells' own 25px square.
-                **{"min-width": "120px", "white-space": "nowrap",
+                # the colored cells' own 25px square. set_properties()
+                # only ever targets the <td> data cells (Styler gives
+                # each one its own #T_..._rowR_colC id) — the <th>
+                # header keeps its own separate centered styling from
+                # th.col_heading below untouched.
+                **{"min-width": "120px", "white-space": "nowrap", "text-align": "right",
                    "font-size": "0.7rem", "line-height": "1"},
             )
             .set_properties(
