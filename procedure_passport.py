@@ -1077,18 +1077,61 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     for _c in _rating_cols:
         display_df[_c] = " "
 
-    def _color_step(val):
+    # The first two display rows are always the "📌 Most Recent"/"🏆 Best"
+    # summary rows; real case rows (in pivot_sorted's newest-first order)
+    # start right after them.
+    _N_SUMMARY_ROWS = 2
+
+    def _is_na(val) -> bool:
+        _na = val is None or (isinstance(val, float) and np.isnan(val)) or val == ""
+        try:
+            _na = _na or pd.isna(val)
+        except (TypeError, ValueError):
+            pass
+        return _na
+
+    def _is_unrated(val) -> bool:
+        """Blank/NaN or an explicit "Not Assessed" — a cell with nothing
+        meaningfully observed, and so a candidate for the never-attempted
+        check below."""
+        return _is_na(val) or val == "Not Assessed"
+
+    def _is_real_progress(val) -> bool:
+        """A rating that actually demonstrates something — everything
+        except unrated cells and "Shown/Told" (shown/told doesn't count
+        as the resident having attempted the step themselves)."""
+        return not _is_na(val) and val not in ("Not Assessed", "Shown/Told")
+
+    def _never_attempted_positions(col_values) -> set:
+        """Case-row positions (within col_values, which starts with the
+        two summary rows) where an unrated cell has no real rating on
+        any OLDER case for this step. col_values' case rows are already
+        newest-first (pivot_sorted's own order), so "older" means later
+        positions — walk oldest-to-newest (i.e. backwards) tracking
+        whether a real rating has been seen among the rows already
+        walked, which are exactly the ones older than whichever row
+        comes next."""
+        never = set()
+        seen_real = False
+        for pos in range(len(col_values) - 1, _N_SUMMARY_ROWS - 1, -1):
+            val = col_values.iloc[pos]
+            if _is_unrated(val) and not seen_real:
+                never.add(pos)
+            if _is_real_progress(val):
+                seen_real = True
+        return never
+
+    def _color_step(val, never_attempted: bool = False):
         # A blank/NaN cell (no score row at all for this step on this
         # case) reads identically to an explicit "Not Assessed" rating —
         # same very light gray either way, since neither means anything
-        # was actually observed.
-        _is_na = val is None or (isinstance(val, float) and np.isnan(val)) or val == ""
-        try:
-            _is_na = _is_na or pd.isna(val)
-        except (TypeError, ValueError):
-            pass
-        if _is_na:
-            val = "Not Assessed"
+        # was actually observed. Unless no older case has a real rating
+        # for this step either, in which case it reads as "Never
+        # Attempted" instead (a distinct, slightly darker gray) — see
+        # _never_attempted_positions.
+        if _is_unrated(val):
+            color = "#E0E0E0" if never_attempted else RATING_HEX["Not Assessed"]
+            return f"background-color: {color}"
         color = RATING_HEX.get(val, "")
         return f"background-color: {color}" if color else ""
 
@@ -1110,7 +1153,12 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             _safe_step_cols = [c for c in ordered_steps_display if c in _orig_vals]
 
             def _apply_step_colors(col):
-                return [_color_step(v) for v in _orig_vals[col.name]]
+                vals = _orig_vals[col.name]
+                never_positions = _never_attempted_positions(vals)
+                return [
+                    _color_step(v, never_attempted=(i in never_positions))
+                    for i, v in enumerate(vals)
+                ]
 
             if _safe_step_cols:
                 styled = styled.apply(_apply_step_colors, subset=_safe_step_cols, axis=0)
