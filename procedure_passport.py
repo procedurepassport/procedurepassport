@@ -92,7 +92,7 @@ RATING_TO_NUM  = {
     "Auto":          5,
 }
 RATING_HEX = {
-    "Not Assessed": "#F0F0F0",  # light gray — explicitly rated as not assessed
+    "Not Assessed": "#E0E0E0",  # gray — explicitly rated as not assessed
     "Shown/Told":   "#9E9E9E",  # dark gray — explicitly shown or told
     "Not Yet":      "#5B8DB8",
     "Steer":        "#FF944D",
@@ -1144,10 +1144,10 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         # same very light gray either way, since neither means anything
         # was actually observed. Unless no older case has a real rating
         # for this step either, in which case it reads as "Never
-        # Attempted" instead (a distinct, slightly darker gray) — see
+        # Attempted" instead (a distinct, lighter gray) — see
         # _never_attempted_positions.
         if _is_unrated(val):
-            color = "#E0E0E0" if never_attempted else RATING_HEX["Not Assessed"]
+            color = "#F0F0F0" if never_attempted else RATING_HEX["Not Assessed"]
             return f"background-color: {color}"
         color = RATING_HEX.get(val, "")
         return f"background-color: {color}" if color else ""
@@ -1341,7 +1341,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         )
 
     st.markdown("#### Ratings Legend")
-    _rating_legend_html = _swatch("#E0E0E0", "Never Attempted")
+    _rating_legend_html = _swatch("#F0F0F0", "Never Attempted")
     _rating_legend_html += "".join(
         _swatch(v, k, "1px solid #aaa" if k == "Not Assessed" else "")
         for k, v in RATING_HEX.items()
@@ -1976,8 +1976,8 @@ if st.session_state.get("page") in (
     st.sidebar.markdown("---")
     st.sidebar.markdown("**Rating Scale**")
     _LEGEND_ITEMS = [
-        ("Never Attempted","#E0E0E0", ""),
-        ("Not Assessed",   "#F0F0F0", "1px solid #aaa"),
+        ("Never Attempted","#F0F0F0", ""),
+        ("Not Assessed",   "#E0E0E0", "1px solid #aaa"),
         ("Shown/Told",     "#9E9E9E", ""),
         ("Not Yet",        "#378ADD", ""),
         ("Steer",          "#FF944D", ""),
