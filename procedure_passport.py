@@ -1090,17 +1090,28 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             pass
         return _na
 
+    # "Not Done" isn't one of RATING_OPTIONS/RATING_HEX — it doesn't
+    # appear anywhere in this file — but shows up as raw data in some
+    # older score rows (predating the current rating labels). Treated
+    # as a synonym for "Not Assessed" everywhere below; left unhandled,
+    # it fell through to neither _is_unrated nor RATING_HEX, rendering
+    # with no color at all (looking blank/white) and — worse — reading
+    # as "real progress" in _is_real_progress below, which incorrectly
+    # marked every older unrated cell in that column as "Not Assessed"
+    # rather than "Never Attempted".
+    _UNRATED_VALUES = ("Not Assessed", "Not Done")
+
     def _is_unrated(val) -> bool:
-        """Blank/NaN or an explicit "Not Assessed" — a cell with nothing
-        meaningfully observed, and so a candidate for the never-attempted
-        check below."""
-        return _is_na(val) or val == "Not Assessed"
+        """Blank/NaN or an explicit "Not Assessed"/"Not Done" — a cell
+        with nothing meaningfully observed, and so a candidate for the
+        never-attempted check below."""
+        return _is_na(val) or (isinstance(val, str) and val.strip() in _UNRATED_VALUES)
 
     def _is_real_progress(val) -> bool:
         """A rating that actually demonstrates something — everything
         except unrated cells and "Shown/Told" (shown/told doesn't count
         as the resident having attempted the step themselves)."""
-        return not _is_na(val) and val not in ("Not Assessed", "Shown/Told")
+        return not _is_unrated(val) and not (isinstance(val, str) and val.strip() == "Shown/Told")
 
     def _never_attempted_positions(col_values) -> set:
         """Case-row positions (within col_values, which starts with the
