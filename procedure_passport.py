@@ -1027,15 +1027,39 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
 
     pivot_sorted = pivot.sort_values("date", ascending=False)
 
+    def _is_na(val) -> bool:
+        _na = val is None or (isinstance(val, float) and np.isnan(val)) or val == ""
+        try:
+            _na = _na or pd.isna(val)
+        except (TypeError, ValueError):
+            pass
+        return _na
+
+    # "Not Done" isn't one of RATING_OPTIONS/RATING_HEX — it doesn't
+    # appear anywhere in this file — but shows up as raw data in some
+    # older score rows (predating the current rating labels). Treated as
+    # a synonym for "Not Assessed" everywhere below (both here, when
+    # picking "Most Recent", and further down for "Never Attempted"
+    # coloring) via the shared _is_unrated() rather than each place
+    # re-deriving its own notion of "unrated" and risking drifting out
+    # of sync with each other again.
+    _UNRATED_VALUES = ("Not Assessed", "Not Done")
+
+    def _is_unrated(val) -> bool:
+        """Blank/NaN or an explicit "Not Assessed"/"Not Done" — a cell
+        with nothing meaningfully observed."""
+        return _is_na(val) or (isinstance(val, str) and val.strip() in _UNRATED_VALUES)
+
     _mr = {"date": "", "attending_name": "📌 Most Recent", "case_complexity": pd.NA, "overall_performance": pd.NA}
     for _s in ordered_steps:
-        _vals = pivot_sorted[_s].dropna()
-        _vals = _vals[_vals != "Not Assessed"]
+        _vals = pivot_sorted[_s]
+        _vals = _vals[~_vals.apply(_is_unrated)]
         _mr[_s] = _vals.iloc[0] if not _vals.empty else pd.NA
 
     _best = {"date": "", "attending_name": "🏆 Best", "case_complexity": pd.NA, "overall_performance": pd.NA}
     for _s in ordered_steps:
-        _vals = pivot_sorted[_s].dropna()
+        _vals = pivot_sorted[_s]
+        _vals = _vals[~_vals.apply(_is_unrated)]
         if _vals.empty:
             _best[_s] = pd.NA
         else:
@@ -1081,31 +1105,6 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     # summary rows; real case rows (in pivot_sorted's newest-first order)
     # start right after them.
     _N_SUMMARY_ROWS = 2
-
-    def _is_na(val) -> bool:
-        _na = val is None or (isinstance(val, float) and np.isnan(val)) or val == ""
-        try:
-            _na = _na or pd.isna(val)
-        except (TypeError, ValueError):
-            pass
-        return _na
-
-    # "Not Done" isn't one of RATING_OPTIONS/RATING_HEX — it doesn't
-    # appear anywhere in this file — but shows up as raw data in some
-    # older score rows (predating the current rating labels). Treated
-    # as a synonym for "Not Assessed" everywhere below; left unhandled,
-    # it fell through to neither _is_unrated nor RATING_HEX, rendering
-    # with no color at all (looking blank/white) and — worse — reading
-    # as "real progress" in _is_real_progress below, which incorrectly
-    # marked every older unrated cell in that column as "Not Assessed"
-    # rather than "Never Attempted".
-    _UNRATED_VALUES = ("Not Assessed", "Not Done")
-
-    def _is_unrated(val) -> bool:
-        """Blank/NaN or an explicit "Not Assessed"/"Not Done" — a cell
-        with nothing meaningfully observed, and so a candidate for the
-        never-attempted check below."""
-        return _is_na(val) or (isinstance(val, str) and val.strip() in _UNRATED_VALUES)
 
     def _is_real_progress(val) -> bool:
         """A rating that actually demonstrates something — everything
