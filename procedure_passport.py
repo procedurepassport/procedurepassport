@@ -1264,16 +1264,6 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             {"selector": "tbody tr", "props": [("border-bottom", "1px solid #bbb")]},
             {"selector": "tbody tr:nth-child(1)", "props": [("border-bottom", "2px solid #555")]},
             {"selector": "tbody tr:nth-child(2)", "props": [("border-bottom", "2px solid #555")]},
-            {"selector": "tbody tr:nth-child(1) td:nth-child(1)",
-             "props": [("border-right", "none")]},
-            {"selector": "tbody tr:nth-child(2) td:nth-child(1)",
-             "props": [("border-right", "none")]},
-            {"selector": "tbody tr:nth-child(1) td:nth-child(2)",
-             "props": [("text-align", "right"), ("font-weight", "600"),
-                       ("padding-right", "6px"), ("border-left", "none")]},
-            {"selector": "tbody tr:nth-child(2) td:nth-child(2)",
-             "props": [("text-align", "right"), ("font-weight", "600"),
-                       ("padding-right", "6px"), ("border-left", "none")]},
         ]
         _vheader_cols  = [c for c in all_cols
                            if c in ordered_steps_display or c in ("Case Complexity", "Overall Performance")]
@@ -1316,6 +1306,35 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             ],
         })
 
+        def _merge_summary_label_cells(html_str, n_summary_rows, first_col, last_col, label_col):
+            """Merges the <td> cells from first_col..last_col (0-indexed,
+            inclusive) into one, in each of the first n_summary_rows
+            <tbody> rows — used to let the "📌 Most Recent"/"🏆 Best"
+            label push right up against Case Complexity instead of being
+            boxed into Attending's own (narrower) column. label_col's own
+            cell (which carries the actual label text) survives with a
+            colspan added; the other cells in the range are dropped
+            outright. pandas Styler gives every cell a unique
+            id="..._rowR_colC", so each is matched and removed/modified
+            independently regardless of the others — order doesn't
+            matter, and nothing outside the targeted cells is touched."""
+            span = last_col - first_col + 1
+            for row in range(n_summary_rows):
+                for col in range(first_col, last_col + 1):
+                    if col == label_col:
+                        continue
+                    html_str = re.sub(
+                        rf'<td id="[^"]*_row{row}_col{col}"[^>]*>.*?</td>\s*',
+                        "",
+                        html_str, count=1, flags=re.DOTALL,
+                    )
+                html_str = re.sub(
+                    rf'(<td id="[^"]*_row{row}_col{label_col}"[^>]*)(>)',
+                    rf'\1 colspan="{span}" style="text-align:right;font-weight:600;padding-right:6px;"\2',
+                    html_str, count=1,
+                )
+            return html_str
+
         def _wrap_vheader_labels(html_str, vheader_indices):
             if not vheader_indices:
                 return html_str
@@ -1334,7 +1353,14 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
 
         styled = styled.set_table_styles(table_styles)
         _vheader_idx = {idx for idx, c in enumerate(all_cols) if c in _vheader_cols}
-        st.markdown(_wrap_vheader_labels(styled.to_html(), _vheader_idx), unsafe_allow_html=True)
+        _heatmap_html = styled.to_html()
+        _heatmap_html = _merge_summary_label_cells(
+            _heatmap_html, n_summary_rows=2,
+            first_col=all_cols.index("Date"), last_col=all_cols.index("Overall Performance"),
+            label_col=all_cols.index("Attending"),
+        )
+        _heatmap_html = _wrap_vheader_labels(_heatmap_html, _vheader_idx)
+        st.markdown(_heatmap_html, unsafe_allow_html=True)
 
     except Exception as _heatmap_err:
         st.warning(
