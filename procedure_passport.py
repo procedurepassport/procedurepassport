@@ -2155,34 +2155,27 @@ button p {
     flex: 0 0 auto !important;
     width: auto !important;
 }
-/* The label column gets its own fixed-height flexbox (~a checkbox
-   widget's natural height) and centers its text inside that box
-   directly, rather than depending on the row's align-items: center
-   above to line the two up — cancelling stMarkdownContainer's built-in
-   -16px bottom margin (needed so the box's real height isn't collapsed
-   out from under the text) also grew this column taller, which grew
-   the *row's* height to match and pushed the checkboxes down with it
-   (they'd previously defined the row's height on their own). Fixing
-   the label's own box height instead keeps the row's height — and the
-   checkboxes' position — exactly as it was without this column at all. */
-.st-key-assess_robo_row [data-testid="stColumn"]:has([data-testid="stMarkdownContainer"]) {
+/* IMPORTANT: each st.checkbox's own "Xi"/"SP"/"DV5" label text is ALSO
+   rendered through a [data-testid="stMarkdownContainer"] > p — the same
+   structure the plain "Robot:" text uses — so an unscoped selector
+   matches (and repositions) both. Every rule below is scoped with
+   :not(:has([data-testid="stCheckbox"])) to hit only the one column
+   that's markdown-but-not-a-checkbox ("Robot:" itself), never the
+   checkboxes' own internal labels — that's what made every previous
+   attempt at nudging "Robot:" also drag Xi/SP/DV5 along with it. */
+.st-key-assess_robo_row [data-testid="stColumn"]:has([data-testid="stMarkdownContainer"]):not(:has([data-testid="stCheckbox"])) {
     display: flex;
     align-items: center;
     height: 2.5rem;
 }
-.st-key-assess_robo_row [data-testid="stMarkdownContainer"] {
+.st-key-assess_robo_row [data-testid="stColumn"]:has([data-testid="stMarkdownContainer"]):not(:has([data-testid="stCheckbox"]))
+    [data-testid="stMarkdownContainer"] {
     margin-bottom: 0 !important;
 }
-.st-key-assess_robo_row [data-testid="stMarkdownContainer"] p {
+.st-key-assess_robo_row [data-testid="stColumn"]:has([data-testid="stMarkdownContainer"]):not(:has([data-testid="stCheckbox"]))
+    [data-testid="stMarkdownContainer"] p {
     white-space: nowrap;
     margin: 0;
-    /* The label column now centers within its own fixed-height box
-       (decoupled from the checkboxes' position — see the comment
-       above), but still sits a little higher than the checkboxes
-       themselves. A small isolated nudge, since it's a transform: it
-       only repositions this text visually, without affecting layout
-       or the checkboxes' own position at all. */
-    transform: translateY(4px);
 }
 /* "On mobile: tap the >> icon..." tip: shrink padding, and match the text
    size to "Daily Preparation" and similar field labels (0.75x --pp-substep-font)
