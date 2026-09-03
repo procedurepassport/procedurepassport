@@ -1382,6 +1382,19 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             table_styles.append(
                 {"selector": f"td.col{_daily_prep_idx}", "props": [("border-right", "2px solid #555")]}
             )
+        # Bold the table's own left/right outer edges too, starting from
+        # the second row down (same td.col{idx}-only trick — never
+        # matches the <th> header). The rightmost column (always a real,
+        # non-merged cell even on the two summary rows) gets this
+        # automatically on every body row; the leftmost (Date) doesn't
+        # exist as its own cell on the merged summary rows, so those two
+        # get the matching left border added directly to the merged
+        # cell's own style below instead.
+        table_styles.append({"selector": "td.col0", "props": [("border-left", "2px solid #555")]})
+        table_styles.append({
+            "selector": f"td.col{len(all_cols) - 1}",
+            "props": [("border-right", "2px solid #555")],
+        })
         _vheader_cols  = [c for c in all_cols
                            if c in ordered_steps_display or c in _META_COL_NAMES]
 
@@ -1475,10 +1488,19 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             _heatmap_html, n_summary_rows=2,
             first_col=all_cols.index("Date"), last_col=all_cols.index("Daily Preparation"),
             label_col=all_cols.index("Attending"),
-            # Matches the same bold meta/steps divider added below for
-            # the real case rows — this merged cell's own right edge is
-            # that same boundary (it ends exactly at Daily Preparation).
-            extra_style="border-right:2px solid #555;" if ordered_steps_display else "",
+            # border-right matches the same bold meta/steps divider added
+            # below for the real case rows — this merged cell's own right
+            # edge is that same boundary (it ends exactly at Daily
+            # Preparation). border-left matches the table's own bold left
+            # edge, also added below for real case rows via td.col0 —
+            # this merged cell starts at the table's left edge (Date's
+            # original position) but isn't itself class="col0" (that
+            # cell was dropped in the merge), so it needs its own edge
+            # set directly instead of picking up the td.col0 rule.
+            extra_style=(
+                "border-left:2px solid #555;"
+                + ("border-right:2px solid #555;" if ordered_steps_display else "")
+            ),
         )
         _heatmap_html = _wrap_vheader_labels(_heatmap_html, _vheader_idx)
         st.markdown(_heatmap_html, unsafe_allow_html=True)
