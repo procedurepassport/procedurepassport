@@ -1027,33 +1027,6 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     _step_display        = {s: _fmt_step_hdr(s) for s in ordered_steps}
     ordered_steps_display = [_step_display[s] for s in ordered_steps]
 
-    pivot = proc_data.pivot_table(
-        index=["date", "attending_name", "case_id", "overall_performance", "case_complexity", "case_preparation"],
-        columns="step_name",
-        values="rating",
-        aggfunc="first",
-    ).reset_index()
-
-    for step in ordered_steps:
-        if step not in pivot.columns:
-            pivot[step] = pd.NA
-
-    pivot = pivot[["date", "attending_name", "case_id", "overall_performance", "case_complexity", "case_preparation"] + ordered_steps]
-
-    proc_display_name = procs_map.get(selected_proc, selected_proc)
-    # One deliberate break point (see header_break_before): stays on one
-    # line when it fits, and if it doesn't, wraps with "Progress Heatmap"
-    # intact on the second line rather than splitting the procedure name
-    # or "Progress"/"Heatmap" from each other.
-    _heatmap_heading = header_break_before(f"{proc_display_name} —", "Progress Heatmap")
-    st.markdown(
-        f"### {_heatmap_heading}\n"
-        "Most recent cases at the top. Zoom out to screenshot this grid. 📸"
-    )
-    st.caption("💡 Tip: To screenshot the full table — on mobile use print preview; on desktop use File > Print (Cmd+P / Ctrl+P), then adjust the scale percentage down until all columns fit on one page before screenshotting.")
-
-    pivot_sorted = pivot.sort_values("date", ascending=False)
-
     def _is_na(val) -> bool:
         # pd.isna() must be checked (and short-circuit) before anything
         # that compares val itself, e.g. val == "" — pandas' NA sentinel
@@ -1073,16 +1046,76 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     # appear anywhere in this file — but shows up as raw data in some
     # older score rows (predating the current rating labels). Treated as
     # a synonym for "Not Assessed" everywhere below (both here, when
-    # picking "Most Recent", and further down for "Never Attempted"
-    # coloring) via the shared _is_unrated() rather than each place
-    # re-deriving its own notion of "unrated" and risking drifting out
-    # of sync with each other again.
+    # falling back to a "Case Preparation" step and picking "Most
+    # Recent", and further down for "Never Attempted" coloring) via the
+    # shared _is_unrated() rather than each place re-deriving its own
+    # notion of "unrated" and risking drifting out of sync with each
+    # other again.
     _UNRATED_VALUES = ("Not Assessed", "Not Done")
 
     def _is_unrated(val) -> bool:
         """Blank/NaN or an explicit "Not Assessed"/"Not Done" — a cell
         with nothing meaningfully observed."""
         return _is_na(val) or (isinstance(val, str) and val.strip() in _UNRATED_VALUES)
+
+    pivot = proc_data.pivot_table(
+        index=["date", "attending_name", "case_id", "overall_performance", "case_complexity", "case_preparation"],
+        columns="step_name",
+        values="rating",
+        aggfunc="first",
+    ).reset_index()
+
+    for step in ordered_steps:
+        if step not in pivot.columns:
+            pivot[step] = pd.NA
+
+    pivot = pivot[["date", "attending_name", "case_id", "overall_performance", "case_complexity", "case_preparation"] + ordered_steps]
+
+    # Some procedures still have a step literally named "Case
+    # Preparation" — a legacy per-step rating from before Daily
+    # Preparation existed as its own case-level field. Fall back to it,
+    # mapped onto the same 5-level Prep scale, for any case where Daily
+    # Preparation itself was left blank/"Not Assessed" — "Shown/Told"
+    # doesn't map to anything and is deliberately left as a non-fallback
+    # (same as _is_real_progress treats it elsewhere: shown/told isn't
+    # the resident actually demonstrating it). Matched case-insensitively
+    # since the exact casing isn't guaranteed in older data. Only ever
+    # applies to real case rows — pivot_sorted (built from this pivot)
+    # is what the two summary rows below are concatenated onto top of,
+    # and they always report pd.NA for this column regardless.
+    _STEP_RATING_TO_PREP_LABEL = {
+        "Not Yet":  "Unprepared",
+        "Steer":    "Poorly Prepared",
+        "Prompt":   "Adequately Prepared",
+        "Back up":  "Well Prepared",
+        "Auto":     "Highly Prepared",
+    }
+    _case_prep_step = next(
+        (s for s in ordered_steps if s.strip().lower() == "case preparation"), None
+    )
+    if _case_prep_step:
+        def _effective_prep(row):
+            cp = row["case_preparation"]
+            if _is_unrated(cp):
+                mapped = _STEP_RATING_TO_PREP_LABEL.get(row[_case_prep_step])
+                if mapped:
+                    return mapped
+            return cp
+        pivot["case_preparation"] = pivot.apply(_effective_prep, axis=1)
+
+    proc_display_name = procs_map.get(selected_proc, selected_proc)
+    # One deliberate break point (see header_break_before): stays on one
+    # line when it fits, and if it doesn't, wraps with "Progress Heatmap"
+    # intact on the second line rather than splitting the procedure name
+    # or "Progress"/"Heatmap" from each other.
+    _heatmap_heading = header_break_before(f"{proc_display_name} —", "Progress Heatmap")
+    st.markdown(
+        f"### {_heatmap_heading}\n"
+        "Most recent cases at the top. Zoom out to screenshot this grid. 📸"
+    )
+    st.caption("💡 Tip: To screenshot the full table — on mobile use print preview; on desktop use File > Print (Cmd+P / Ctrl+P), then adjust the scale percentage down until all columns fit on one page before screenshotting.")
+
+    pivot_sorted = pivot.sort_values("date", ascending=False)
 
     _mr = {"date": "", "attending_name": "📌 Most Recent", "case_complexity": pd.NA,
            "overall_performance": pd.NA, "case_preparation": pd.NA}
