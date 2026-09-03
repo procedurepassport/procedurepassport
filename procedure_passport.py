@@ -2196,6 +2196,19 @@ if st.session_state.get("page") in (
 st.markdown(
     """
 <style>
+/* Shift the whole page's content block to the right: it's normally
+   horizontally centered (equal left/right margin, i.e. equal
+   whitespace either side of the ~fixed-width content column) — a
+   transform nudges it right without touching that centering math
+   itself, taking width from the left gap and adding it to the right
+   one. Applies to every page, not just the heatmap. 50px is a rough
+   first pass (roughly half a typical left-side gap on desktop) —
+   tune the value directly if it doesn't land right, and watch for a
+   horizontal scrollbar on narrower windows, where the starting gap is
+   smaller to begin with. */
+[data-testid="stAppViewContainer"] .block-container {
+    transform: translateX(50px);
+}
 /* Every button's label stays on one line — fit_all_button_labels()
    shrinks the font to make it fit; this is the no-JS fallback (clips
    with an ellipsis instead of wrapping to a second line). */
