@@ -1309,14 +1309,23 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             .apply(_apply_prep_colors,       subset=["Daily Preparation"], axis=0)
             .hide(axis="index")
             .set_properties(
-                subset=["Date", "Attending"],
+                subset=["Attending"],
                 # font-size/line-height set directly here (inline, same as
                 # the colored cells' own props below) rather than relying
-                # on the table-wide "th, td" rule to reach these two
-                # columns — Date/Attending's text was still forcing the
-                # row taller than the colored cells' own 25px square.
+                # on the table-wide "th, td" rule to reach it — Date/
+                # Attending's text was still forcing the row taller than
+                # the colored cells' own 25px square.
                 **{"min-width": "120px", "white-space": "nowrap",
                    "font-size": "0.7rem", "line-height": "1"},
+            )
+            .set_properties(
+                subset=["Date"],
+                # fmt_date()'s output is always exactly 10 characters
+                # (MM-DD-YYYY) — fixed rather than Attending's own
+                # min-width (sized for a name), with a little buffer
+                # either side rather than sized to the exact pixel.
+                **{"width": "70px", "min-width": "70px", "max-width": "70px",
+                   "white-space": "nowrap", "font-size": "0.7rem", "line-height": "1"},
             )
             .set_properties(
                 subset=list(_META_COL_NAMES),
