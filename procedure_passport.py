@@ -92,7 +92,7 @@ RATING_TO_NUM  = {
     "Auto":          5,
 }
 RATING_HEX = {
-    "Not Assessed": "#F0F0F0",  # white/empty — explicitly rated as not assessed
+    "Not Assessed": "#FAFAFA",  # near-white — explicitly rated as not assessed
     "Shown/Told":   "#9E9E9E",  # dark gray — explicitly shown or told
     "Not Yet":      "#5B8DB8",
     "Steer":        "#FF944D",
@@ -1078,13 +1078,17 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         display_df[_c] = " "
 
     def _color_step(val):
+        # A blank/NaN cell (no score row at all for this step on this
+        # case) reads identically to an explicit "Not Assessed" rating —
+        # same very light gray either way, since neither means anything
+        # was actually observed.
         _is_na = val is None or (isinstance(val, float) and np.isnan(val)) or val == ""
         try:
             _is_na = _is_na or pd.isna(val)
         except (TypeError, ValueError):
             pass
         if _is_na:
-            return "background-color: #E0E0E0"
+            val = "Not Assessed"
         color = RATING_HEX.get(val, "")
         return f"background-color: {color}" if color else ""
 
@@ -1267,7 +1271,6 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         _swatch(v, k, "1px solid #aaa" if k == "Not Assessed" else "")
         for k, v in RATING_HEX.items()
     )
-    _rating_legend_html += _swatch("#E0E0E0", "Never Attempted")
     st.markdown('<div class="legend-row">' + _rating_legend_html + "</div>", unsafe_allow_html=True)
 
     st.markdown("#### Case Complexity")
@@ -1898,14 +1901,13 @@ if st.session_state.get("page") in (
     st.sidebar.markdown("---")
     st.sidebar.markdown("**Rating Scale**")
     _LEGEND_ITEMS = [
-        ("Not Assessed",   "#F0F0F0", "1px solid #aaa"),
+        ("Not Assessed",   "#FAFAFA", "1px solid #aaa"),
         ("Shown/Told",     "#9E9E9E", ""),
         ("Not Yet",        "#378ADD", ""),
         ("Steer",          "#FF944D", ""),
         ("Prompt",         "#FFD633", ""),
         ("Back up",        "#99E699", ""),
         ("Auto",           "#33CC33", ""),
-        ("Never Attempted","#E0E0E0", ""),
     ]
     for _label, _color, _border in _LEGEND_ITEMS:
         _border_css = f"border:{_border};" if _border else ""
