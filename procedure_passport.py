@@ -1166,6 +1166,15 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             def _apply_step_colors(col):
                 vals = _orig_vals[col.name]
                 never_positions = _never_attempted_positions(vals)
+                # If every case row for this step came out "Never
+                # Attempted" (the resident has no real rating for it on
+                # any case at all), the two summary rows — which
+                # otherwise just show blank/"Not Assessed" once there's
+                # nothing real to summarize — match that too, instead of
+                # looking like an ordinary unrated cell.
+                _total_case_rows = len(vals) - _N_SUMMARY_ROWS
+                if _total_case_rows > 0 and len(never_positions) == _total_case_rows:
+                    never_positions = never_positions | set(range(_N_SUMMARY_ROWS))
                 return [
                     _color_step(v, never_attempted=(i in never_positions))
                     for i, v in enumerate(vals)
