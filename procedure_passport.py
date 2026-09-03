@@ -1394,7 +1394,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         _heatmap_html = styled.to_html()
         _heatmap_html = _merge_summary_label_cells(
             _heatmap_html, n_summary_rows=2,
-            first_col=all_cols.index("Date"), last_col=all_cols.index("Overall Performance"),
+            first_col=all_cols.index("Date"), last_col=all_cols.index("Daily Preparation"),
             label_col=all_cols.index("Attending"),
         )
         _heatmap_html = _wrap_vheader_labels(_heatmap_html, _vheader_idx)
