@@ -59,6 +59,7 @@ _defaults: dict = {
     "improve":                 "",
     "how":                     "",
     "current_case_id":         None,
+    "viewing_case_id":         None,   # set before go_to("view_evaluation")
     "attending_submission":    None,   # filled after magic-link submit
     "generated_magic_link":    None,   # filled after Generate Magic Link
     "draft_id":                "",
@@ -355,7 +356,7 @@ def ensure_resident(email: str, name: str = "", specialty_id=None) -> None:
 
 def get_resident_last_seen(email: str):
     """The timestamp a resident last had their "new evaluation" badge
-    (see count_new_evaluations_for_resident()) cleared, or None if
+    (see get_new_evaluations_for_resident()) cleared, or None if
     they've never had one recorded yet (a brand-new resident, or one
     from before this field existed)."""
     residents_df = read_sheet_df(SHEET_RESIDENTS, expected_cols=RESIDENT_COLS)
@@ -380,29 +381,34 @@ def mark_resident_evaluations_seen(email: str) -> None:
     write_sheet_df(SHEET_RESIDENTS, residents_df)
 
 
-def count_new_evaluations_for_resident(email: str) -> int:
-    """How many attending-confirmed cases (never a resident's own
-    Self-Assessment) have been submitted for this resident since their
-    last_seen_evaluations_at. A resident with no last-seen timestamp
-    yet (brand new, or predating this field) is treated as having zero
-    new ones — mark_resident_evaluations_seen() is expected to run
-    right after this is read, which sets that timestamp going forward;
-    otherwise every historical case would count as "new" the first time
-    this ships, rather than only genuinely new activity from here on."""
+def get_new_evaluations_for_resident(email: str) -> pd.DataFrame:
+    """Attending-confirmed cases (never a resident's own Self-Assessment)
+    submitted for this resident since their last_seen_evaluations_at,
+    newest-submitted first — case_id/procedure_id/attending_id/date, for
+    the Home page to both count (len(...)) and link out to individually
+    (see load_case_detail()). A resident with no last-seen timestamp yet
+    (brand new, or predating this field) gets an empty result —
+    mark_resident_evaluations_seen() is expected to run right after this
+    is read, which sets that timestamp going forward; otherwise every
+    historical case would count as "new" the first time this ships,
+    rather than only genuinely new activity from here on."""
+    _cols = ["case_id", "procedure_id", "attending_id", "date"]
     last_seen = get_resident_last_seen(email)
     if last_seen is None:
-        return 0
+        return pd.DataFrame(columns=_cols)
     cases_df = read_sheet_df(
         SHEET_CASES,
-        expected_cols=["case_id", "resident_email", "assessment_type", "submitted_at"],
+        expected_cols=["case_id", "resident_email", "procedure_id", "attending_id",
+                       "date", "assessment_type", "submitted_at"],
     )
     email_norm = str(email).strip().lower()
     mine = cases_df[
         (cases_df["resident_email"].astype(str).str.strip().str.lower() == email_norm)
         & (cases_df["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment")
-    ]
-    submitted = pd.to_datetime(mine["submitted_at"], errors="coerce", utc=True)
-    return int((submitted > last_seen).sum())
+    ].copy()
+    mine["submitted_at"] = pd.to_datetime(mine["submitted_at"], errors="coerce", utc=True)
+    mine = mine[mine["submitted_at"] > last_seen].sort_values("submitted_at", ascending=False)
+    return mine[_cols].reset_index(drop=True)
 
 
 def ensure_attending(name: str, specialty_id: str, email: str = "") -> None:
@@ -493,7 +499,7 @@ def save_case(
         # Distinct from `date` (the procedure's own date, picked by
         # whoever filled the form — can be well in the past) — this is
         # when the row was actually saved, which the "new evaluation"
-        # badge (see count_new_evaluations_for_resident()) compares
+        # badge (see get_new_evaluations_for_resident()) compares
         # against a resident's own last-seen timestamp.
         "submitted_at":        datetime.datetime.utcnow().isoformat(),
     }])], ignore_index=True)
@@ -656,6 +662,120 @@ def _read_attendings_df() -> pd.DataFrame:
     _legacy = df["attending_email"].fillna("").astype(str).str.strip()
     df["email"] = _email.where(_email != "", _legacy)
     return df[ATTENDING_COLS]
+
+
+def load_case_detail(case_id: str):
+    """Assembles one case's full details, by case_id alone, in the same
+    shape as the attending_submission dict built right after a live
+    submission — so _render_evaluation_card() below can render either
+    one identically. Backs the "view one evaluation" page linked from
+    the Home page's new-evaluation badge, opened well after the actual
+    submission, in a different session, with none of that in-memory
+    state available — everything has to come from the sheets fresh.
+    Returns None if no such case exists."""
+    if not case_id:
+        return None
+    cases_df = read_sheet_df(
+        SHEET_CASES,
+        expected_cols=["case_id", "resident_email", "date", "specialty_id",
+                       "procedure_id", "attending_id", "notes",
+                       "case_complexity", "case_preparation", "overall_performance",
+                       "robo_type", "improve", "how", "assessment_type", "submitted_at"],
+    )
+    cases_df["case_id"] = _norm_id(cases_df["case_id"])
+    target = _norm_id(pd.Series([case_id])).iloc[0]
+    match = cases_df[cases_df["case_id"] == target]
+    if match.empty:
+        return None
+    row = match.iloc[0]
+
+    def _clean(v):
+        return "" if pd.isna(v) else str(v)
+
+    scores_df = read_sheet_df(SHEET_SCORES, expected_cols=["case_id", "step_id", "rating"])
+    scores_df["case_id"] = _norm_id(scores_df["case_id"])
+    case_scores = scores_df[scores_df["case_id"] == row["case_id"]]
+    scores = dict(zip(case_scores["step_id"].astype(str), case_scores["rating"].astype(str)))
+
+    steps_df = read_sheet_df(SHEET_STEPS, expected_cols=["step_id", "procedure_id", "step_order", "step_name"])
+    proc_steps = (
+        steps_df[steps_df["procedure_id"].astype(str) == str(row["procedure_id"])]
+        .sort_values("step_order")
+    )
+    steps = [{"step_id": str(r["step_id"]), "step_name": str(r["step_name"])} for _, r in proc_steps.iterrows()]
+
+    procs_df = read_sheet_df(SHEET_PROCEDURES, expected_cols=["procedure_id", "procedure_name", "specialty_id"])
+    proc_match = procs_df[procs_df["procedure_id"].astype(str) == str(row["procedure_id"])]
+    procedure_name = proc_match["procedure_name"].values[0] if len(proc_match) else str(row["procedure_id"])
+
+    atnds_lookup = dict(zip(_read_attendings_df()["attending_id"], _read_attendings_df()["attending_name"]))
+    attending_name = attending_display_name(str(row.get("attending_id", "")), atnds_lookup)
+
+    residents_df = read_sheet_df(SHEET_RESIDENTS, expected_cols=RESIDENT_COLS)
+    res_match = residents_df[
+        residents_df["email"].astype(str).str.strip().str.lower()
+        == str(row.get("resident_email", "")).strip().lower()
+    ]
+    resident_name = res_match["name"].values[0] if len(res_match) else row.get("resident_email", "")
+
+    return {
+        "case_id":             row["case_id"],
+        "resident_email":      row.get("resident_email", ""),
+        "resident_name":       resident_name,
+        "procedure_id":        row.get("procedure_id", ""),
+        "procedure_name":      procedure_name,
+        "attending_name":      attending_name,
+        "date":                row.get("date", ""),
+        "case_complexity":     row.get("case_complexity"),
+        "case_preparation":    row.get("case_preparation"),
+        "overall_performance": row.get("overall_performance"),
+        "robo_type":           row.get("robo_type"),
+        "notes":               _clean(row.get("notes")),
+        "improve":             _clean(row.get("improve")),
+        "how":                 _clean(row.get("how")),
+        "assessment_type":     row.get("assessment_type", ""),
+        "scores":              scores,
+        "steps":               steps,
+    }
+
+
+def _render_evaluation_card(sub: dict) -> None:
+    """The evaluation-summary card + step ratings table shown right
+    after a live submission (attending_confirmation) and, identically,
+    on the standalone "view one evaluation" page — same dict shape,
+    same rendering, so the resident sees the exact same thing either
+    way."""
+    _robo_type_line = f'<br><b>Robot:</b> {sub["robo_type"]}' if sub.get("robo_type") else ""
+    st.markdown(
+        f'<div class="pp-card">'
+        f'<b>Resident:</b> {sub.get("resident_name", sub["resident_email"])}<br>'
+        f'<b>Attending:</b> {sub["attending_name"]}<br>'
+        f'<b>Procedure:</b> {sub.get("procedure_name", sub["procedure_id"])}<br>'
+        f'<b>Date:</b> {fmt_date(sub["date"])}<br>'
+        f'<b>Overall Performance:</b> {sub["overall_performance"]}'
+        f'{_robo_type_line}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    if sub.get("improve", "").strip() or sub.get("how", "").strip():
+        st.markdown(f"**In order to improve this:** {sub.get('improve', '') or '_(blank)_'}.")
+        st.markdown(f"**Do this:** {sub.get('how', '') or '_(blank)_'}.")
+
+    if sub["notes"].strip():
+        st.markdown("**Comments submitted:**")
+        st.info(sub["notes"])
+
+    st.markdown("#### Step Ratings Submitted")
+    step_rows = []
+    for step_rec in sub["steps"]:
+        step_id   = step_rec["step_id"]
+        step_name = step_rec["step_name"]
+        rating    = sub["scores"].get(step_id, "—")
+        step_rows.append({"Step": step_name, "Rating": rating})
+
+    summary_df = pd.DataFrame(step_rows)
+    st.dataframe(style_df(summary_df, "Rating"), width="stretch")
 
 
 # Pinned procedures always come first, in this order (when present for
@@ -3198,22 +3318,35 @@ elif page == "home":
         tier_text="👋 Welcome back,",
     )
 
-    # "New evaluation" badge: how many attending-confirmed cases have
-    # landed since this resident's last Home visit. Only actually writes
+    # "New evaluation" badge: which attending-confirmed cases have
+    # landed since this resident's last Home visit, each linked to its
+    # own read-only view (view_evaluation page). Only actually writes
     # (mark_resident_evaluations_seen) when there's something to clear,
     # or to bootstrap a resident who's never had a last-seen timestamp
     # recorded yet — not on every routine visit once steady-state.
     _resident_email = st.session_state["resident"]
     try:
         _last_seen_before = get_resident_last_seen(_resident_email)
-        _new_eval_count = count_new_evaluations_for_resident(_resident_email)
-        if _last_seen_before is None or _new_eval_count > 0:
+        _new_evals = get_new_evaluations_for_resident(_resident_email)
+        if _last_seen_before is None or not _new_evals.empty:
             mark_resident_evaluations_seen(_resident_email)
-        if _new_eval_count > 0:
-            st.success(
-                f"🔔 You have {_new_eval_count} new evaluation"
-                f"{'s' if _new_eval_count != 1 else ''} since your last visit!"
-            )
+        if not _new_evals.empty:
+            _n = len(_new_evals)
+            st.success(f"🔔 You have {_n} new evaluation{'s' if _n != 1 else ''} since your last visit!")
+            _, _home_proc_df, _, _home_atnd_df = load_refs()
+            _home_proc_names = {str(k): v for k, v in zip(_home_proc_df["procedure_id"], _home_proc_df["procedure_name"])}
+            _home_atnd_lookup = dict(zip(_home_atnd_df["attending_id"], _home_atnd_df["attending_name"]))
+            for _, _eval_row in _new_evals.iterrows():
+                _proc_label = _home_proc_names.get(str(_eval_row["procedure_id"]), str(_eval_row["procedure_id"]))
+                _att_label = attending_display_name(str(_eval_row["attending_id"]), _home_atnd_lookup)
+                if st.button(
+                    f"📄 {_proc_label} — {_att_label} ({fmt_date(_eval_row['date'])})",
+                    key=f"view_new_eval_{_eval_row['case_id']}",
+                    width="stretch",
+                ):
+                    st.session_state["viewing_case_id"] = _eval_row["case_id"]
+                    go_to("view_evaluation")
+            st.markdown("")
     except ConnectionError:
         pass  # badge is a nice-to-have — don't block the Home page over it
 
@@ -3245,6 +3378,47 @@ elif page == "home":
             if st.button("View Comments", width="stretch"):
                 go_to("comments")
             st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ════════════════════════════════════════════════════════════
+# PAGE: VIEW ONE EVALUATION (linked from the Home page's new-evaluation
+# badge). Purely a read-only display — nothing here needs saving; the
+# badge itself already cleared the moment Home was loaded, regardless
+# of whether any individual link below is actually opened.
+# ════════════════════════════════════════════════════════════
+elif page == "view_evaluation":
+    _resident = st.session_state.get("resident")
+    if not _resident:
+        st.error("Not logged in.")
+        if st.button("⬅️ Back to Home"):
+            go_to("home")
+        st.stop()
+
+    _viewing_case_id = st.session_state.get("viewing_case_id")
+    try:
+        _viewed_sub = load_case_detail(_viewing_case_id)
+    except ConnectionError as exc:
+        show_gs_error(exc)
+        if st.button("⬅️ Back to Home"):
+            go_to("home")
+        st.stop()
+
+    if not _viewed_sub or str(_viewed_sub.get("resident_email", "")).strip().lower() != str(_resident).strip().lower():
+        # Missing case, or (shouldn't normally happen since the link is
+        # only ever generated for this resident's own cases) one that
+        # isn't this resident's — refuse either way rather than showing
+        # someone else's evaluation.
+        st.error("Evaluation not found.")
+        if st.button("⬅️ Back to Home"):
+            go_to("home")
+        st.stop()
+
+    page_header("📄 Evaluation")
+    _render_evaluation_card(_viewed_sub)
+
+    st.markdown("---")
+    if st.button("⬅️ Back to Home"):
+        go_to("home")
 
 
 # ════════════════════════════════════════════════════════════
@@ -4479,37 +4653,7 @@ elif page == "attending_confirmation":
     page_header("✅ Evaluation Submitted")
     st.success("Thank you! Your evaluation has been recorded.")
 
-    _robo_type_line = f'<br><b>Robot:</b> {sub["robo_type"]}' if sub.get("robo_type") else ""
-    st.markdown(
-        f'<div class="pp-card">'
-        f'<b>Resident:</b> {sub.get("resident_name", sub["resident_email"])}<br>'
-        f'<b>Attending:</b> {sub["attending_name"]}<br>'
-        f'<b>Procedure:</b> {sub.get("procedure_name", sub["procedure_id"])}<br>'
-        f'<b>Date:</b> {fmt_date(sub["date"])}<br>'
-        f'<b>Overall Performance:</b> {sub["overall_performance"]}'
-        f'{_robo_type_line}'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-
-    if sub.get("improve", "").strip() or sub.get("how", "").strip():
-        st.markdown(f"**In order to improve this:** {sub.get('improve', '') or '_(blank)_'}.")
-        st.markdown(f"**Do this:** {sub.get('how', '') or '_(blank)_'}.")
-
-    if sub["notes"].strip():
-        st.markdown("**Comments submitted:**")
-        st.info(sub["notes"])
-
-    st.markdown("#### Step Ratings Submitted")
-    step_rows = []
-    for step_rec in sub["steps"]:
-        step_id   = step_rec["step_id"]
-        step_name = step_rec["step_name"]
-        rating    = sub["scores"].get(step_id, "—")
-        step_rows.append({"Step": step_name, "Rating": rating})
-
-    summary_df = pd.DataFrame(step_rows)
-    st.dataframe(style_df(summary_df, "Rating"), width="stretch")
+    _render_evaluation_card(sub)
 
     st.markdown("---")
     if st.session_state.get("role") == "attending" and st.session_state.get("attending_login_email"):
