@@ -186,6 +186,16 @@ SHEET_SCORES     = "scores"
 SHEET_SPECIALTY  = "specialties"
 SHEET_DRAFTS     = "drafts"
 SHEET_AUTH       = "auth"
+SHEET_EVAL_VIEWS = "eval_views"
+
+# One row per (resident, case) a resident has opened via the new-
+# evaluation badge's per-item link — see get_viewed_case_ids()/
+# mark_evaluation_viewed(). Once viewed, that one evaluation drops off
+# the badge for good, independent of any other new/unviewed ones —
+# the badge would otherwise clear its whole batch the moment the
+# resident so much as looked at Home, rather than only the specific
+# evaluation they actually opened.
+EVAL_VIEW_COLS = ["resident_email", "case_id", "viewed_at"]
 
 # Password auth, one row per email (resident or admin) that has ever set a
 # password. Deliberately its own sheet, not columns on `residents` — the
@@ -381,17 +391,52 @@ def mark_resident_evaluations_seen(email: str) -> None:
     write_sheet_df(SHEET_RESIDENTS, residents_df)
 
 
+def get_viewed_case_ids(email: str) -> set:
+    """case_ids this resident has already opened via the new-evaluation
+    badge's own per-item link (see mark_evaluation_viewed()) — once
+    opened, that one evaluation is excluded from
+    get_new_evaluations_for_resident() for good, independent of any
+    other new/unviewed ones."""
+    views_df = read_sheet_df(SHEET_EVAL_VIEWS, expected_cols=EVAL_VIEW_COLS)
+    if views_df.empty:
+        return set()
+    email_norm = str(email).strip().lower()
+    mine = views_df[views_df["resident_email"].astype(str).str.strip().str.lower() == email_norm]
+    return set(_norm_id(mine["case_id"]))
+
+
+def mark_evaluation_viewed(email: str, case_id: str) -> None:
+    """Records that this resident has opened this one evaluation —
+    excludes it from their new-evaluation badge from here on, leaving
+    any other still-unopened ones untouched. A no-op if already
+    recorded (e.g. the resident reopens the same link)."""
+    if not case_id:
+        return
+    if _norm_id(pd.Series([case_id])).iloc[0] in get_viewed_case_ids(email):
+        return
+    views_df = read_sheet_df(SHEET_EVAL_VIEWS, expected_cols=EVAL_VIEW_COLS)
+    views_df = pd.concat([views_df, pd.DataFrame([{
+        "resident_email": email,
+        "case_id":        case_id,
+        "viewed_at":      datetime.datetime.utcnow().isoformat(),
+    }])], ignore_index=True)
+    write_sheet_df(SHEET_EVAL_VIEWS, views_df)
+
+
 def get_new_evaluations_for_resident(email: str) -> pd.DataFrame:
     """Attending-confirmed cases (never a resident's own Self-Assessment)
-    submitted for this resident since their last_seen_evaluations_at,
-    newest-submitted first — case_id/procedure_id/attending_id/date, for
-    the Home page to both count (len(...)) and link out to individually
-    (see load_case_detail()). A resident with no last-seen timestamp yet
-    (brand new, or predating this field) gets an empty result —
-    mark_resident_evaluations_seen() is expected to run right after this
-    is read, which sets that timestamp going forward; otherwise every
-    historical case would count as "new" the first time this ships,
-    rather than only genuinely new activity from here on."""
+    submitted for this resident since their last_seen_evaluations_at and
+    not yet individually opened (see get_viewed_case_ids()), newest-
+    submitted first — case_id/procedure_id/attending_id/date, for the
+    Home page to both count (len(...)) and link out to individually (see
+    load_case_detail()). last_seen_evaluations_at itself is only ever a
+    one-time bootstrap cutoff (see mark_resident_evaluations_seen()) —
+    it does NOT advance just from the badge being shown or Home being
+    revisited, only from a resident actually opening one of these links;
+    a resident with no last-seen timestamp yet (brand new, or predating
+    this field) gets an empty result, since otherwise every historical
+    case would count as "new" the first time this ships, rather than
+    only genuinely new activity from here on."""
     _cols = ["case_id", "procedure_id", "attending_id", "date"]
     last_seen = get_resident_last_seen(email)
     if last_seen is None:
@@ -407,7 +452,10 @@ def get_new_evaluations_for_resident(email: str) -> pd.DataFrame:
         & (cases_df["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment")
     ].copy()
     mine["submitted_at"] = pd.to_datetime(mine["submitted_at"], errors="coerce", utc=True)
-    mine = mine[mine["submitted_at"] > last_seen].sort_values("submitted_at", ascending=False)
+    mine = mine[mine["submitted_at"] > last_seen]
+    mine["case_id"] = _norm_id(mine["case_id"])
+    mine = mine[~mine["case_id"].isin(get_viewed_case_ids(email))]
+    mine = mine.sort_values("submitted_at", ascending=False)
     return mine[_cols].reset_index(drop=True)
 
 
@@ -3320,19 +3368,22 @@ elif page == "home":
 
     # "New evaluation" badge: which attending-confirmed cases have
     # landed since this resident's last Home visit, each linked to its
-    # own read-only view (view_evaluation page). Only actually writes
-    # (mark_resident_evaluations_seen) when there's something to clear,
-    # or to bootstrap a resident who's never had a last-seen timestamp
-    # recorded yet — not on every routine visit once steady-state.
+    # own read-only view (view_evaluation page), which is what actually
+    # drops that one off the list (mark_evaluation_viewed(), called from
+    # that page) — merely showing the badge here does NOT clear
+    # anything, so it stays put across routine revisits/reruns instead
+    # of vanishing before it's actually been read. The one-time
+    # exception is a resident who's never had a last-seen timestamp at
+    # all yet (mark_resident_evaluations_seen() bootstraps it to now) —
+    # without that, every historical case would show as "new" forever.
     _resident_email = st.session_state["resident"]
     try:
-        _last_seen_before = get_resident_last_seen(_resident_email)
-        _new_evals = get_new_evaluations_for_resident(_resident_email)
-        if _last_seen_before is None or not _new_evals.empty:
+        if get_resident_last_seen(_resident_email) is None:
             mark_resident_evaluations_seen(_resident_email)
+        _new_evals = get_new_evaluations_for_resident(_resident_email)
         if not _new_evals.empty:
             _n = len(_new_evals)
-            st.success(f"🔔 You have {_n} new evaluation{'s' if _n != 1 else ''} since your last visit!")
+            st.success(f"🔔 You have {_n} new evaluation{'s' if _n != 1 else ''} waiting to be viewed!")
             _, _home_proc_df, _, _home_atnd_df = load_refs()
             _home_proc_names = {str(k): v for k, v in zip(_home_proc_df["procedure_id"], _home_proc_df["procedure_name"])}
             _home_atnd_lookup = dict(zip(_home_atnd_df["attending_id"], _home_atnd_df["attending_name"]))
@@ -3412,6 +3463,14 @@ elif page == "view_evaluation":
         if st.button("⬅️ Back to Home"):
             go_to("home")
         st.stop()
+
+    # Confirmed valid and this resident's own — drops it off the Home
+    # page's badge from here on, leaving any other still-unopened new
+    # evaluations untouched.
+    try:
+        mark_evaluation_viewed(_resident, _viewed_sub["case_id"])
+    except ConnectionError:
+        pass  # already showing them the evaluation either way
 
     page_header("📄 Evaluation")
     _render_evaluation_card(_viewed_sub)
