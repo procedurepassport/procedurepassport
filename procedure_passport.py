@@ -6,6 +6,7 @@ import datetime
 import json
 import html
 import re
+import difflib
 import hashlib
 import secrets
 import gspread
@@ -550,6 +551,197 @@ def ensure_procedure(proc_id: str, proc_name: str, specialty_id: str, steps_list
         } for i, step in enumerate(steps_list)])
         steps_df = pd.concat([steps_df, new_steps], ignore_index=True)
         write_sheet_df(SHEET_STEPS, steps_df)
+
+
+# ─────────────────────────────────────────────
+# STEP MERGING (admin "Merge Shared Steps" tool)
+# ─────────────────────────────────────────────
+# A step (e.g. "Patient Positioning") that's conceptually the same across
+# several procedures currently gets its own independent step_id under
+# each one (see ensure_procedure() above: S_{procedure_id}_{n}), with no
+# link between them — a resident's ratings for that step on one
+# procedure never connect to their ratings for "the same" step on
+# another. Nothing about the schema actually *requires* that, though:
+# steps rows are already scoped by procedure_id, and scores rows just
+# match whatever step_id a rating was saved under — so giving several
+# steps rows (one per procedure) the same step_id, and relinking their
+# scores rows to match, is a data migration, not a schema change.
+
+_STEP_FUZZY_MATCH_THRESHOLD = 0.70  # difflib ratio; see _differ_only_by_opposite_term
+                                     # below for why this alone isn't sufficient
+
+# Word pairs where a same-except-this-word step name pair almost always
+# means two deliberately *distinct* steps (e.g. "Left Ureter
+# Identification" vs "Right Ureter Identification"), not the same step
+# worded two ways — despite scoring a plain similarity ratio *higher*
+# than genuine synonyms like "Patient Positioning" vs "Position the
+# Patient" do, since it differs by only one word.
+_STEP_OPPOSITE_TERMS = [
+    ("left", "right"), ("proximal", "distal"), ("anterior", "posterior"),
+    ("superior", "inferior"), ("upper", "lower"), ("medial", "lateral"),
+    ("internal", "external"), ("superficial", "deep"), ("ipsilateral", "contralateral"),
+]
+
+
+def _normalize_step_text(text) -> str:
+    """Lowercase, trim, collapse whitespace — for comparing step names
+    regardless of case/spacing differences alone."""
+    return re.sub(r"\s+", " ", str(text).strip().lower())
+
+
+def _differ_only_by_opposite_term(norm_a: str, norm_b: str) -> bool:
+    """True if two normalized, same-length step names differ in exactly
+    one word, and that word pair is a known opposite (see
+    _STEP_OPPOSITE_TERMS) — see that constant's own comment for why this
+    guards against a specific, common false-positive pattern."""
+    words_a, words_b = norm_a.split(), norm_b.split()
+    if len(words_a) != len(words_b):
+        return False
+    diffs = [(wa, wb) for wa, wb in zip(words_a, words_b) if wa != wb]
+    if len(diffs) != 1:
+        return False
+    wa, wb = diffs[0]
+    return any({wa, wb} == {x, y} for x, y in _STEP_OPPOSITE_TERMS)
+
+
+def _slugify_step_label(text: str) -> str:
+    """UPPER_SNAKE_CASE-ish slug for a shared step_id, e.g. "Patient
+    Positioning" -> "PATIENT_POSITIONING"."""
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", text.strip()).strip("_").upper()
+    return slug[:40] or "STEP"
+
+
+def _unique_shared_step_id(label: str, existing_ids) -> str:
+    """A fresh SHARED_ step_id for `label` that doesn't collide with any
+    id in `existing_ids` — appends _2, _3, ... on collision (two
+    different labels slugifying to the same text, e.g. differing only in
+    punctuation)."""
+    base = f"SHARED_{_slugify_step_label(label)}"
+    candidate = base
+    n = 2
+    while candidate in existing_ids:
+        candidate = f"{base}_{n}"
+        n += 1
+    return candidate
+
+
+def _find_step_merge_candidates(steps_df: pd.DataFrame) -> list:
+    """Find groups of `steps` rows — each row from a different procedure
+    — that look like the same real-world step but don't yet share a
+    step_id. Two tiers, each a list-of-dicts entry with keys "kind"
+    ("exact"/"fuzzy"), "label" (default suggested canonical text),
+    "rows" (the matching steps_df rows, one per procedure) and "score":
+      - "exact": step_name is identical (after trimming/case-folding)
+        across 2+ procedures.
+      - "fuzzy": step_name is merely *similar* (difflib ratio, at least
+        _STEP_FUZZY_MATCH_THRESHOLD) across exactly 2 procedures — always
+        needs a human to confirm, and never auto-chained transitively
+        across more than one pair, so one bad suggestion can't drag
+        unrelated steps together.
+    A step_name reused more than once *within the same procedure* (a
+    genuine duplicate inside one procedure — a different and riskier
+    problem: collapsing two of one case's own steps into one, with a
+    ratings-reconciliation question this tool doesn't attempt to answer)
+    is excluded from every candidate entirely, not just left ungrouped.
+    Already-merged groups (every row already sharing one step_id) don't
+    reappear, so this is safe to call fresh after each merge — and
+    calling it fresh (not caching the result) is exactly what makes that
+    true, since a merge changes what's in `steps`."""
+    df = steps_df.copy()
+    df["_norm"] = df["step_name"].map(_normalize_step_text)
+    df = df[df["_norm"] != ""]
+
+    _dupe_within_proc = df.duplicated(subset=["procedure_id", "_norm"], keep=False)
+    df = df[~_dupe_within_proc]
+
+    candidates = []
+    _grouped_norms = set()
+    for norm, group in df.groupby("_norm"):
+        # The intra-procedure dedup above guarantees at most one row per
+        # procedure_id in `group`, so distinct step_ids and distinct
+        # procedures move in lockstep here — the procedure-count check is
+        # belt-and-suspenders, not load-bearing on its own.
+        if group["step_id"].nunique() <= 1 or group["procedure_id"].nunique() < 2:
+            continue
+        candidates.append({
+            "kind":  "exact",
+            "label": group.iloc[0]["step_name"],
+            "rows":  group.drop(columns=["_norm"]),
+            "score": 1.0,
+        })
+        _grouped_norms.add(norm)
+
+    # Fuzzy: pairwise only, among distinct normalized texts not already
+    # exact-grouped. Every remaining text has exactly one row left at
+    # this point — 2+ procedures would already be an exact-match group
+    # above, and 2+ rows in one procedure were excluded above too.
+    _remaining = df[~df["_norm"].isin(_grouped_norms)].drop_duplicates(subset=["_norm"])
+    _remaining_list = _remaining.to_dict("records")
+    for i in range(len(_remaining_list)):
+        for j in range(i + 1, len(_remaining_list)):
+            a, b = _remaining_list[i], _remaining_list[j]
+            if a["procedure_id"] == b["procedure_id"]:
+                continue  # can't tell two of one procedure's own steps apart this way
+            if _differ_only_by_opposite_term(a["_norm"], b["_norm"]):
+                continue
+            ratio = difflib.SequenceMatcher(None, a["_norm"], b["_norm"]).ratio()
+            if ratio >= _STEP_FUZZY_MATCH_THRESHOLD:
+                candidates.append({
+                    "kind":  "fuzzy",
+                    "label": a["step_name"],
+                    "rows":  pd.DataFrame([a, b]).drop(columns=["_norm"]),
+                    "score": ratio,
+                })
+
+    candidates.sort(key=lambda c: (c["kind"] != "exact", -c["score"]))
+    return candidates
+
+
+def _apply_step_merge(rows: pd.DataFrame, canonical_label: str) -> str:
+    """Repoint every steps/scores row identified by `rows` (one per
+    procedure, from a _find_step_merge_candidates() entry, possibly
+    narrowed by the admin unchecking some) onto one shared step_id,
+    renaming them all to `canonical_label`. Reuses an already-shared id
+    (SHARED_...) if exactly one is already present among `rows` — keeps
+    a step's id stable across repeat merges (e.g. folding a third
+    procedure's matching step in later) rather than minting a new one
+    each time — and refuses if `rows` spans two *different* existing
+    shared ids (merging two already-distinct shared steps into one is a
+    real decision this function won't make silently on its own).
+    Nothing is ever deleted — steps rows are relabeled in place and
+    scores rows are relinked, so rating history stays intact. Returns
+    the canonical step_id that ended up in use."""
+    existing_shared = sorted({sid for sid in rows["step_id"] if str(sid).startswith("SHARED_")})
+    if len(existing_shared) > 1:
+        raise ValueError(
+            "These steps already belong to two different shared groups "
+            f"({', '.join(existing_shared)}) — merge them together in a separate step first."
+        )
+
+    steps_df = read_sheet_df(SHEET_STEPS, expected_cols=["step_id", "procedure_id", "step_order", "step_name"])
+    canonical_id = existing_shared[0] if existing_shared else _unique_shared_step_id(
+        canonical_label, set(steps_df["step_id"])
+    )
+    old_ids = set(rows["step_id"]) - {canonical_id}
+
+    updated_steps = steps_df.copy()
+    _smask = updated_steps["step_id"].isin(rows["step_id"])
+    if _smask.sum() != len(rows):
+        raise ValueError("Could not find all selected steps — please reload and try again.")
+    updated_steps.loc[_smask, "step_id"]   = canonical_id
+    updated_steps.loc[_smask, "step_name"] = canonical_label
+    write_sheet_df(SHEET_STEPS, updated_steps)
+
+    if old_ids:
+        score_cols = ["case_id", "step_id", "rating", "rating_num",
+                      "case_complexity", "case_preparation", "overall_performance"]
+        scores_df = read_sheet_df(SHEET_SCORES, expected_cols=score_cols)
+        _scmask = scores_df["step_id"].isin(old_ids)
+        if _scmask.any():
+            scores_df.loc[_scmask, "step_id"] = canonical_id
+            write_sheet_df(SHEET_SCORES, scores_df)
+
+    return canonical_id
 
 
 def save_case(
@@ -3638,6 +3830,115 @@ elif page == "admin":
                         "Order":     _hits["step_order"],
                     })
                     st.dataframe(_hits_display, width="stretch", hide_index=True)
+
+        # Unlike "Find Steps by Name" above (read-only), this one writes:
+        # it repoints steps/scores rows so a step shared across
+        # procedures ends up under one step_id instead of one per
+        # procedure. See _find_step_merge_candidates()/_apply_step_merge()
+        # for the full design — nothing here is ever deleted, only
+        # relabeled/relinked, and every merge needs an explicit checked
+        # confirmation naming exactly what it's about to do.
+        with st.expander("🔗 Merge Shared Steps"):
+            st.caption(
+                "Finds steps that look like the same real step (e.g. "
+                "\"Patient Positioning\") recorded separately, with their "
+                "own step_id, under two or more procedures — and lets you "
+                "give them one shared step_id and one label, so a "
+                "resident's ratings for that step connect up the same way "
+                "no matter which procedure it was part of. Existing "
+                "ratings are relinked, never lost. Similarity-based "
+                "suggestions (marked \"possible match\") are a starting "
+                "point only, not a promise — always check both sides "
+                "before merging."
+            )
+            _merge_steps_df = read_sheet_df(
+                SHEET_STEPS, expected_cols=["step_id", "procedure_id", "step_order", "step_name"]
+            )
+            _merge_proc_lookup = dict(zip(procs_df["procedure_id"], procs_df["procedure_name"]))
+            _merge_candidates = _find_step_merge_candidates(_merge_steps_df)
+
+            if not _merge_candidates:
+                st.caption("No candidates found — every same-named step across procedures already shares one id.")
+            else:
+                # A merge changes how many candidates there are, so a
+                # stale index left over from before a rerun can fall
+                # outside the new range — reset it before the widget
+                # renders rather than letting st.selectbox raise on an
+                # out-of-range default (same guard used for the
+                # Comments Dashboard's Procedure/Attending filters).
+                if st.session_state.get("step_merge_candidate_sel", 0) >= len(_merge_candidates):
+                    st.session_state["step_merge_candidate_sel"] = 0
+
+                def _step_merge_candidate_label(i):
+                    c = _merge_candidates[i]
+                    _names = ", ".join(sorted(set(c["rows"]["step_name"])))
+                    _kind = "exact match" if c["kind"] == "exact" else f"possible match, {c['score']:.0%} similar"
+                    return f'{_names} — {len(c["rows"])} procedures ({_kind})'
+
+                _sel_idx = st.selectbox(
+                    "Candidate", range(len(_merge_candidates)),
+                    format_func=_step_merge_candidate_label, key="step_merge_candidate_sel",
+                )
+                _candidate  = _merge_candidates[_sel_idx]
+                _cand_rows  = _candidate["rows"].copy()
+                _cand_rows["Procedure"] = _cand_rows["procedure_id"].map(_merge_proc_lookup).fillna(_cand_rows["procedure_id"])
+                _cand_rows.insert(0, "Include", True)
+
+                _edited_rows = st.data_editor(
+                    _cand_rows[["Include", "Procedure", "step_name", "step_id"]].rename(
+                        columns={"step_name": "Step name"}
+                    ),
+                    column_config={
+                        "Include": st.column_config.CheckboxColumn(
+                            "Include", help="Uncheck to leave this one out of the merge.",
+                        ),
+                        "step_id": None,  # identity only — never shown or hand-edited
+                    },
+                    disabled=["Procedure", "Step name"],
+                    hide_index=True,
+                    width="stretch",
+                    key=f"step_merge_editor_{_sel_idx}",
+                )
+                _included_rows = _cand_rows[_edited_rows["Include"].tolist()]
+
+                _canonical_label = st.text_input(
+                    "Shared label for this step", value=_candidate["label"],
+                    key=f"step_merge_label_{_sel_idx}",
+                )
+
+                if len(_included_rows) < 2:
+                    st.caption("Select at least 2 rows to merge.")
+                else:
+                    _merge_scores_df = read_sheet_df(
+                        SHEET_SCORES,
+                        expected_cols=["case_id", "step_id", "rating", "rating_num",
+                                       "case_complexity", "case_preparation", "overall_performance"],
+                    )
+                    _affected_scores = _merge_scores_df[_merge_scores_df["step_id"].isin(_included_rows["step_id"])]
+                    st.caption(
+                        f"This will merge {len(_included_rows)} steps across "
+                        f"{_included_rows['procedure_id'].nunique()} procedures into one shared step, "
+                        f"repointing {len(_affected_scores)} existing case rating(s) onto it. Nothing is deleted."
+                    )
+                    _confirm_merge = st.checkbox(
+                        f'Yes, merge these into "{_canonical_label.strip()}"',
+                        key=f"confirm_step_merge_{_sel_idx}",
+                    )
+                    if st.button("Merge Steps", key="btn_merge_steps"):
+                        if not _canonical_label.strip():
+                            st.error("Please enter a label for the merged step.")
+                        elif not _confirm_merge:
+                            st.error("Please check the confirmation box above before merging.")
+                        elif _included_rows["procedure_id"].duplicated().any():
+                            st.error("Two selected rows belong to the same procedure — please reload and try again.")
+                        else:
+                            try:
+                                _new_id = _apply_step_merge(_included_rows, _canonical_label.strip())
+                                st.success(f'✅ Merged into "{_canonical_label.strip()}" ({_new_id})')
+                                time.sleep(0.5)
+                                st.rerun()
+                            except ValueError as _merge_exc:
+                                st.error(f"⚠️ {_merge_exc}")
     except ConnectionError as exc:
         show_gs_error(exc)
 
