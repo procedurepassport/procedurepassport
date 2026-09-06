@@ -3,7 +3,6 @@ import time
 import pandas as pd
 import uuid
 import datetime
-import io
 import json
 import html
 import re
@@ -1901,51 +1900,6 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     render_complexity_legend(key="complexity_legend_dashboard")
 
     render_prep_legend(key="prep_legend_dashboard")
-
-    st.markdown("---")
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        pivot_excel = pivot.copy()
-        pivot_excel["date"] = pivot_excel["date"].apply(fmt_date)
-        pivot_excel = pivot_excel.rename(columns={
-            "date":                "Date",
-            "attending_name":      "Attending",
-            "case_id":             "Case ID",
-            "case_complexity":     "Case Complexity",
-            "overall_performance": "Overall Performance",
-            "case_preparation":    "Daily Preparation",
-        })
-        pivot_excel.to_excel(writer, index=False, sheet_name="Cumulative")
-        ws_xl = writer.sheets["Cumulative"]
-        from openpyxl.styles import PatternFill, Font
-
-        step_fill_map = {k: v.lstrip("#") for k, v in RATING_HEX.items() if k not in ("Not Assessed",)}
-        step_fill_map["Not Assessed"] = "E0E0E0"
-
-        # 6 meta columns now precede the steps: Date, Attending, Case ID,
-        # Overall Performance, Case Complexity, Daily Preparation.
-        start_col = 7
-        for xl_row in ws_xl.iter_rows(
-            min_row=2, max_row=ws_xl.max_row,
-            min_col=start_col, max_col=6 + len(ordered_steps),
-        ):
-            for cell in xl_row:
-                val = cell.value
-                if val in step_fill_map:
-                    cell.fill = PatternFill(
-                        start_color=step_fill_map[val],
-                        end_color=step_fill_map[val],
-                        fill_type="solid",
-                    )
-                    cell.font = Font(color="FFFFFF" if val in ("Not Yet", "Auto") else "000000")
-
-    st.download_button(
-        label=f"📥 Download Excel — {procs_map.get(selected_proc, selected_proc)}",
-        data=output.getvalue(),
-        file_name=f"{filename_stub}_{selected_proc}_cumulative.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        key=f"dl_heatmap_{filename_stub}_{selected_proc}",
-    )
 
 
 # ─────────────────────────────────────────────
@@ -4274,16 +4228,6 @@ elif page == "comments":
         _show_att = _att_filter == "All Attendings"
 
         _render_comments_html_table(merged, _show_proc, _show_att)
-
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            merged.drop(columns=["Comments_html"]).to_excel(writer, index=False, sheet_name="Comments")
-        st.download_button(
-            label="📥 Download as Excel",
-            data=output.getvalue(),
-            file_name=f"{resident}_comments.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
 
         if st.button("⬅️ Back to Home"):
             go_to("home")
