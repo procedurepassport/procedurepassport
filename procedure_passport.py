@@ -858,6 +858,68 @@ def _attach_existing_step(source_step_id: str, target_procedure_id: str, step_or
     return canonical_id
 
 
+# Canonical full column list for the cases sheet — matches save_case()'s
+# own list exactly, so any read/write here (counting or deleting cases)
+# never drops a column write_sheet_df would otherwise silently lose.
+_CASE_COLS = ["case_id", "resident_email", "date", "specialty_id",
+              "procedure_id", "attending_id", "notes",
+              "case_complexity", "case_preparation", "overall_performance",
+              "robo_type", "improve", "how", "assessment_type", "submitted_at"]
+
+
+def _count_procedure_cases(procedure_id: str) -> int:
+    """How many `cases` rows reference `procedure_id`."""
+    cases_df = read_sheet_df(SHEET_CASES, expected_cols=_CASE_COLS)
+    return int((cases_df["procedure_id"] == procedure_id).sum())
+
+
+def _delete_procedure(procedure_id: str, delete_cases: bool) -> dict:
+    """Delete a procedure entirely: its row in `procedures`, and its own
+    steps rows in `steps` — a step shared with other procedures (via
+    Merge Shared Steps or Add Step) keeps its rows for those other
+    procedures untouched; only this procedure's own (procedure_id,
+    step_id) link is removed, same scoping as _delete_step(). If
+    `delete_cases`, also deletes every `cases` row for this procedure
+    and every `scores` row belonging to those cases.
+
+    Write order: steps, then the procedure row, then scores, then
+    cases — so a failure partway through leaves the more easily
+    reconstructed definitions (steps/procedure) gone before the
+    harder-to-recover historical data (scores/cases) is ever touched,
+    and a scores row is never left pointing at an already-deleted
+    case. Returns counts actually removed: {"steps", "cases",
+    "scores"}."""
+    steps_df = read_sheet_df(SHEET_STEPS, expected_cols=["step_id", "procedure_id", "step_order", "step_name"])
+    _step_mask = steps_df["procedure_id"] == procedure_id
+    n_steps = int(_step_mask.sum())
+    write_sheet_df(SHEET_STEPS, steps_df[~_step_mask].reset_index(drop=True))
+
+    procs_df = read_sheet_df(SHEET_PROCEDURES, expected_cols=["procedure_id", "procedure_name", "specialty_id"])
+    write_sheet_df(SHEET_PROCEDURES, procs_df[procs_df["procedure_id"] != procedure_id].reset_index(drop=True))
+
+    n_cases = 0
+    n_scores = 0
+    if delete_cases:
+        cases_df = read_sheet_df(SHEET_CASES, expected_cols=_CASE_COLS)
+        _case_mask = cases_df["procedure_id"] == procedure_id
+        case_ids = set(cases_df.loc[_case_mask, "case_id"])
+        n_cases = int(_case_mask.sum())
+
+        if case_ids:
+            score_cols = ["case_id", "step_id", "rating", "rating_num",
+                          "case_complexity", "case_preparation", "overall_performance"]
+            scores_df = read_sheet_df(SHEET_SCORES, expected_cols=score_cols)
+            _score_mask = scores_df["case_id"].isin(case_ids)
+            n_scores = int(_score_mask.sum())
+            if n_scores:
+                write_sheet_df(SHEET_SCORES, scores_df[~_score_mask].reset_index(drop=True))
+
+        if n_cases:
+            write_sheet_df(SHEET_CASES, cases_df[~_case_mask].reset_index(drop=True))
+
+    return {"steps": n_steps, "cases": n_cases, "scores": n_scores}
+
+
 def save_case(
     resident_email: str,
     date,
@@ -3908,6 +3970,69 @@ elif page == "admin":
                                 st.success(f"✅ Updated '{new_pname}'")
                                 time.sleep(0.5)
                                 st.rerun()
+
+        with st.expander("🗑️ Delete Procedure"):
+            st.caption(
+                "Removes a procedure entirely — its own steps too. A step "
+                "shared with other procedures (see Merge Shared Steps/Add "
+                "Step below) keeps its link to those other procedures; "
+                "only this procedure's own copy is removed."
+            )
+            if procs_df.empty:
+                st.caption("No procedures yet.")
+            else:
+                _del_proc_name = st.selectbox(
+                    "Procedure", procs_df["procedure_name"], key="del_proc_sel"
+                )
+                _del_proc_id = procs_df.loc[
+                    procs_df["procedure_name"] == _del_proc_name, "procedure_id"
+                ].values[0]
+                _del_proc_steps_df = read_sheet_df(
+                    SHEET_STEPS, expected_cols=["step_id", "procedure_id", "step_order", "step_name"]
+                )
+                _del_proc_steps = _del_proc_steps_df[
+                    _del_proc_steps_df["procedure_id"] == _del_proc_id
+                ].sort_values("step_order")
+                _del_proc_case_count = _count_procedure_cases(_del_proc_id)
+
+                st.markdown(f"**Procedure:** {_del_proc_name}")
+                st.markdown("**Steps:**")
+                if _del_proc_steps.empty:
+                    st.caption("No steps.")
+                else:
+                    st.dataframe(
+                        pd.DataFrame({"Step": _del_proc_steps["step_name"].tolist()}),
+                        width="stretch", hide_index=True,
+                    )
+                st.markdown(f"**Entries (cases) recorded:** {_del_proc_case_count}")
+
+                _del_proc_confirmed = True
+                if _del_proc_case_count > 0:
+                    st.warning(
+                        f"⚠️ {_del_proc_case_count} case(s) have been recorded for "
+                        f'"{_del_proc_name}". Deleting it will also delete those '
+                        "cases and every rating in them — this can't be undone."
+                    )
+                    _del_proc_confirmed = st.checkbox(
+                        f'Yes, delete "{_del_proc_name}" and its {_del_proc_case_count} case(s)',
+                        key=f"confirm_del_proc_{_del_proc_id}",
+                    )
+
+                if st.button("Delete Procedure", key="btn_del_proc"):
+                    if not _del_proc_confirmed:
+                        st.error("Please check the confirmation box above before deleting.")
+                    else:
+                        _del_proc_result = _delete_procedure(_del_proc_id, delete_cases=True)
+                        _del_proc_extra = (
+                            f", {_del_proc_result['cases']} case(s), {_del_proc_result['scores']} rating(s)"
+                            if _del_proc_result["cases"] else ""
+                        )
+                        st.success(
+                            f'✅ Deleted "{_del_proc_name}" ({_del_proc_result["steps"]} step(s)'
+                            f'{_del_proc_extra})'
+                        )
+                        time.sleep(0.5)
+                        st.rerun()
 
         with st.expander("🗑️ Delete Step"):
             st.caption(
