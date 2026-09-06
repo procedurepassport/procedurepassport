@@ -2503,13 +2503,14 @@ if _attending_logged_in:
         st.cache_data.clear()
         st.rerun()
 
-# ── Sidebar rating legend (shown only on relevant pages) ──
-if st.session_state.get("page") in (
-    "start", "assessment", "dashboard", "cumulative", "attending_assessment",
-    "attending_start", "attending_resident_dashboard",
-):
+# ── Sidebar rating legend — shown whenever either sidebar above is
+# (same conditions as the resident/attending nav blocks), so every left
+# sidebar that actually appears carries it, expanded by default. ──
+if (
+    _logged_in and st.session_state["page"] not in ("login", "attending_assessment", "attending_confirmation")
+) or _attending_logged_in:
     st.sidebar.markdown("---")
-    render_rating_legend(key="rating_legend_sidebar", container=st.sidebar)
+    render_rating_legend(key="rating_legend_sidebar", container=st.sidebar, expanded=True)
 
 # ─────────────────────────────────────────────
 # SHARED CSS
