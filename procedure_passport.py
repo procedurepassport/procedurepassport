@@ -2894,6 +2894,32 @@ button p {
 # ─────────────────────────────────────────────
 page = st.session_state["page"]
 
+# A rerun re-renders this whole script in place rather than navigating
+# the browser, so switching pages (e.g. after submitting a form, or via
+# a sidebar link) otherwise leaves the scroll position wherever it was
+# on the *previous* page — landing mid-page, or on the confirmation
+# screen after an attending submits an evaluation. Scroll back to the
+# top, but only when the page actually changed: most reruns are just an
+# ordinary widget interaction on the same page, and those should never
+# yank the user's scroll position out from under them.
+if st.session_state.get("_scroll_top_page") != page:
+    st.session_state["_scroll_top_page"] = page
+    st.iframe(
+        """
+        <script>
+        (function() {
+            window.parent.scrollTo(0, 0);
+            var doc = window.parent.document;
+            var containers = doc.querySelectorAll(
+                '[data-testid="stAppViewContainer"], [data-testid="stMain"], section.main'
+            );
+            containers.forEach(function(c) { c.scrollTop = 0; });
+        })();
+        </script>
+        """,
+        height=1,
+    )
+
 
 # ════════════════════════════════════════════════════════════
 # PAGE: LOGIN
