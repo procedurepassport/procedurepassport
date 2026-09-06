@@ -4713,6 +4713,20 @@ elif page == "attending_assessment":
         )
     assessment_instructions_note()
 
+    if st.session_state.get("role") == "attending" and st.session_state.get("attending_login_email"):
+        # Only for a logged-in attending's own "Start Assessment" flow —
+        # an anonymous magic-link recipient (this same page, reached via
+        # query params, no attending session at all) has no
+        # attending_start/attending_home to go back to.
+        with st.container(key="assess_top_nav"):
+            _top_cols_att_assess = st.columns([1, 1, 4])
+            with _top_cols_att_assess[0]:
+                if st.button("⬅️ Back to Start", key="att_assess_back_top"):
+                    go_to("attending_start")
+            with _top_cols_att_assess[1]:
+                if st.button("🏠 Home", key="att_assess_home_top"):
+                    go_to("attending_home")
+
     if _is_robotic_procedure(_att_proc_name):
         robo_type = render_robo_type_picker("robo_type", default=(_draft or {}).get("robo_type", "Xi"))
     else:
