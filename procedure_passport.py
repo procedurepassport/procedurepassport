@@ -4194,6 +4194,9 @@ elif page == "comments":
         _proc_selected = st.session_state.get("comments_proc_filter", "All Procedures")
         _att_selected = st.session_state.get("comments_att_filter", "All Attendings")
 
+        _comments_heading = "All Comments" if (_proc_selected == "All Procedures" and _att_selected == "All Attendings") else "Comments"
+        st.markdown(f"### 💬 {_comments_heading}")
+
         _proc_pool = merged if _att_selected == "All Attendings" else merged[merged["Attending"] == _att_selected]
         _proc_opts = ["All Procedures"] + sorted(_proc_pool["Procedure"].dropna().unique().tolist())
         _att_pool = merged if _proc_selected == "All Procedures" else merged[merged["Procedure"] == _proc_selected]
