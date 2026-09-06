@@ -4019,6 +4019,17 @@ elif page == "admin":
                 _cand_rows["Procedure"] = _cand_rows["procedure_id"].map(_merge_proc_lookup).fillna(_cand_rows["procedure_id"])
                 _cand_rows.insert(0, "Include", True)
 
+                # Keyed by this candidate's own step_ids, not _sel_idx — a
+                # merge/delete elsewhere changes how many candidates there
+                # are, which can shift a *different* candidate into the
+                # position _sel_idx used to point to. A position-based key
+                # would then show whatever was last typed/toggled for
+                # WHATEVER candidate used to be at that position, on the
+                # new one now shown there — same fix already applied to
+                # Edit Existing Procedure/Attending/Resident: key by
+                # content identity, not list position.
+                _cand_key = "_".join(sorted(_cand_rows["step_id"].astype(str)))
+
                 _edited_rows = st.data_editor(
                     _cand_rows[["Include", "Procedure", "step_name", "step_id"]].rename(
                         columns={"step_name": "Step name"}
@@ -4032,13 +4043,13 @@ elif page == "admin":
                     disabled=["Procedure", "Step name"],
                     hide_index=True,
                     width="stretch",
-                    key=f"step_merge_editor_{_sel_idx}",
+                    key=f"step_merge_editor_{_cand_key}",
                 )
                 _included_rows = _cand_rows[_edited_rows["Include"].tolist()]
 
                 _canonical_label = st.text_input(
                     "Shared label for this step", value=_candidate["label"],
-                    key=f"step_merge_label_{_sel_idx}",
+                    key=f"step_merge_label_{_cand_key}",
                 )
 
                 if len(_included_rows) < 2:
@@ -4057,7 +4068,7 @@ elif page == "admin":
                     )
                     _confirm_merge = st.checkbox(
                         f'Yes, merge these into "{_canonical_label.strip()}"',
-                        key=f"confirm_step_merge_{_sel_idx}",
+                        key=f"confirm_step_merge_{_cand_key}",
                     )
                     if st.button("Merge Steps", key="btn_merge_steps"):
                         if not _canonical_label.strip():
@@ -4084,7 +4095,7 @@ elif page == "admin":
                     "Delete a row from this candidate",
                     range(len(_cand_rows)),
                     format_func=lambda i: f'{_cand_rows.iloc[i]["Procedure"]} — {_cand_rows.iloc[i]["step_name"]}',
-                    key=f"step_merge_delete_sel_{_sel_idx}",
+                    key=f"step_merge_delete_sel_{_cand_key}",
                 )
                 _del_cand_row = _cand_rows.iloc[_del_cand_idx]
                 _del_cand_rating_count = _count_step_ratings(_del_cand_row["step_id"], _del_cand_row["procedure_id"])
@@ -4099,7 +4110,10 @@ elif page == "admin":
                     _del_cand_confirmed = st.checkbox(
                         f'Yes, delete "{_del_cand_row["step_name"]}" ({_del_cand_row["Procedure"]}) '
                         f"and its {_del_cand_rating_count} rating(s)",
-                        key=f"confirm_step_merge_delete_{_sel_idx}_{_del_cand_idx}",
+                        # Keyed by the row's own step_id, not _del_cand_idx
+                        # (also just a list position) — same reasoning as
+                        # _cand_key above.
+                        key=f"confirm_step_merge_delete_{_del_cand_row['step_id']}_{_del_cand_row['procedure_id']}",
                     )
 
                 if st.button("Delete This Step", key="btn_step_merge_delete"):
