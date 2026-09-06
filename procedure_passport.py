@@ -4221,7 +4221,16 @@ elif page == "comments":
         _proc_selected = st.session_state.get("comments_proc_filter", "All Procedures")
         _att_selected = st.session_state.get("comments_att_filter", "All Attendings")
 
-        _comments_heading = "All Comments" if (_proc_selected == "All Procedures" and _att_selected == "All Attendings") else "Comments"
+        _proc_chosen = _proc_selected != "All Procedures"
+        _att_chosen = _att_selected != "All Attendings"
+        if _proc_chosen and _att_chosen:
+            _comments_heading = f"{_proc_selected} — Comments by {_att_selected}"
+        elif _proc_chosen:
+            _comments_heading = f"{_proc_selected} — All Comments"
+        elif _att_chosen:
+            _comments_heading = f"All Comments by {_att_selected}"
+        else:
+            _comments_heading = "All Comments"
         st.markdown(f"### 💬 {_comments_heading}")
 
         _proc_pool = merged if _att_selected == "All Attendings" else merged[merged["Attending"] == _att_selected]
