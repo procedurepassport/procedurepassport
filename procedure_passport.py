@@ -268,6 +268,36 @@ def write_sheet_df(sheet_name: str, df: pd.DataFrame) -> None:
     st.cache_data.clear()  # invalidate all read caches after every write
 
 
+def write_sheet_df_no_shrink(sheet_name: str, df: pd.DataFrame) -> None:
+    """Like write_sheet_df(), but for call sites that only ever mean to
+    rename/reorder/append — never to remove rows. Every write in this
+    app is "read the whole table, mutate a local copy, write the whole
+    table back" with no per-row transactionality and no other guard
+    against it: a stale cached read (up to write_sheet_df's own
+    5-minute TTL), a concurrent edit from another tab/session/admin
+    landing in between, or simply a bug in the mutation logic can all
+    silently turn into "write back a table that's missing rows it
+    shouldn't be" — which looks, from the outside, exactly like data
+    being deleted, because it is.
+
+    Re-reads the sheet fresh (st.cache_data.clear() first, so this
+    can't itself be fooled by the same staleness it's guarding against)
+    immediately before comparing, and raises ValueError instead of
+    writing if `df` has fewer rows than what's live right now. Callers
+    that genuinely intend to remove rows (deleting a resident, an
+    attending, a step a user chose to delete, ...) should keep calling
+    write_sheet_df() directly — this is only for the "should never
+    shrink" case."""
+    st.cache_data.clear()
+    current = read_sheet_df(sheet_name)
+    if len(df) < len(current):
+        raise ValueError(
+            f'Refusing to save "{sheet_name}": that would go from {len(current)} '
+            f"rows to {len(df)}. Please reload and try again — nothing was written."
+        )
+    write_sheet_df(sheet_name, df)
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def load_refs():
     """Load all reference tables in one shot (cached 300 s)."""
@@ -3267,13 +3297,18 @@ elif page == "admin":
                 )
 
                 if st.button("Update Procedure", key="btn_upd_proc"):
-                    procs_df.loc[procs_df["procedure_id"] == sel_proc_id, "procedure_name"] = new_pname
-                    write_sheet_df(SHEET_PROCEDURES, procs_df)
-
+                    # Validated up front, before anything is written: an
+                    # empty step list, a lost procedure identity, or a
+                    # sign this update would touch other procedures'
+                    # steps all bail out with nothing saved at all,
+                    # rather than partially writing one half of the
+                    # update and not the other.
                     _clean_steps = _edited_steps_df.dropna(subset=["Step"]).copy()
                     _clean_steps = _clean_steps[_clean_steps["Step"].astype(str).str.strip() != ""]
                     if _clean_steps.empty:
                         st.error("A procedure needs at least one step — add one before updating.")
+                    elif not sel_proc_id:
+                        st.error("Could not identify which procedure to update — please reload and try again.")
                     else:
                         # Stable sort: rows with no Order (a just-added row
                         # left blank) fall to the end rather than the top.
@@ -3296,12 +3331,42 @@ elif page == "admin":
                                 "step_name":    str(_row["Step"]).strip(),
                             })
                         updated_steps = pd.DataFrame(_new_step_rows)
-                        steps_df = _all_steps_df[_all_steps_df["procedure_id"] != sel_proc_id]
-                        steps_df = pd.concat([steps_df, updated_steps], ignore_index=True)
-                        write_sheet_df(SHEET_STEPS, steps_df)
-                        st.success(f"✅ Updated '{new_pname}'")
-                        time.sleep(0.5)
-                        st.rerun()
+                        _other_procs_steps = _all_steps_df[_all_steps_df["procedure_id"] != sel_proc_id]
+                        # Guardrail: this update should only ever touch
+                        # sel_proc_id's own steps. If filtering it out
+                        # somehow also dropped other procedures' steps
+                        # (a type-mismatch on procedure_id, a bug here or
+                        # upstream), _other_procs_steps would come out
+                        # short — refuse rather than silently wiping
+                        # steps that were never meant to be touched.
+                        _expected_other_count = len(_all_steps_df) - len(_proc_steps_df)
+                        if len(_other_procs_steps) != _expected_other_count:
+                            st.error(
+                                "⚠️ Safety check failed: this update would have changed steps "
+                                "belonging to other procedures too. Nothing was saved — please "
+                                "reload and try again, or contact support if this keeps happening."
+                            )
+                        else:
+                            # Steps are allowed to shrink here — deleting
+                            # a row is how an admin removes a step, and
+                            # the _other_procs_steps check above already
+                            # guarantees this write only ever touches
+                            # sel_proc_id's own rows. The procedure list
+                            # itself should never shrink from this
+                            # flow (there's no "delete a procedure" here
+                            # at all) — write_sheet_df_no_shrink refuses
+                            # if it somehow would.
+                            steps_df = pd.concat([_other_procs_steps, updated_steps], ignore_index=True)
+                            write_sheet_df(SHEET_STEPS, steps_df)
+                            try:
+                                procs_df.loc[procs_df["procedure_id"] == sel_proc_id, "procedure_name"] = new_pname
+                                write_sheet_df_no_shrink(SHEET_PROCEDURES, procs_df)
+                            except ValueError as _guard_exc:
+                                st.error(f"⚠️ {_guard_exc}")
+                            else:
+                                st.success(f"✅ Updated '{new_pname}'")
+                                time.sleep(0.5)
+                                st.rerun()
 
         # Read-only lookup, deliberately separate from the editor above —
         # for spotting a step name (e.g. "Case Preparation") reused, or
