@@ -2927,13 +2927,15 @@ button p {
 }
 /* Step-Level Ratings expander, then a divider, then the three legend
    expanders (Rating/Prep/Complexity), then another divider before
-   Development/Improvement/Feed-Forward — three gaps pulled in to match
-   the same targets used elsewhere in this file: expander-to-divider
-   (~48px default) to 32px on both sides, and divider-to-first-legend
-   (~33px default) to 16px, same as the two-line-sandwich treatment the
-   Improve/How section above gets. The key class lands directly on
-   each expander's own wrapper (unlike a plain st.container), so no
-   :has() indirection is needed here. */
+   Development/Improvement/Feed-Forward. The expander-to-divider gap
+   above the legends (~48px default) is pulled to 32px, matching that
+   same target used elsewhere in this file. The legend block itself
+   sits centered between its two divider lines at ~16px each — first
+   legend's default ~33px gap to the line above it pulled in to match
+   the last legend's default ~48px gap to the line below, same
+   two-line-sandwich treatment the Improve/How section above gets. The
+   key class lands directly on each expander's own wrapper (unlike a
+   plain st.container), so no :has() indirection is needed here. */
 .st-key-step_ratings_expander_resident,
 .st-key-step_ratings_expander_attending {
     margin-bottom: -16px !important;
@@ -2944,7 +2946,7 @@ button p {
 }
 .st-key-complexity_legend_resident,
 .st-key-complexity_legend_attending {
-    margin-bottom: -16px !important;
+    margin-bottom: -32px !important;
 }
 /* Start page: "Assess Together", "Self-Assessment", and "Blank
    Magic-Link for Attending" all get the same white background /
