@@ -114,6 +114,17 @@ RATING_COLOR = {
     k: f"background-color:{v}; color:{'white' if k in ('Not Yet','Auto') else 'black'};"
     for k, v in RATING_HEX.items()
 }
+# Descriptive text for the Step/Skill Autonomy Rating Legend
+# (render_rating_legend()). "Not Assessed" has no description of its
+# own — it just means no rating was given for that step.
+RATING_DESCRIPTIONS = {
+    "Shown/Told": "Attending actively teaches the step/skill through verbal explanation (likely for the first time).",
+    "Not Yet":    "Resident attempts but is as yet unable to perform the step/skill.",
+    "Steer":      "Attending offers physical assistance or must perform parts of the step/skill for it to be accomplished.",
+    "Prompt":     "Attending offers verbal assistance to accomplish the step/skill.",
+    "Back up":    "Attending may offer feedback and refinement not necessary to the safe execution of the step/skill.",
+    "Auto":       "Resident demonstrates the skill level expected for graduation. Is able to lead this step/skill without attending input.",
+}
 
 def fmt_date(d):
     """Format a date value as MM-DD-YYYY; pass through non-date strings unchanged."""
@@ -955,6 +966,37 @@ def render_prep_legend(key: str, expanded: bool = False) -> None:
             '</div>',
             unsafe_allow_html=True,
         )
+
+
+def render_rating_legend(key: str, expanded: bool = False, container=None) -> None:
+    """Step/Skill Autonomy Rating Legend: a color swatch plus description
+    for each step rating (RATING_HEX/RATING_DESCRIPTIONS), plus the
+    heatmap-only "Never Attempted" stripe (no rating of its own — a step
+    that simply wasn't part of that particular case). Shared by the
+    dashboards (alongside the Preparation Scale/Case Complexity legends)
+    and the sidebar (shown while filling out an assessment), same
+    swatch+description layout as render_prep_legend(). `container` lets
+    this render inside st.sidebar instead of the main area; `key` must
+    be unique among expanders visible at once."""
+    _container = container if container is not None else st
+    _items = [
+        ("Never Attempted", "#FAFAFA", "", NEVER_ATTEMPTED_STRIPE_CSS),
+        ("Not Assessed",    "#E0E0E0", "1px solid #aaa", ""),
+    ] + [(label, color, "", "") for label, color in RATING_HEX.items() if label != "Not Assessed"]
+    _rows = []
+    for label, color, border, pattern in _items:
+        _bdr = f"border:{border};" if border else ""
+        _pat = f"background-image:{pattern};" if pattern else ""
+        _desc = RATING_DESCRIPTIONS.get(label)
+        _text = f'<b>{label}</b> — {_desc}' if _desc else f'<b>{label}</b>'
+        _rows.append(
+            f'<div class="legend-desc-row">'
+            f'<span class="legend-swatch" style="background-color:{color};{_bdr}{_pat}"></span>'
+            f'<span>{_text}</span>'
+            f'</div>'
+        )
+    with _container.expander("Step/Skill Autonomy Rating Legend", expanded=expanded, key=key):
+        st.markdown('<div class="legend-desc-list">' + "".join(_rows) + '</div>', unsafe_allow_html=True)
 
 
 def render_robo_type_picker(value_key: str, default: str = "Xi") -> str:
@@ -1829,13 +1871,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             f'</span>'
         )
 
-    st.markdown("#### Ratings Legend")
-    _rating_legend_html = _swatch("#FAFAFA", "Never Attempted", pattern=NEVER_ATTEMPTED_STRIPE_CSS)
-    _rating_legend_html += "".join(
-        _swatch(v, k, "1px solid #aaa" if k == "Not Assessed" else "")
-        for k, v in RATING_HEX.items()
-    )
-    st.markdown('<div class="legend-row">' + _rating_legend_html + "</div>", unsafe_allow_html=True)
+    render_rating_legend(key="rating_legend_dashboard")
 
     st.markdown("#### Case Complexity")
     st.markdown(
@@ -2467,26 +2503,7 @@ if st.session_state.get("page") in (
     "attending_start", "attending_resident_dashboard",
 ):
     st.sidebar.markdown("---")
-    st.sidebar.markdown("**Rating Scale**")
-    _LEGEND_ITEMS = [
-        ("Never Attempted","#FAFAFA", "", NEVER_ATTEMPTED_STRIPE_CSS),
-        ("Not Assessed",   "#E0E0E0", "1px solid #aaa", ""),
-        ("Shown/Told",     "#9E9E9E", "", ""),
-        ("Not Yet",        "#378ADD", "", ""),
-        ("Steer",          "#FF944D", "", ""),
-        ("Prompt",         "#FFD633", "", ""),
-        ("Back up",        "#99E699", "", ""),
-        ("Auto",           "#33CC33", "", ""),
-    ]
-    for _label, _color, _border, _pattern in _LEGEND_ITEMS:
-        _border_css = f"border:{_border};" if _border else ""
-        _pattern_css = f"background-image:{_pattern};" if _pattern else ""
-        st.sidebar.markdown(
-            f'<span style="display:inline-block;width:13px;height:13px;'
-            f'background:{_color};{_border_css}{_pattern_css}border-radius:2px;'
-            f'margin-right:6px;vertical-align:middle;"></span>{_label}',
-            unsafe_allow_html=True,
-        )
+    render_rating_legend(key="rating_legend_sidebar", container=st.sidebar)
 
 # ─────────────────────────────────────────────
 # SHARED CSS
