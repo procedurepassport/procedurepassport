@@ -4913,6 +4913,7 @@ elif page == "attending_confirmation":
     st.success("Thank you! Your evaluation has been recorded.")
 
     _render_evaluation_card(sub)
+    render_prep_legend(key="prep_legend_attending_confirmation")
 
     st.markdown("---")
     if st.session_state.get("role") == "attending" and st.session_state.get("attending_login_email"):
