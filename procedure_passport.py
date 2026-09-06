@@ -2925,34 +2925,19 @@ button p {
 [data-testid="stLayoutWrapper"]:has(> .st-key-assess_robo_row) {
     margin-bottom: -16px !important;
 }
-/* Step-Level Ratings expander: a divider now sits between it and
-   Development/Improvement/Feed-Forward below, so its default ~48px
-   gap to that divider needs pulling in — to 32px, matching the
-   divider's own default gap to the field below it, for a symmetric,
-   deliberate-looking gap on both sides of the line instead of the
-   default's uneven ~48px/32px split. The key class lands directly on
-   this expander's own wrapper (unlike a plain st.container), so no
-   :has() indirection is needed here. */
-.st-key-step_ratings_expander_resident,
-.st-key-step_ratings_expander_attending {
-    margin-bottom: -16px !important;
-}
-/* The three legend expanders (Rating/Prep/Complexity) sandwiched
-   between the two dividers above the Overall Performance/Daily
-   Preparation row: measured default gaps were ~33px above the first
-   one and ~48px below the last one (the 16px gaps between the three
-   expanders themselves were already even and left alone) — pull each
-   in so both land at the same ~16px, centering the block between the
-   two lines like the Improve/How section above. Same
-   key-lands-directly-on-the-wrapper case as Step-Level Ratings above,
-   so no :has() indirection needed. */
-.st-key-rating_legend_resident,
-.st-key-rating_legend_attending {
-    margin-top: -17px !important;
-}
+/* Step-Level Ratings expander is now directly followed by the three
+   legend expanders (Rating/Prep/Complexity), not a divider — their
+   default ~16px consecutive-expander gap already reads fine as-is, so
+   nothing to pull in here. The last of the three (Case Complexity
+   Legend) sits right before the Development/Improvement/Feed-Forward
+   divider instead: its default ~48px gap to that divider gets pulled
+   in to 32px, the same target used elsewhere in this file for an
+   expander-to-divider gap. The key class lands directly on the
+   expander's own wrapper (unlike a plain st.container), so no :has()
+   indirection is needed here. */
 .st-key-complexity_legend_resident,
 .st-key-complexity_legend_attending {
-    margin-bottom: -32px !important;
+    margin-bottom: -16px !important;
 }
 /* Start page: "Assess Together", "Self-Assessment", and "Blank
    Magic-Link for Attending" all get the same white background /
@@ -3961,12 +3946,6 @@ elif page == "assessment":
 
     st.markdown("---")
 
-    render_rating_legend(key="rating_legend_resident")
-    render_prep_legend(key="prep_legend_resident")
-    render_complexity_legend(key="complexity_legend_resident")
-
-    st.markdown("---")
-
     with st.container(key="assess_ratings_row"):
         _overall_col, _prep_col = st.columns(2)
         with _overall_col:
@@ -4017,6 +3996,10 @@ elif page == "assessment":
                 index=RATING_OPTIONS.index(current) if current in RATING_OPTIONS else 0,
                 key=f"score_{step_id}",
             )
+
+    render_rating_legend(key="rating_legend_resident")
+    render_prep_legend(key="prep_legend_resident")
+    render_complexity_legend(key="complexity_legend_resident")
 
     st.markdown("---")
 
@@ -4785,12 +4768,6 @@ elif page == "attending_assessment":
 
     st.markdown("---")
 
-    render_rating_legend(key="rating_legend_attending")
-    render_prep_legend(key="prep_legend_attending")
-    render_complexity_legend(key="complexity_legend_attending")
-
-    st.markdown("---")
-
     with st.container(key="assess_ratings_row"):
         _att_overall_col, _att_prep_col = st.columns(2)
         with _att_overall_col:
@@ -4840,6 +4817,10 @@ elif page == "attending_assessment":
             scores[step_id] = st.selectbox(
                 step_name, RATING_OPTIONS, index=_step_idx, key=f"att_score_{step_id}"
             )
+
+    render_rating_legend(key="rating_legend_attending")
+    render_prep_legend(key="prep_legend_attending")
+    render_complexity_legend(key="complexity_legend_attending")
 
     st.markdown("---")
 
