@@ -4679,7 +4679,7 @@ elif page == "attending_assessment":
     _draft_resolved_scores: dict = {}
     with st.expander(
         header_break_before("Step-Level Ratings for", _att_proc_name),
-        expanded=False,
+        expanded=True,
         key="step_ratings_expander_attending",
     ):
         # Case Complexity leads the Step-Level Ratings section, then each
