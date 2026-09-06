@@ -570,12 +570,17 @@ def ensure_procedure(proc_id: str, proc_name: str, specialty_id: str, steps_list
 _STEP_FUZZY_MATCH_THRESHOLD = 0.70  # difflib ratio; see _differ_only_by_opposite_term
                                      # below for why this alone isn't sufficient
 
-# Word pairs where a same-except-this-word step name pair almost always
-# means two deliberately *distinct* steps (e.g. "Left Ureter
-# Identification" vs "Right Ureter Identification"), not the same step
-# worded two ways — despite scoring a plain similarity ratio *higher*
-# than genuine synonyms like "Patient Positioning" vs "Position the
-# Patient" do, since it differs by only one word.
+# Word pairs where a same-except-this-word step name pair *often* means
+# two deliberately *distinct* steps (e.g. "Left Ureter Identification"
+# vs "Right Ureter Identification"), not the same step worded two ways —
+# despite scoring a plain similarity ratio *higher* than genuine
+# synonyms like "Patient Positioning" vs "Position the Patient" do,
+# since it differs by only one word. Still surfaced as a suggestion
+# (per feedback) rather than excluded outright — some pairs really are
+# meant to merge (a step rated the same way regardless of side, say) —
+# just flagged and sorted lower so it reads as "look closer" rather
+# than "as good a match as any other fuzzy suggestion". Nothing in
+# either tier auto-merges or auto-groups on its own regardless.
 _STEP_OPPOSITE_TERMS = [
     ("left", "right"), ("proximal", "distal"), ("anterior", "posterior"),
     ("superior", "inferior"), ("upper", "lower"), ("medial", "lateral"),
@@ -637,7 +642,10 @@ def _find_step_merge_candidates(steps_df: pd.DataFrame) -> list:
         _STEP_FUZZY_MATCH_THRESHOLD) across exactly 2 procedures — always
         needs a human to confirm, and never auto-chained transitively
         across more than one pair, so one bad suggestion can't drag
-        unrelated steps together.
+        unrelated steps together. Carries an extra "opposite_term" flag
+        (see _STEP_OPPOSITE_TERMS) when the only difference is a paired
+        opposite like left/right — still suggested, just worth a closer
+        look before confirming.
     A step_name reused more than once *within the same procedure* (a
     genuine duplicate inside one procedure — a different and riskier
     problem: collapsing two of one case's own steps into one, with a
@@ -682,18 +690,28 @@ def _find_step_merge_candidates(steps_df: pd.DataFrame) -> list:
             a, b = _remaining_list[i], _remaining_list[j]
             if a["procedure_id"] == b["procedure_id"]:
                 continue  # can't tell two of one procedure's own steps apart this way
-            if _differ_only_by_opposite_term(a["_norm"], b["_norm"]):
-                continue
             ratio = difflib.SequenceMatcher(None, a["_norm"], b["_norm"]).ratio()
             if ratio >= _STEP_FUZZY_MATCH_THRESHOLD:
+                # Still suggested, per feedback — never auto-grouped or
+                # auto-merged either way (nothing in this list merges
+                # without an explicit confirmed click) — just flagged so
+                # the UI can warn louder, since this pattern scores
+                # *higher* on plain text similarity than genuine
+                # synonyms do (differing by only one word), yet is
+                # usually two deliberately distinct steps.
                 candidates.append({
-                    "kind":  "fuzzy",
-                    "label": a["step_name"],
-                    "rows":  pd.DataFrame([a, b]).drop(columns=["_norm"]),
-                    "score": ratio,
+                    "kind":          "fuzzy",
+                    "label":         a["step_name"],
+                    "rows":          pd.DataFrame([a, b]).drop(columns=["_norm"]),
+                    "score":         ratio,
+                    "opposite_term": _differ_only_by_opposite_term(a["_norm"], b["_norm"]),
                 })
 
-    candidates.sort(key=lambda c: (c["kind"] != "exact", -c["score"]))
+    # Exact first, then fuzzy by score — but a flagged opposite-term
+    # fuzzy pair sorts after every other fuzzy suggestion regardless of
+    # its own (often high) score, so it doesn't crowd out more likely
+    # genuine matches near the top of the list.
+    candidates.sort(key=lambda c: (c["kind"] != "exact", c.get("opposite_term", False), -c["score"]))
     return candidates
 
 
@@ -742,6 +760,58 @@ def _apply_step_merge(rows: pd.DataFrame, canonical_label: str) -> str:
             write_sheet_df(SHEET_SCORES, scores_df)
 
     return canonical_id
+
+
+def _count_step_ratings(step_id: str, procedure_id: str) -> int:
+    """How many `scores` rows reference `step_id` from one of
+    `procedure_id`'s own cases. Scoped through `cases` (case_id ->
+    procedure_id) rather than just counting every scores row with this
+    step_id, because a shared step_id (see _apply_step_merge) can be
+    linked from several procedures at once — a case belonging to a
+    *different* procedure that also uses this step_id must not be
+    counted (or later deleted) here."""
+    cases_df = read_sheet_df(
+        SHEET_CASES, expected_cols=["case_id", "resident_email", "specialty_id", "procedure_id", "assessment_type"]
+    )
+    case_ids = set(cases_df.loc[cases_df["procedure_id"] == procedure_id, "case_id"])
+    score_cols = ["case_id", "step_id", "rating", "rating_num",
+                  "case_complexity", "case_preparation", "overall_performance"]
+    scores_df = read_sheet_df(SHEET_SCORES, expected_cols=score_cols)
+    return int(((scores_df["step_id"] == step_id) & (scores_df["case_id"].isin(case_ids))).sum())
+
+
+def _delete_step(step_id: str, procedure_id: str, delete_ratings: bool) -> int:
+    """Remove one procedure's link to a step — its single
+    (procedure_id, step_id) row in `steps`. If `delete_ratings`, also
+    deletes the `scores` rows counted by _count_step_ratings() for this
+    exact (step_id, procedure_id) pair — never every scores row with
+    this step_id globally, for the same shared-step reason described
+    there. `steps` is written first, `scores` second, so a failure
+    partway through leaves ratings merely orphaned (recoverable) rather
+    than deleted without ever having removed the step they belonged to.
+    Returns the number of ratings rows deleted (0 if `delete_ratings`
+    is False or none existed)."""
+    steps_df = read_sheet_df(SHEET_STEPS, expected_cols=["step_id", "procedure_id", "step_order", "step_name"])
+    _mask = (steps_df["step_id"] == step_id) & (steps_df["procedure_id"] == procedure_id)
+    if not _mask.any():
+        raise ValueError("Could not find that step — please reload and try again.")
+    write_sheet_df(SHEET_STEPS, steps_df[~_mask].reset_index(drop=True))
+
+    if not delete_ratings:
+        return 0
+
+    cases_df = read_sheet_df(
+        SHEET_CASES, expected_cols=["case_id", "resident_email", "specialty_id", "procedure_id", "assessment_type"]
+    )
+    case_ids = set(cases_df.loc[cases_df["procedure_id"] == procedure_id, "case_id"])
+    score_cols = ["case_id", "step_id", "rating", "rating_num",
+                  "case_complexity", "case_preparation", "overall_performance"]
+    scores_df = read_sheet_df(SHEET_SCORES, expected_cols=score_cols)
+    _scmask = (scores_df["step_id"] == step_id) & (scores_df["case_id"].isin(case_ids))
+    n_deleted = int(_scmask.sum())
+    if n_deleted:
+        write_sheet_df(SHEET_SCORES, scores_df[~_scmask].reset_index(drop=True))
+    return n_deleted
 
 
 def save_case(
@@ -3795,6 +3865,66 @@ elif page == "admin":
                                 time.sleep(0.5)
                                 st.rerun()
 
+        with st.expander("🗑️ Delete Step"):
+            st.caption(
+                "Removes one step from one procedure. If that step's id is "
+                "shared across multiple procedures (see Merge Shared Steps "
+                "below), only this procedure's link to it is removed — "
+                "other procedures using the same shared step keep it."
+            )
+            if procs_df.empty:
+                st.caption("No procedures yet.")
+            else:
+                _del_step_proc_name = st.selectbox(
+                    "Procedure", procs_df["procedure_name"], key="del_step_proc_sel"
+                )
+                _del_step_proc_id = procs_df.loc[
+                    procs_df["procedure_name"] == _del_step_proc_name, "procedure_id"
+                ].values[0]
+                _del_step_all_steps_df = read_sheet_df(
+                    SHEET_STEPS, expected_cols=["step_id", "procedure_id", "step_order", "step_name"]
+                )
+                _del_step_proc_steps = _del_step_all_steps_df[
+                    _del_step_all_steps_df["procedure_id"] == _del_step_proc_id
+                ].sort_values("step_order")
+                if _del_step_proc_steps.empty:
+                    st.caption("This procedure has no steps.")
+                else:
+                    _del_step_name = st.selectbox(
+                        "Step", _del_step_proc_steps["step_name"], key="del_step_sel"
+                    )
+                    _del_step_id = _del_step_proc_steps.loc[
+                        _del_step_proc_steps["step_name"] == _del_step_name, "step_id"
+                    ].values[0]
+                    _del_step_rating_count = _count_step_ratings(_del_step_id, _del_step_proc_id)
+
+                    _del_step_confirmed = True
+                    if _del_step_rating_count > 0:
+                        st.warning(
+                            f"⚠️ {_del_step_rating_count} existing case rating(s) use this step "
+                            f'under "{_del_step_proc_name}". Deleting it can also delete those '
+                            "ratings — this can't be undone."
+                        )
+                        _del_step_confirmed = st.checkbox(
+                            f'Yes, delete "{_del_step_name}" and its {_del_step_rating_count} rating(s)',
+                            key=f"confirm_del_step_{_del_step_id}_{_del_step_proc_id}",
+                        )
+
+                    if st.button("Delete Step", key="btn_del_step"):
+                        if not _del_step_confirmed:
+                            st.error("Please check the confirmation box above before deleting.")
+                        else:
+                            try:
+                                _n_del = _delete_step(_del_step_id, _del_step_proc_id, delete_ratings=True)
+                                st.success(
+                                    f'✅ Deleted "{_del_step_name}"'
+                                    + (f" and {_n_del} rating(s)" if _n_del else "")
+                                )
+                                time.sleep(0.5)
+                                st.rerun()
+                            except ValueError as _del_exc:
+                                st.error(f"⚠️ {_del_exc}")
+
         # Read-only lookup, deliberately separate from the editor above —
         # for spotting a step name (e.g. "Case Preparation") reused, or
         # near-duplicated, across procedures before deciding which ones to
@@ -3872,7 +4002,12 @@ elif page == "admin":
                 def _step_merge_candidate_label(i):
                     c = _merge_candidates[i]
                     _names = ", ".join(sorted(set(c["rows"]["step_name"])))
-                    _kind = "exact match" if c["kind"] == "exact" else f"possible match, {c['score']:.0%} similar"
+                    if c["kind"] == "exact":
+                        _kind = "exact match"
+                    elif c.get("opposite_term"):
+                        _kind = f"⚠️ {c['score']:.0%} similar, but differs by e.g. left/right — usually distinct"
+                    else:
+                        _kind = f"possible match, {c['score']:.0%} similar"
                     return f'{_names} — {len(c["rows"])} procedures ({_kind})'
 
                 _sel_idx = st.selectbox(
@@ -3939,6 +4074,50 @@ elif page == "admin":
                                 st.rerun()
                             except ValueError as _merge_exc:
                                 st.error(f"⚠️ {_merge_exc}")
+
+                st.markdown("---")
+                st.caption(
+                    "Or, if one of these isn't actually a match — delete it "
+                    "outright instead of merging it (or leaving it as-is)."
+                )
+                _del_cand_idx = st.selectbox(
+                    "Delete a row from this candidate",
+                    range(len(_cand_rows)),
+                    format_func=lambda i: f'{_cand_rows.iloc[i]["Procedure"]} — {_cand_rows.iloc[i]["step_name"]}',
+                    key=f"step_merge_delete_sel_{_sel_idx}",
+                )
+                _del_cand_row = _cand_rows.iloc[_del_cand_idx]
+                _del_cand_rating_count = _count_step_ratings(_del_cand_row["step_id"], _del_cand_row["procedure_id"])
+
+                _del_cand_confirmed = True
+                if _del_cand_rating_count > 0:
+                    st.warning(
+                        f"⚠️ {_del_cand_rating_count} existing case rating(s) use this step "
+                        f'under "{_del_cand_row["Procedure"]}". Deleting it can also delete '
+                        "those ratings — this can't be undone."
+                    )
+                    _del_cand_confirmed = st.checkbox(
+                        f'Yes, delete "{_del_cand_row["step_name"]}" ({_del_cand_row["Procedure"]}) '
+                        f"and its {_del_cand_rating_count} rating(s)",
+                        key=f"confirm_step_merge_delete_{_sel_idx}_{_del_cand_idx}",
+                    )
+
+                if st.button("Delete This Step", key="btn_step_merge_delete"):
+                    if not _del_cand_confirmed:
+                        st.error("Please check the confirmation box above before deleting.")
+                    else:
+                        try:
+                            _n_del = _delete_step(
+                                _del_cand_row["step_id"], _del_cand_row["procedure_id"], delete_ratings=True
+                            )
+                            st.success(
+                                f'✅ Deleted "{_del_cand_row["step_name"]}" ({_del_cand_row["Procedure"]})'
+                                + (f" and {_n_del} rating(s)" if _n_del else "")
+                            )
+                            time.sleep(0.5)
+                            st.rerun()
+                        except ValueError as _del_exc:
+                            st.error(f"⚠️ {_del_exc}")
     except ConnectionError as exc:
         show_gs_error(exc)
 
