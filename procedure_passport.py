@@ -4548,6 +4548,17 @@ elif page == "attending_resident_dashboard":
         show_gs_error(exc)
         st.stop()
 
+    if procedure_id:
+        # case_matrix was already fetched above, and the dropdown only
+        # ever offers a procedure_id that's in it, so it's never empty
+        # here. Shown above the comments (per feedback) whenever a
+        # procedure is chosen.
+        _render_resident_heatmap(
+            case_matrix, steps_df, procs_map, procedure_id,
+            filename_stub=resident_choice.replace(" ", "_"),
+        )
+        st.markdown("---")
+
     if all_comments_df.empty:
         # Nothing to filter or toggle — skip the section header/button
         # entirely rather than showing controls over an empty table.
@@ -4568,16 +4579,6 @@ elif page == "attending_resident_dashboard":
             st.info("No comments recorded yet.")
         else:
             _render_comments_html_table(comments_df, show_proc=show_all_comments, show_att=True)
-
-    if procedure_id:
-        st.markdown("---")
-        # case_matrix was already fetched above, and the dropdown only
-        # ever offers a procedure_id that's in it, so it's never empty
-        # here.
-        _render_resident_heatmap(
-            case_matrix, steps_df, procs_map, procedure_id,
-            filename_stub=resident_choice.replace(" ", "_"),
-        )
 
     st.markdown("---")
     if st.button("⬅️ Back to Home", key="att_dash_bottom_home"):
