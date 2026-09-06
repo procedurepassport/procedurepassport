@@ -3282,7 +3282,13 @@ elif page == "admin":
                 _existing_step_ids = set(_proc_steps_df["step_id"])
                 _steps_editor_df = pd.DataFrame({
                     "step_id": _proc_steps_df["step_id"].tolist(),
-                    "Order":   list(range(1, len(_proc_steps_df) + 1)),
+                    # float, not int — a plain range() here gives the
+                    # column an integer dtype, which st.data_editor's
+                    # NumberColumn then renders as an integer-only
+                    # editor (no decimal point typeable at all), even
+                    # though the column_config below asks for fractional
+                    # values.
+                    "Order":   [float(i) for i in range(1, len(_proc_steps_df) + 1)],
                     "Step":    _proc_steps_df["step_name"].tolist(),
                 })
                 st.caption(
@@ -3297,6 +3303,7 @@ elif page == "admin":
                         "step_id": None,  # identity only — never shown or hand-edited
                         "Order": st.column_config.NumberColumn(
                             "Order", help="Position in the sequence. Fractional values are fine.",
+                            step=0.5,
                         ),
                         "Step": st.column_config.TextColumn("Step", required=True),
                     },
