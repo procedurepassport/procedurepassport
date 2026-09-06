@@ -2937,6 +2937,23 @@ button p {
 .st-key-step_ratings_expander_attending {
     margin-bottom: -16px !important;
 }
+/* The three legend expanders (Rating/Prep/Complexity) sandwiched
+   between the two dividers above the Overall Performance/Daily
+   Preparation row: measured default gaps were ~33px above the first
+   one and ~48px below the last one (the 16px gaps between the three
+   expanders themselves were already even and left alone) — pull each
+   in so both land at the same ~16px, centering the block between the
+   two lines like the Improve/How section above. Same
+   key-lands-directly-on-the-wrapper case as Step-Level Ratings above,
+   so no :has() indirection needed. */
+.st-key-rating_legend_resident,
+.st-key-rating_legend_attending {
+    margin-top: -17px !important;
+}
+.st-key-complexity_legend_resident,
+.st-key-complexity_legend_attending {
+    margin-bottom: -32px !important;
+}
 /* Start page: "Assess Together", "Self-Assessment", and "Blank
    Magic-Link for Attending" all get the same white background /
    bold red border look, overriding whichever primary/secondary
