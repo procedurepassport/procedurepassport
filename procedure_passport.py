@@ -1500,11 +1500,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     # intact on the second line rather than splitting the procedure name
     # or "Progress"/"Heatmap" from each other.
     _heatmap_heading = header_break_before(f"{proc_display_name} —", "Progress Heatmap")
-    st.markdown(
-        f"### {_heatmap_heading}\n"
-        "Most recent cases at the top. Zoom out to screenshot this grid. 📸"
-    )
-    st.caption("💡 Tip: To screenshot the full table — on mobile use print preview; on desktop use File > Print (Cmd+P / Ctrl+P), then adjust the scale percentage down until all columns fit on one page before screenshotting.")
+    st.markdown(f"### {_heatmap_heading}\nMost recent cases at the top.")
 
     pivot_sorted = pivot.sort_values("date", ascending=False)
 
@@ -4237,8 +4233,6 @@ elif page == "comments":
         if st.button("⬅️ Back to Home"):
             go_to("home")
     else:
-        st.caption("💡 Tip: To screenshot the full table — on mobile use print preview; on desktop use File > Print (Cmd+P / Ctrl+P), then adjust the scale percentage down until all columns fit on one page before screenshotting.")
-
         # Fix 8: procedure/attending filter dropdowns — each one's options
         # are narrowed by the OTHER dropdown's current selection, so e.g.
         # filtering to a procedure leaves only the attendings who have
@@ -4539,7 +4533,6 @@ elif page == "attending_resident_dashboard":
         st.session_state["att_dash_show_all_comments"] = False
     show_all_comments = st.session_state["att_dash_show_all_comments"] or not procedure_id
 
-    st.caption("💡 Tip: this page is print-friendly — on desktop use File > Print (Cmd+P / Ctrl+P); on mobile use print preview.")
     st.markdown("---")
 
     try:
