@@ -2925,16 +2925,23 @@ button p {
 [data-testid="stLayoutWrapper"]:has(> .st-key-assess_robo_row) {
     margin-bottom: -16px !important;
 }
-/* Step-Level Ratings expander is now directly followed by the three
-   legend expanders (Rating/Prep/Complexity), not a divider — their
-   default ~16px consecutive-expander gap already reads fine as-is, so
-   nothing to pull in here. The last of the three (Case Complexity
-   Legend) sits right before the Development/Improvement/Feed-Forward
-   divider instead: its default ~48px gap to that divider gets pulled
-   in to 32px, the same target used elsewhere in this file for an
-   expander-to-divider gap. The key class lands directly on the
-   expander's own wrapper (unlike a plain st.container), so no :has()
-   indirection is needed here. */
+/* Step-Level Ratings expander, then a divider, then the three legend
+   expanders (Rating/Prep/Complexity), then another divider before
+   Development/Improvement/Feed-Forward — three gaps pulled in to match
+   the same targets used elsewhere in this file: expander-to-divider
+   (~48px default) to 32px on both sides, and divider-to-first-legend
+   (~33px default) to 16px, same as the two-line-sandwich treatment the
+   Improve/How section above gets. The key class lands directly on
+   each expander's own wrapper (unlike a plain st.container), so no
+   :has() indirection is needed here. */
+.st-key-step_ratings_expander_resident,
+.st-key-step_ratings_expander_attending {
+    margin-bottom: -16px !important;
+}
+.st-key-rating_legend_resident,
+.st-key-rating_legend_attending {
+    margin-top: -17px !important;
+}
 .st-key-complexity_legend_resident,
 .st-key-complexity_legend_attending {
     margin-bottom: -16px !important;
@@ -3997,6 +4004,8 @@ elif page == "assessment":
                 key=f"score_{step_id}",
             )
 
+    st.markdown("---")
+
     render_rating_legend(key="rating_legend_resident")
     render_prep_legend(key="prep_legend_resident")
     render_complexity_legend(key="complexity_legend_resident")
@@ -4817,6 +4826,8 @@ elif page == "attending_assessment":
             scores[step_id] = st.selectbox(
                 step_name, RATING_OPTIONS, index=_step_idx, key=f"att_score_{step_id}"
             )
+
+    st.markdown("---")
 
     render_rating_legend(key="rating_legend_attending")
     render_prep_legend(key="prep_legend_attending")
