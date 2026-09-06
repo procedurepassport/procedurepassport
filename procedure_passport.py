@@ -2646,12 +2646,22 @@ button p {
     white-space: normal !important;
     overflow-wrap: break-word;
 }
-/* "Click to Expand" hint on its own line under that label, at 3/4 of
-   its size — a generated ::after (rather than a second line of real
-   text) since st.expander's label is a single inline markdown string. */
-.st-key-step_ratings_expander_resident summary [data-testid="stMarkdownContainer"] p::after,
-.st-key-step_ratings_expander_attending summary [data-testid="stMarkdownContainer"] p::after {
+/* "Click to Expand"/"Click to Collapse" hint on its own line under
+   that label, at 3/4 of its size — a generated ::after (rather than a
+   second line of real text) since st.expander's label is a single
+   inline markdown string. Which text shows is driven by the native
+   <details> element's own "open" attribute (same signal the green
+   border below reacts to) — no JS needed. */
+.st-key-step_ratings_expander_resident details:not([open]) summary [data-testid="stMarkdownContainer"] p::after,
+.st-key-step_ratings_expander_attending details:not([open]) summary [data-testid="stMarkdownContainer"] p::after {
     content: "Click to Expand";
+    display: block;
+    font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.75);
+    font-weight: normal;
+}
+.st-key-step_ratings_expander_resident details[open] summary [data-testid="stMarkdownContainer"] p::after,
+.st-key-step_ratings_expander_attending details[open] summary [data-testid="stMarkdownContainer"] p::after {
+    content: "Click to Collapse";
     display: block;
     font-size: calc(var(--pp-substep-font, 1.3125rem) * 0.75);
     font-weight: normal;
