@@ -3201,6 +3201,53 @@ elif page == "admin":
                     st.warning("Please fill in all fields.")
 
         if not residents.empty:
+            with st.expander("✏️ Edit Resident"):
+                edit_res_email = st.selectbox(
+                    "Select resident to edit", residents["email"], key="edit_res_select"
+                )
+                _edit_res_row = residents[residents["email"] == edit_res_email].iloc[0]
+                _edit_res_spec_match = spec_df.loc[
+                    spec_df["specialty_id"] == _edit_res_row["specialty_id"], "specialty_name"
+                ]
+                _edit_res_spec_default = _edit_res_spec_match.values[0] if len(_edit_res_spec_match) else None
+                _edit_res_spec_options = list(spec_df["specialty_name"])
+                _edit_res_spec_idx = (
+                    _edit_res_spec_options.index(_edit_res_spec_default)
+                    if _edit_res_spec_default in _edit_res_spec_options else 0
+                )
+                # Keyed by edit_res_email, not a fixed key — same fix as Edit
+                # Existing Procedure's name field: a fixed key means Streamlit
+                # keeps showing whatever was last TYPED here for a DIFFERENT
+                # resident once this widget has rendered once, ignoring
+                # value= on every later rerun — switching "Select resident to
+                # edit" alone didn't reset it, so a stale name silently
+                # carried over. Email itself isn't editable here (unlike
+                # Edit Attending) — it's the key every case/score/comment
+                # record references a resident by, and changing it here
+                # wouldn't update any of those, silently orphaning their
+                # whole history.
+                edit_res_name_new = st.text_input(
+                    "Full name", value=str(_edit_res_row["name"]), key=f"edit_res_name_{edit_res_email}"
+                )
+                edit_res_spec = st.selectbox(
+                    "Specialty", _edit_res_spec_options, index=_edit_res_spec_idx,
+                    key=f"edit_res_spec_{edit_res_email}",
+                )
+                if st.button("Save Changes", key="btn_edit_res"):
+                    if not edit_res_name_new.strip():
+                        st.error("Please enter a resident name.")
+                    else:
+                        _spec_match = spec_df[spec_df["specialty_name"].astype(str).str.strip() == str(edit_res_spec).strip()]
+                        _new_spec_id = _spec_match["specialty_id"].values[0] if len(_spec_match) > 0 else None
+                        updated = residents.copy()
+                        _mask = updated["email"] == edit_res_email
+                        updated.loc[_mask, "name"]         = edit_res_name_new.strip()
+                        updated.loc[_mask, "specialty_id"] = _new_spec_id
+                        write_sheet_df(SHEET_RESIDENTS, updated)
+                        st.success(f"✅ Saved {edit_res_name_new.strip()}")
+                        time.sleep(0.5)
+                        st.rerun()
+
             with st.expander("🔑 Reset Password"):
                 st.caption("Clears their stored password — their next login will prompt them to set a new one.")
                 reset_email = st.selectbox("Select resident", residents["email"], key="reset_res_pw")
@@ -3288,16 +3335,25 @@ elif page == "admin":
                     _edit_spec_options.index(_edit_spec_default)
                     if _edit_spec_default in _edit_spec_options else 0
                 )
+                # Keyed by attending_id, not a fixed key — same fix as Edit
+                # Existing Procedure's name field: a fixed key means Streamlit
+                # keeps showing whatever was last TYPED here for a DIFFERENT
+                # attending once these widgets have rendered once, ignoring
+                # value=/index= on every later rerun — switching "Select
+                # attending to edit" alone didn't reset them, so stale values
+                # from whichever attending was edited previously silently
+                # carried over and could get saved onto this one instead.
+                _sel_att_id = _edit_row["attending_id"]
                 edit_att_name_new = st.text_input(
-                    "Attending name", value=str(_edit_row["attending_name"]), key="edit_att_name"
+                    "Attending name", value=str(_edit_row["attending_name"]), key=f"edit_att_name_{_sel_att_id}"
                 )
                 edit_att_spec = st.selectbox(
-                    "Specialty", _edit_spec_options, index=_edit_spec_idx, key="edit_att_spec"
+                    "Specialty", _edit_spec_options, index=_edit_spec_idx, key=f"edit_att_spec_{_sel_att_id}"
                 )
                 edit_att_email = st.text_input(
                     "Email (blank = no login)",
                     value="" if pd.isna(_edit_row["email"]) else str(_edit_row["email"]),
-                    key="edit_att_email",
+                    key=f"edit_att_email_{_sel_att_id}",
                 )
                 if st.button("Save Changes", key="btn_edit_att"):
                     if not edit_att_name_new.strip():
