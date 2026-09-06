@@ -2721,6 +2721,18 @@ button p {
 .st-key-assess_top_nav button p {
     white-space: nowrap;
 }
+/* Tighten the nav row's default ~48px gap to the divider right below
+   it down to 16px — but only when it's directly followed by that
+   divider (non-robotic procedures). A robotic procedure has the Robot
+   picker row between them instead (own already-tuned spacing) —
+   :has(+ ...) below only matches the no-picker case, so the picker
+   case is left alone rather than colliding with it. Both the
+   resident's and the logged-in attending's assessment pages share
+   this key. */
+[data-testid="stLayoutWrapper"]:has(> .st-key-assess_top_nav)
+    + [data-testid="stElementContainer"]:has(hr) {
+    margin-top: -32px !important;
+}
 /* Robot picker row ("Robot:" plus the Xi/SP/DV5 checkboxes): same
    shrink-to-content trick as the top nav above, so the label and all
    three checkboxes sit close together on the left instead of each
