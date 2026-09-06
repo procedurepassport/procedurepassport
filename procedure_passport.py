@@ -3995,7 +3995,7 @@ elif page == "admin":
                 ].sort_values("step_order")
                 _del_proc_case_count = _count_procedure_cases(_del_proc_id)
 
-                st.markdown(f"**Procedure:** {_del_proc_name}")
+                st.markdown(f"**Procedure:** {_del_proc_name} ({_del_proc_id})")
                 st.markdown("**Steps:**")
                 if _del_proc_steps.empty:
                     st.caption("No steps.")
