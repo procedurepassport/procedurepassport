@@ -155,6 +155,15 @@ PREP_HEX = {
     "Well Prepared":       "#99E699",
     "Highly Prepared":     "#33CC33",
 }
+# Descriptive text for the Preparation Scale Legend (render_prep_legend()).
+# Keyed the same as PREP_HEX so the two stay in lockstep.
+PREP_DESCRIPTIONS = {
+    "Unprepared":          "Lacks essential knowledge, skills, or resources; cannot perform the task or meet basic expectations.",
+    "Poorly Prepared":     "Has some knowledge but significant gaps; requires substantial coaching or support to perform adequately.",
+    "Adequately Prepared": "Meets most requirements; can perform the task with standard support.",
+    "Well Prepared":       "Fully equipped to perform the task; can handle challenges with minimal supervision.",
+    "Highly Prepared":     "Exceeds requirements; can adapt to new challenges or complex situations.",
+}
 O_SCORE_HEX = {
     "1": "#378ADD",
     "2": "#FF944D",
@@ -916,6 +925,29 @@ def _on_robo_checkbox_change(value_key: str, widget_keys: dict, clicked_label: s
         st.session_state[value_key] = clicked_label
     else:
         st.session_state[widget_keys[clicked_label]] = True
+
+
+def render_prep_legend(key: str, expanded: bool = False) -> None:
+    """Preparation Scale Legend: a color swatch plus its full description
+    for each Daily Preparation level (PREP_HEX/PREP_DESCRIPTIONS). Shared
+    by the assessment/pre-fill forms (right under the Daily Preparation
+    dropdown) and the dashboards (alongside the Ratings/Case Complexity
+    legends) so the scale is explained the same way everywhere it's
+    used. `key` must be unique among expanders visible on the same page
+    at once."""
+    with st.expander("Preparation Scale Legend", expanded=expanded, key=key):
+        st.markdown(
+            '<div class="legend-desc-list">' +
+            "".join(
+                f'<div class="legend-desc-row">'
+                f'<span class="legend-swatch" style="background-color:{color}"></span>'
+                f'<span><b>{label}</b> — {PREP_DESCRIPTIONS[label]}</span>'
+                f'</div>'
+                for label, color in PREP_HEX.items()
+            ) +
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def render_robo_type_picker(value_key: str, default: str = "Xi") -> str:
@@ -1806,13 +1838,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         unsafe_allow_html=True,
     )
 
-    st.markdown("#### Daily Preparation")
-    st.markdown(
-        '<div class="legend-row">' +
-        "".join(_swatch(v, k) for k, v in PREP_HEX.items()) +
-        "</div>",
-        unsafe_allow_html=True,
-    )
+    render_prep_legend(key="prep_legend_dashboard")
 
     st.markdown("---")
     output = io.BytesIO()
@@ -2518,6 +2544,26 @@ button p {
     border-radius: 3px;
     border: 1px solid var(--secondary-background-color);
     display: inline-block;
+}
+/* Preparation Scale Legend (render_prep_legend()): one row per level,
+   swatch beside its full description rather than the compact
+   .legend-row/.legend-item chips above, since the text here runs to a
+   full sentence instead of a single word or two. */
+.legend-desc-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.legend-desc-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    line-height: 1.3;
+}
+.legend-desc-row .legend-swatch {
+    flex-shrink: 0;
+    margin-top: 0.15rem;
 }
 /* Home page cards: keep the three action buttons vertically aligned
    even when title/description text wraps to different heights. */
@@ -3892,6 +3938,8 @@ elif page == "assessment":
                 key="assess_preparation",
             )
 
+    render_prep_legend(key="prep_legend_resident")
+
     with st.expander(
         header_break_before("Step-Level Ratings for", _proc_name),
         expanded=False,
@@ -4700,6 +4748,8 @@ elif page == "attending_assessment":
             _att_cp_default = _d.get("case_preparation", "Not Assessed")
             _att_cp_idx = _att_cp_opts.index(_att_cp_default) if _att_cp_default in _att_cp_opts else 0
             case_preparation = st.selectbox("Daily Preparation", _att_cp_opts, index=_att_cp_idx, key="assess_preparation")
+
+    render_prep_legend(key="prep_legend_attending")
 
     _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
     _att_cc_default = _d.get("case_complexity", "— Select complexity —")
