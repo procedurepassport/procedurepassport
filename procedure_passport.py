@@ -4501,7 +4501,8 @@ elif page == "attending_resident_dashboard":
         # entirely rather than showing controls over an empty table.
         st.info("💬 No comments recorded for this resident yet.")
     else:
-        st.markdown(f"### 💬 Comments — {resident_choice}")
+        _comments_heading = "All Comments" if show_all_comments else "Comments"
+        st.markdown(f"### 💬 {_comments_heading} — {resident_choice}")
         if procedure_id:
             _toggle_label = "Show All Comments" if not show_all_comments else f"Show Only {procedure_choice} Comments"
             if st.button(_toggle_label, key="att_dash_comments_toggle"):
