@@ -530,6 +530,13 @@ def ensure_attending(name: str, specialty_id: str, email: str = "") -> None:
 
 
 def ensure_procedure(proc_id: str, proc_name: str, specialty_id: str, steps_list: list) -> None:
+    """`steps_list` is a list of (step_id, step_name) pairs — every step
+    a brand-new procedure starts with must already exist in the catalog
+    (created via ➕ Add Step, or reused from another procedure), resolved
+    and promoted to a shared id by the caller (see the Add New Procedure
+    admin handler's use of _resolve_step_id_for_attach()) before this is
+    called; this function no longer mints its own fresh per-procedure
+    step_ids."""
     proc_cols = ["procedure_id", "procedure_name", "specialty_id"]
     procs_df  = read_sheet_df(SHEET_PROCEDURES, expected_cols=proc_cols)
     if proc_id not in procs_df["procedure_id"].values:
@@ -544,11 +551,11 @@ def ensure_procedure(proc_id: str, proc_name: str, specialty_id: str, steps_list
     steps_df  = read_sheet_df(SHEET_STEPS, expected_cols=step_cols)
     if not (steps_df["procedure_id"] == proc_id).any():
         new_steps = pd.DataFrame([{
-            "step_id":      f"S_{proc_id}_{i+1:02d}",
+            "step_id":      step_id,
             "procedure_id": proc_id,
             "step_order":   i + 1,
-            "step_name":    step,
-        } for i, step in enumerate(steps_list)])
+            "step_name":    step_name,
+        } for i, (step_id, step_name) in enumerate(steps_list)])
         steps_df = pd.concat([steps_df, new_steps], ignore_index=True)
         write_sheet_df(SHEET_STEPS, steps_df)
 
@@ -814,27 +821,59 @@ def _delete_step(step_id: str, procedure_id: str, delete_ratings: bool) -> int:
     return n_deleted
 
 
-def _attach_existing_step(source_step_id: str, target_procedure_id: str, step_order) -> str:
-    """Add `source_step_id` (an existing step, from any procedure — or
-    already a step of several) to `target_procedure_id` as a new step at
-    `step_order`, reusing its exact step_id rather than minting a fresh,
-    disconnected one for the same text — so ratings for it connect the
-    same way no matter which procedure it's attached through, with no
-    separate Merge Shared Steps pass needed afterward.
+def _list_existing_steps(exclude_procedure_id=None) -> pd.DataFrame:
+    """One row per distinct step_id across the whole catalog — including
+    a step created via ➕ Add Step but not yet attached to any procedure
+    (a `steps` row with a blank procedure_id) — optionally excluding
+    whatever `exclude_procedure_id` already has (by step_id), so
+    building/editing one procedure's own step list only offers steps it
+    doesn't already include. Used everywhere a step is picked from the
+    existing catalog rather than typed: Add New Procedure, and Edit
+    Existing Procedure's "add an existing step" picker."""
+    all_steps_df = read_sheet_df(SHEET_STEPS, expected_cols=["step_id", "procedure_id", "step_order", "step_name"])
+    candidates = all_steps_df.drop_duplicates(subset=["step_id"])
+    if exclude_procedure_id is not None:
+        _own_ids = set(all_steps_df.loc[all_steps_df["procedure_id"] == exclude_procedure_id, "step_id"])
+        candidates = candidates[~candidates["step_id"].isin(_own_ids)]
+    return candidates
 
-    If `source_step_id` isn't already a shared (SHARED_...) id, promotes
-    it to one first via _apply_step_merge() — reusing that function's
-    own logic (it mints a fresh id and relinks every existing scores row
-    for it) even though there's only one row to "merge" here; the effect
-    is exactly a rename-in-place plus a ratings relink, which is exactly
-    what's needed before this step can safely be shared.
+
+def _resolve_step_id_for_attach(step_id: str) -> str:
+    """Promote `step_id` to a shared (SHARED_...) id if it isn't one
+    already, reusing _apply_step_merge()'s own mint-and-relink logic
+    even for a single row — the effect is exactly a rename-in-place
+    plus a ratings relink, which is what's needed before a step
+    created (or historically added) under a plain procedure-scoped id
+    can safely be attached to one more procedure. Returns the id
+    actually in use afterward (unchanged if it was already shared).
+    Every path that attaches an existing step to a procedure — Add New
+    Procedure, Edit Existing Procedure's picker, and the standalone
+    attach used to live at ➕ Add Step — funnels through this so a step
+    only ever needs promoting once, the first time it's reused."""
+    if str(step_id).startswith("SHARED_"):
+        return step_id
+    steps_df = read_sheet_df(SHEET_STEPS, expected_cols=["step_id", "procedure_id", "step_order", "step_name"])
+    _rows = steps_df[steps_df["step_id"] == step_id]
+    if _rows.empty:
+        raise ValueError("Could not find that step — please reload and try again.")
+    return _apply_step_merge(_rows, _rows.iloc[0]["step_name"])
+
+
+def _attach_existing_step(source_step_id: str, target_procedure_id: str, step_order) -> str:
+    """Add `source_step_id` (an existing step, from any procedure, or
+    not yet attached to one at all) to `target_procedure_id` as a new
+    step at `step_order`, reusing its exact step_id (promoted to a
+    shared one first via _resolve_step_id_for_attach() if it isn't
+    already) rather than minting a fresh, disconnected one for the same
+    text — so ratings for it connect the same way no matter which
+    procedure it's attached through, with no separate Merge Shared
+    Steps pass needed afterward.
 
     Raises ValueError if `source_step_id` doesn't exist, or if
     `target_procedure_id` already has it (attaching a step already on
     the target procedure is the intra-procedure-duplicate problem this
     tool doesn't attempt to resolve — see _find_step_merge_candidates).
-    Returns the step_id actually used (unchanged if it was already
-    shared)."""
+    Returns the step_id actually used."""
     steps_df = read_sheet_df(SHEET_STEPS, expected_cols=["step_id", "procedure_id", "step_order", "step_name"])
     _source_rows = steps_df[steps_df["step_id"] == source_step_id]
     if _source_rows.empty:
@@ -843,10 +882,8 @@ def _attach_existing_step(source_step_id: str, target_procedure_id: str, step_or
         raise ValueError("This procedure already has that step.")
     step_name = _source_rows.iloc[0]["step_name"]
 
-    canonical_id = source_step_id
-    if not str(source_step_id).startswith("SHARED_"):
-        canonical_id = _apply_step_merge(_source_rows, step_name)
-        steps_df = read_sheet_df(SHEET_STEPS, expected_cols=["step_id", "procedure_id", "step_order", "step_name"])
+    canonical_id = _resolve_step_id_for_attach(source_step_id)
+    steps_df = read_sheet_df(SHEET_STEPS, expected_cols=["step_id", "procedure_id", "step_order", "step_name"])
 
     new_row = pd.DataFrame([{
         "step_id":      canonical_id,
@@ -856,6 +893,31 @@ def _attach_existing_step(source_step_id: str, target_procedure_id: str, step_or
     }])
     write_sheet_df(SHEET_STEPS, pd.concat([steps_df, new_row], ignore_index=True))
     return canonical_id
+
+
+def _create_new_step(step_name: str) -> str:
+    """Create a brand-new catalog step — a `steps` row with a blank
+    procedure_id, not yet attached to any procedure — for the ➕ Add
+    Step admin tool. Refuses if a step with this name (trimmed/
+    case-folded) already exists anywhere: the point of this tool is
+    specifically steps that don't exist yet, so an exact rediscovery of
+    one that does should be attached instead (Add New Procedure or Edit
+    Existing Procedure's existing-steps picker) rather than creating a
+    second, disconnected entry with the same text. Returns the new
+    step_id."""
+    steps_df = read_sheet_df(SHEET_STEPS, expected_cols=["step_id", "procedure_id", "step_order", "step_name"])
+    _norm = _normalize_step_text(step_name)
+    if (steps_df["step_name"].map(_normalize_step_text) == _norm).any():
+        raise ValueError(f'"{step_name}" already exists — pick it from the existing-steps list instead of creating a duplicate.')
+    new_id = _unique_shared_step_id(step_name, set(steps_df["step_id"]))
+    new_row = pd.DataFrame([{
+        "step_id":      new_id,
+        "procedure_id": "",
+        "step_order":   pd.NA,
+        "step_name":    step_name,
+    }])
+    write_sheet_df(SHEET_STEPS, pd.concat([steps_df, new_row], ignore_index=True))
+    return new_id
 
 
 # Canonical full column list for the cases sheet — matches save_case()'s
@@ -3790,18 +3852,63 @@ elif page == "admin":
             new_proc_id   = st.text_input("Procedure ID (e.g., CSEC)").strip().upper()
             new_proc_name = st.text_input("Procedure name (e.g., Cesarean Section)")
             new_proc_spec = st.selectbox("Specialty", spec_df["specialty_name"], key="add_proc_spec")
-            steps_raw     = st.text_area("Steps (one per line)")
-            new_steps     = [s.strip() for s in steps_raw.split("\n") if s.strip()]
+
+            # Steps come from the existing catalog only, picked one by
+            # one — not typed free text. A step that doesn't exist yet
+            # anywhere has to be created first with ➕ Add Step below,
+            # then picked here (or added afterward via Edit Existing
+            # Procedure's own picker).
+            _addproc_candidates = _list_existing_steps()
+            if _addproc_candidates.empty:
+                st.caption("No existing steps yet — create some with ➕ Add Step below first.")
+                new_step_ids = []
+            else:
+                def _addproc_step_label(sid):
+                    return _addproc_candidates.loc[_addproc_candidates["step_id"] == sid, "step_name"].values[0]
+
+                new_step_ids = st.multiselect(
+                    "Steps (pick existing steps, in order)",
+                    _addproc_candidates["step_id"].tolist(),
+                    format_func=_addproc_step_label,
+                    key="add_proc_steps_ms",
+                )
             if st.button("Add Procedure", key="btn_add_proc"):
-                if new_proc_id and new_proc_name and new_steps:
+                if new_proc_id and new_proc_name and new_step_ids:
                     _spec_match = spec_df[spec_df["specialty_name"].astype(str).str.strip() == str(new_proc_spec).strip()]
                     spec_id = _spec_match["specialty_id"].values[0] if len(_spec_match) > 0 else None
-                    ensure_procedure(new_proc_id, new_proc_name, spec_id, new_steps)
+                    # Each pick promoted to a shared id first (a no-op if
+                    # it already is one) — same as attaching an existing
+                    # step anywhere else, so this procedure's copy
+                    # connects to the same ratings as every other one.
+                    _resolved_steps = [
+                        (_resolve_step_id_for_attach(sid), _addproc_step_label(sid)) for sid in new_step_ids
+                    ]
+                    ensure_procedure(new_proc_id, new_proc_name, spec_id, _resolved_steps)
                     st.success(f"✅ Added {new_proc_name}")
                     time.sleep(0.5)
                     st.rerun()
                 else:
-                    st.error("Please fill in all fields and at least one step.")
+                    st.error("Please fill in all fields and pick at least one step.")
+
+        with st.expander("➕ Add Step"):
+            st.caption(
+                "Creates a brand-new step that doesn't exist anywhere yet "
+                "— not attached to any procedure. Attach it afterward "
+                "using the existing-steps picker in Add New Procedure "
+                "above or Edit Existing Procedure below."
+            )
+            _new_step_name = st.text_input("New step name", key="new_step_name_input")
+            if st.button("Add Step", key="btn_add_new_step"):
+                if not _new_step_name.strip():
+                    st.error("Please enter a step name.")
+                else:
+                    try:
+                        _create_new_step(_new_step_name.strip())
+                        st.success(f'✅ Created "{_new_step_name.strip()}"')
+                        time.sleep(0.5)
+                        st.rerun()
+                    except ValueError as _create_exc:
+                        st.error(f"⚠️ {_create_exc}")
 
         with st.expander("✏️ Edit Existing Procedure"):
             procs_df = read_sheet_df(SHEET_PROCEDURES, expected_cols=["procedure_id", "procedure_name", "specialty_id"])
@@ -3851,9 +3958,10 @@ elif page == "admin":
                 })
                 st.caption(
                     "Rename or reorder existing steps — their rating history stays "
-                    "linked either way. Add a row for a new step; give it an Order "
-                    "number to place it anywhere (e.g. 2.5 inserts it between "
-                    "steps 2 and 3). Delete a row to remove that step."
+                    "linked either way. Delete a row to remove that step. To add a "
+                    "step, use the existing-steps picker below — typing a brand-new "
+                    "step name directly into this table isn't allowed here; create "
+                    "it first with ➕ Add Step above."
                 )
                 _edited_steps_df = st.data_editor(
                     _steps_editor_df,
@@ -3901,8 +4009,26 @@ elif page == "admin":
                         (procs_df["procedure_id"] != sel_proc_id)
                         & (procs_df["procedure_name"].astype(str).str.strip().str.lower() == new_pname.strip().lower())
                     ]
+                    # A row whose step_id isn't already one of this
+                    # procedure's own is a brand-new row typed directly
+                    # into the table — no longer allowed here at all
+                    # (see the caption above): every addition has to go
+                    # through the existing-steps picker below instead,
+                    # which is the only path that can resolve a name to
+                    # a real step_id (promoting/relinking it as needed).
+                    _new_typed_rows = [
+                        str(_row["Step"]).strip() for _, _row in _clean_steps.iterrows()
+                        if not (isinstance(_row["step_id"], str) and _row["step_id"].strip() in _existing_step_ids)
+                    ]
                     if _clean_steps.empty:
                         st.error("A procedure needs at least one step — add one before updating.")
+                    elif _new_typed_rows:
+                        st.error(
+                            "Typing a new step name directly into this table isn't "
+                            "allowed: " + ", ".join(f'"{s}"' for s in _new_typed_rows) + ". "
+                            "Use the existing-steps picker below to add a step that "
+                            "already exists, or create it first with ➕ Add Step above."
+                        )
                     elif _pending_rename and not _rename_confirmed:
                         st.error(
                             f'Please check the confirmation box above before renaming '
@@ -3924,9 +4050,9 @@ elif page == "admin":
 
                         _new_step_rows = []
                         for i, _row in _clean_steps.iterrows():
+                            # Already validated above: every row's step_id
+                            # is one of this procedure's own existing ones.
                             _sid = _row["step_id"]
-                            if not isinstance(_sid, str) or not _sid.strip() or _sid not in _existing_step_ids:
-                                _sid = f"S_{sel_proc_id}_{uuid.uuid4().hex[:8]}"
                             _new_step_rows.append({
                                 "step_id":      _sid,
                                 "procedure_id": sel_proc_id,
@@ -3970,6 +4096,36 @@ elif page == "admin":
                                 st.success(f"✅ Updated '{new_pname}'")
                                 time.sleep(0.5)
                                 st.rerun()
+
+                st.markdown("---")
+                st.markdown("**Add an existing step to this procedure**")
+                _epadd_candidates = _list_existing_steps(exclude_procedure_id=sel_proc_id)
+                if _epadd_candidates.empty:
+                    st.caption("Every existing step is already on this procedure (or none exist yet — create one with ➕ Add Step above).")
+                else:
+                    def _epadd_label(sid):
+                        return _epadd_candidates.loc[_epadd_candidates["step_id"] == sid, "step_name"].values[0]
+
+                    _epadd_choice = st.selectbox(
+                        "Existing step", _epadd_candidates["step_id"].tolist(),
+                        format_func=_epadd_label, key=f"ep_add_step_choice_{sel_proc_id}",
+                    )
+                    _epadd_default_order = (
+                        float(_proc_steps_df["step_order"].max()) + 1 if not _proc_steps_df.empty else 1.0
+                    )
+                    _epadd_order = st.number_input(
+                        "Order", value=_epadd_default_order, step=0.5,
+                        help="Position in this procedure's sequence. Fractional values are fine.",
+                        key=f"ep_add_step_order_{sel_proc_id}_{_epadd_choice}",
+                    )
+                    if st.button("Add Step", key="btn_ep_add_step"):
+                        try:
+                            _attach_existing_step(_epadd_choice, sel_proc_id, _epadd_order)
+                            st.success(f'✅ Added "{_epadd_label(_epadd_choice)}"')
+                            time.sleep(0.5)
+                            st.rerun()
+                        except ValueError as _epadd_exc:
+                            st.error(f"⚠️ {_epadd_exc}")
 
         with st.expander("🗑️ Delete Procedure"):
             st.caption(
@@ -4093,91 +4249,6 @@ elif page == "admin":
                                 st.rerun()
                             except ValueError as _del_exc:
                                 st.error(f"⚠️ {_del_exc}")
-
-        with st.expander("➕ Add Step"):
-            st.caption(
-                "Attaches a step that already exists — in another "
-                "procedure, or this one under a different id — to a "
-                "procedure, reusing its exact step_id so ratings for it "
-                "connect the same way no matter which procedure it's "
-                "part of, with no separate Merge Shared Steps pass "
-                "needed afterward. To add a genuinely new step instead, "
-                "use Add New Procedure or the step editor under Edit "
-                "Existing Procedure above."
-            )
-            if procs_df.empty:
-                st.caption("No procedures yet.")
-            else:
-                _add_step_proc_name = st.selectbox(
-                    "Procedure", procs_df["procedure_name"], key="add_step_proc_sel"
-                )
-                _add_step_proc_id = procs_df.loc[
-                    procs_df["procedure_name"] == _add_step_proc_name, "procedure_id"
-                ].values[0]
-                _add_step_all_steps_df = read_sheet_df(
-                    SHEET_STEPS, expected_cols=["step_id", "procedure_id", "step_order", "step_name"]
-                )
-                _add_step_own_names = set(
-                    _add_step_all_steps_df.loc[
-                        _add_step_all_steps_df["procedure_id"] == _add_step_proc_id, "step_name"
-                    ].astype(str).str.strip().str.lower()
-                )
-                # One row per distinct step_id, excluding anything this
-                # procedure already has (by name, case/space-insensitive)
-                # — attaching a step it already has would recreate the
-                # within-one-procedure duplicate problem
-                # _find_step_merge_candidates() guards against elsewhere.
-                _add_step_candidates = _add_step_all_steps_df[
-                    ~_add_step_all_steps_df["step_name"].astype(str).str.strip().str.lower().isin(_add_step_own_names)
-                ].drop_duplicates(subset=["step_id"])
-
-                if _add_step_candidates.empty:
-                    st.caption("No other existing steps to attach — every step elsewhere is already on this procedure.")
-                else:
-                    _add_step_proc_lookup = dict(zip(procs_df["procedure_id"], procs_df["procedure_name"]))
-
-                    def _add_step_used_by(step_id):
-                        _procs = _add_step_all_steps_df.loc[_add_step_all_steps_df["step_id"] == step_id, "procedure_id"]
-                        return ", ".join(sorted({_add_step_proc_lookup.get(p, p) for p in _procs}))
-
-                    def _add_step_option_label(sid):
-                        _name = _add_step_candidates.loc[_add_step_candidates["step_id"] == sid, "step_name"].values[0]
-                        return f"{_name} (used in: {_add_step_used_by(sid)})"
-
-                    _add_step_choice = st.selectbox(
-                        "Existing step to attach", _add_step_candidates["step_id"].tolist(),
-                        format_func=_add_step_option_label, key="add_step_choice",
-                    )
-                    _add_step_chosen_name = _add_step_candidates.loc[
-                        _add_step_candidates["step_id"] == _add_step_choice, "step_name"
-                    ].values[0]
-
-                    _add_step_own_steps = _add_step_all_steps_df[
-                        _add_step_all_steps_df["procedure_id"] == _add_step_proc_id
-                    ]
-                    _add_step_default_order = (
-                        float(_add_step_own_steps["step_order"].max()) + 1 if not _add_step_own_steps.empty else 1.0
-                    )
-                    _add_step_order = st.number_input(
-                        "Order", value=_add_step_default_order, step=0.5,
-                        help="Position in this procedure's sequence. Fractional values are fine.",
-                        key=f"add_step_order_{_add_step_proc_id}_{_add_step_choice}",
-                    )
-
-                    if not str(_add_step_choice).startswith("SHARED_"):
-                        st.caption(
-                            f'💡 "{_add_step_chosen_name}" isn\'t shared yet — attaching it here also '
-                            "relinks its existing ratings (wherever it's currently used) onto a new shared id."
-                        )
-
-                    if st.button("Add Step", key="btn_add_step"):
-                        try:
-                            _attach_existing_step(_add_step_choice, _add_step_proc_id, _add_step_order)
-                            st.success(f'✅ Added "{_add_step_chosen_name}" to "{_add_step_proc_name}"')
-                            time.sleep(0.5)
-                            st.rerun()
-                        except ValueError as _add_exc:
-                            st.error(f"⚠️ {_add_exc}")
 
         # Read-only lookup, deliberately separate from the editor above —
         # for spotting a step name (e.g. "Case Preparation") reused, or
