@@ -3,5 +3,4 @@ gspread
 gspread-dataframe
 google-auth
 google-auth-oauthlib
-openpyxl
 matplotlib
