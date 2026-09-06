@@ -2908,17 +2908,27 @@ page = st.session_state["page"]
 # yank the user's scroll position out from under them.
 if st.session_state.get("_scroll_top_page") != page:
     st.session_state["_scroll_top_page"] = page
+    # The page name is embedded in the iframe's own content (as an inert
+    # HTML comment) purely so this srcdoc string actually differs from
+    # whatever was last rendered at this spot. Streamlit doesn't tear
+    # down and recreate an element whose content is byte-identical to
+    # what it last sent for that same call site — it just revives the
+    # existing (already-loaded) node, which never re-fires the <script>
+    # inside since the iframe document itself never reloads. A plain
+    # static script (tried first) silently no-op'd on every navigation
+    # except the very first, for exactly that reason.
     st.iframe(
-        """
+        f"""
+        <!-- scroll-to-top for: {html.escape(page)} -->
         <script>
-        (function() {
+        (function() {{
             window.parent.scrollTo(0, 0);
             var doc = window.parent.document;
             var containers = doc.querySelectorAll(
                 '[data-testid="stAppViewContainer"], [data-testid="stMain"], section.main'
             );
-            containers.forEach(function(c) { c.scrollTop = 0; });
-        })();
+            containers.forEach(function(c) {{ c.scrollTop = 0; }});
+        }})();
         </script>
         """,
         height=1,
