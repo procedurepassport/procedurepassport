@@ -2591,6 +2591,7 @@ button p {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    margin-bottom: 0.5rem;
 }
 .legend-desc-row {
     display: flex;
