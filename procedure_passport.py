@@ -2411,10 +2411,8 @@ if _attending_logged_in:
     st.sidebar.markdown(f"👤 **{st.session_state.get('attending_login_name', '')}**")
     st.sidebar.markdown(f"_{_attending_logged_in}_")
     st.sidebar.markdown("---")
-    if st.sidebar.button("🚪 Logout", key="sb_logout_attending"):
-        for _k in list(st.session_state.keys()):
-            del st.session_state[_k]
-        st.cache_data.clear()
+    if st.sidebar.button("🏠 Back to Home", key="sb_att_home"):
+        st.session_state["page"] = "attending_home"
         st.rerun()
     st.sidebar.markdown("---")
     if st.sidebar.button("➕ Start Assessment", key="sb_att_start"):
@@ -2423,8 +2421,11 @@ if _attending_logged_in:
     if st.sidebar.button("📊 Resident Dashboard", key="sb_att_dashboard"):
         st.session_state["page"] = "attending_resident_dashboard"
         st.rerun()
-    if st.sidebar.button("🏠 Back to Home", key="sb_att_home"):
-        st.session_state["page"] = "attending_home"
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🚪 Logout", key="sb_logout_attending"):
+        for _k in list(st.session_state.keys()):
+            del st.session_state[_k]
+        st.cache_data.clear()
         st.rerun()
 
 # ── Sidebar rating legend (shown only on relevant pages) ──
