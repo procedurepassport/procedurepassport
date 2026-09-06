@@ -960,6 +960,12 @@ def render_prep_legend(key: str, expanded: bool = False) -> None:
     legends) so the scale is explained the same way everywhere it's
     used. `key` must be unique among expanders visible on the same page
     at once."""
+    # Display order only (PREP_HEX itself — used elsewhere for color
+    # lookups — is untouched): highest preparation (Highly Prepared)
+    # first, descending to Unprepared, same convention as
+    # render_rating_legend()'s Auto-first ordering.
+    _items = list(PREP_HEX.items())
+    _items.reverse()
     with st.expander("Preparation Scale Legend", expanded=expanded, key=key):
         st.markdown(
             '<div class="legend-desc-list">' +
@@ -968,7 +974,7 @@ def render_prep_legend(key: str, expanded: bool = False) -> None:
                 f'<span class="legend-swatch" style="background-color:{color}"></span>'
                 f'<span><b>{label}</b> — {PREP_DESCRIPTIONS[label]}</span>'
                 f'</div>'
-                for label, color in PREP_HEX.items()
+                for label, color in _items
             ) +
             '</div>',
             unsafe_allow_html=True,
