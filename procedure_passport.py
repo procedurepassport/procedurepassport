@@ -837,13 +837,20 @@ def _render_evaluation_card(sub: dict) -> None:
     # let older records with no robo_type recorded show up as "Robot: nan".
     _robo_type = sub.get("robo_type")
     _robo_type_line = f'<br><b>Robot:</b> {_robo_type}' if pd.notna(_robo_type) and str(_robo_type).strip() else ""
+    # Same NaN guard as robo_type above, but Daily Preparation always
+    # shows (unlike Robot, which only applies to robotic procedures) —
+    # falls back to "Not Assessed" rather than being hidden, matching
+    # the assessment forms' own default for this field.
+    _case_prep = sub.get("case_preparation")
+    _case_prep_display = str(_case_prep) if pd.notna(_case_prep) and str(_case_prep).strip() else "Not Assessed"
     st.markdown(
         f'<div class="pp-card">'
         f'<b>Resident:</b> {sub.get("resident_name", sub["resident_email"])}<br>'
         f'<b>Attending:</b> {sub["attending_name"]}<br>'
         f'<b>Procedure:</b> {sub.get("procedure_name", sub["procedure_id"])}<br>'
         f'<b>Date:</b> {fmt_date(sub["date"])}<br>'
-        f'<b>Overall Performance:</b> {sub["overall_performance"]}'
+        f'<b>Overall Performance:</b> {sub["overall_performance"]}<br>'
+        f'<b>Daily Preparation:</b> {_case_prep_display}'
         f'{_robo_type_line}'
         f'</div>',
         unsafe_allow_html=True,
