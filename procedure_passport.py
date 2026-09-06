@@ -979,10 +979,16 @@ def render_rating_legend(key: str, expanded: bool = False, container=None) -> No
     this render inside st.sidebar instead of the main area; `key` must
     be unique among expanders visible at once."""
     _container = container if container is not None else st
-    _items = [
-        ("Never Attempted", "#FAFAFA", "", NEVER_ATTEMPTED_STRIPE_CSS),
+    # Display order only (RATING_OPTIONS/RATING_HEX — the actual dropdown
+    # order and color lookups — are untouched): highest autonomy (Auto)
+    # first, descending to Shown/Told, with the two non-graded items
+    # (Not Assessed, Never Attempted) grouped at the bottom.
+    _graded = [(label, color, "", "") for label, color in RATING_HEX.items() if label != "Not Assessed"]
+    _graded.reverse()
+    _items = _graded + [
         ("Not Assessed",    "#E0E0E0", "1px solid #aaa", ""),
-    ] + [(label, color, "", "") for label, color in RATING_HEX.items() if label != "Not Assessed"]
+        ("Never Attempted", "#FAFAFA", "", NEVER_ATTEMPTED_STRIPE_CSS),
+    ]
     _rows = []
     for label, color, border, pattern in _items:
         _bdr = f"border:{border};" if border else ""
