@@ -3944,6 +3944,12 @@ elif page == "assessment":
 
     st.markdown("---")
 
+    render_rating_legend(key="rating_legend_resident")
+    render_prep_legend(key="prep_legend_resident")
+    render_complexity_legend(key="complexity_legend_resident")
+
+    st.markdown("---")
+
     with st.container(key="assess_ratings_row"):
         _overall_col, _prep_col = st.columns(2)
         with _overall_col:
@@ -3965,8 +3971,6 @@ elif page == "assessment":
                 index=_cp_idx,
                 key="assess_preparation",
             )
-
-    render_prep_legend(key="prep_legend_resident")
 
     with st.expander(
         header_break_before("Step-Level Ratings for", _proc_name),
@@ -4764,6 +4768,12 @@ elif page == "attending_assessment":
 
     st.markdown("---")
 
+    render_rating_legend(key="rating_legend_attending")
+    render_prep_legend(key="prep_legend_attending")
+    render_complexity_legend(key="complexity_legend_attending")
+
+    st.markdown("---")
+
     with st.container(key="assess_ratings_row"):
         _att_overall_col, _att_prep_col = st.columns(2)
         with _att_overall_col:
@@ -4776,8 +4786,6 @@ elif page == "attending_assessment":
             _att_cp_default = _d.get("case_preparation", "Not Assessed")
             _att_cp_idx = _att_cp_opts.index(_att_cp_default) if _att_cp_default in _att_cp_opts else 0
             case_preparation = st.selectbox("Daily Preparation", _att_cp_opts, index=_att_cp_idx, key="assess_preparation")
-
-    render_prep_legend(key="prep_legend_attending")
 
     _att_cc_opts = ["— Select complexity —", "Straight Forward", "Moderate", "Complex"]
     _att_cc_default = _d.get("case_complexity", "— Select complexity —")
