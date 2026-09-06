@@ -159,6 +159,13 @@ COMPLEXITY_HEX = {
     "Moderate":         "#FFF59D",
     "Complex":          "#FFAB91",
 }
+# Descriptive text for the Case Complexity Legend (render_complexity_legend()).
+# Keyed the same as COMPLEXITY_HEX so the two stay in lockstep.
+COMPLEXITY_DESCRIPTIONS = {
+    "Straight Forward": "Easiest 1/3 of Cases",
+    "Moderate":          "Middle 1/3 of Cases",
+    "Complex":           "Most Difficult 1/3 of Cases",
+}
 PREP_HEX = {
     "Unprepared":          "#FF8A80",
     "Poorly Prepared":     "#FFAB91",
@@ -962,6 +969,25 @@ def render_prep_legend(key: str, expanded: bool = False) -> None:
                 f'<span><b>{label}</b> — {PREP_DESCRIPTIONS[label]}</span>'
                 f'</div>'
                 for label, color in PREP_HEX.items()
+            ) +
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+
+def render_complexity_legend(key: str, expanded: bool = False) -> None:
+    """Case Complexity Legend: a color swatch plus its description for
+    each complexity level (COMPLEXITY_HEX/COMPLEXITY_DESCRIPTIONS), same
+    expandable swatch+description layout as render_prep_legend()."""
+    with st.expander("Case Complexity Legend", expanded=expanded, key=key):
+        st.markdown(
+            '<div class="legend-desc-list">' +
+            "".join(
+                f'<div class="legend-desc-row">'
+                f'<span class="legend-swatch" style="background-color:{color}"></span>'
+                f'<span><b>{label}</b> — {COMPLEXITY_DESCRIPTIONS[label]}</span>'
+                f'</div>'
+                for label, color in COMPLEXITY_HEX.items()
             ) +
             '</div>',
             unsafe_allow_html=True,
@@ -1868,24 +1894,9 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             "Please try a different procedure, or contact your program coordinator."
         )
 
-    def _swatch(color, label, border="", pattern=""):
-        _bdr = f"border:{border};" if border else ""
-        _pat = f"background-image:{pattern};" if pattern else ""
-        return (
-            f'<span class="legend-item">'
-            f'<span class="legend-swatch" style="background-color:{color};{_bdr}{_pat}"></span>{label}'
-            f'</span>'
-        )
-
     render_rating_legend(key="rating_legend_dashboard")
 
-    st.markdown("#### Case Complexity")
-    st.markdown(
-        '<div class="legend-row">' +
-        "".join(_swatch(v, k) for k, v in COMPLEXITY_HEX.items()) +
-        "</div>",
-        unsafe_allow_html=True,
-    )
+    render_complexity_legend(key="complexity_legend_dashboard")
 
     render_prep_legend(key="prep_legend_dashboard")
 
@@ -2555,20 +2566,6 @@ button p {
     font-weight: 600;
     margin: 2px;
 }
-/* Legend row */
-.legend-row {
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
-    align-items: center;
-    margin-bottom: 0.5rem;
-}
-.legend-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: 0.85rem;
-}
 .legend-swatch {
     width: 14px;
     height: 14px;
@@ -2576,10 +2573,9 @@ button p {
     border: 1px solid var(--secondary-background-color);
     display: inline-block;
 }
-/* Preparation Scale Legend (render_prep_legend()): one row per level,
-   swatch beside its full description rather than the compact
-   .legend-row/.legend-item chips above, since the text here runs to a
-   full sentence instead of a single word or two. */
+/* Legend expanders (render_prep_legend()/render_complexity_legend()/
+   render_rating_legend()): one row per level, swatch beside its
+   description. */
 .legend-desc-list {
     display: flex;
     flex-direction: column;
