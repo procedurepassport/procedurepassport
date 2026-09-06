@@ -2198,7 +2198,7 @@ def assessment_instructions_note() -> None:
         "There are 3 main sections. Fill out as much or as little as you are able.\n\n"
         "1. Short Form: Improve this / Do this\n"
         "2. Step-Level Ratings of a Case or Skills\n"
-        "3. Free Form: Development/Improvement/Feed-Forward"
+        "3. Debrief: Development/Improvement/Feed-Forward"
     )
 
 
