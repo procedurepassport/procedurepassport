@@ -3253,7 +3253,17 @@ elif page == "admin":
                 edit_proc    = st.selectbox("Select procedure", procs_df["procedure_name"], key="edit_proc_sel")
                 _proc_match = procs_df[procs_df["procedure_name"].astype(str).str.strip() == str(edit_proc).strip()]
                 sel_proc_id  = _proc_match["procedure_id"].values[0] if len(_proc_match) > 0 else None
-                new_pname    = st.text_input("Updated name", value=edit_proc, key="edit_proc_name")
+                # Keyed by sel_proc_id, not a fixed key — this is what
+                # actually let "Robotic Bedsiding" get renamed to
+                # "Laparoscopic Appendectomy": a fixed key means
+                # Streamlit keeps showing whatever was last TYPED here
+                # for a DIFFERENT procedure once this widget has
+                # rendered once, ignoring value= on every later rerun —
+                # switching "Select procedure" alone didn't reset it, so
+                # a stale name from whichever procedure was edited
+                # previously silently carried over and got saved onto
+                # this one instead.
+                new_pname    = st.text_input("Updated name", value=edit_proc, key=f"edit_proc_name_{sel_proc_id}")
 
                 # Pre-filled, per-step editor rather than retyping the whole
                 # step list as plain text: renaming or reordering a step no
@@ -3296,17 +3306,45 @@ elif page == "admin":
                     key=f"edit_proc_steps_editor_{sel_proc_id}",
                 )
 
+                # A pending rename needs an explicit, named confirmation
+                # before it's allowed to save — exactly the check that
+                # would have caught "Robotic Bedsiding" silently being
+                # renamed to "Laparoscopic Appendectomy" (a stale
+                # leftover value from editing a different procedure
+                # earlier, saved without anyone noticing the name had
+                # changed at all).
+                _pending_rename = new_pname.strip() != str(edit_proc).strip()
+                _rename_confirmed = True
+                if _pending_rename:
+                    _rename_confirmed = st.checkbox(
+                        f'Yes, rename "{edit_proc}" to "{new_pname.strip()}"',
+                        key=f"confirm_rename_{sel_proc_id}",
+                    )
+                    st.caption("⚠️ This changes the procedure's name everywhere it's shown. Check the box above to confirm.")
+
                 if st.button("Update Procedure", key="btn_upd_proc"):
                     # Validated up front, before anything is written: an
-                    # empty step list, a lost procedure identity, or a
-                    # sign this update would touch other procedures'
-                    # steps all bail out with nothing saved at all,
-                    # rather than partially writing one half of the
-                    # update and not the other.
+                    # empty step list, a lost procedure identity, an
+                    # unconfirmed rename, a name collision with another
+                    # procedure, or a sign this update would touch other
+                    # procedures' steps all bail out with nothing saved
+                    # at all, rather than partially writing one half of
+                    # the update and not the other.
                     _clean_steps = _edited_steps_df.dropna(subset=["Step"]).copy()
                     _clean_steps = _clean_steps[_clean_steps["Step"].astype(str).str.strip() != ""]
+                    _name_collision = procs_df[
+                        (procs_df["procedure_id"] != sel_proc_id)
+                        & (procs_df["procedure_name"].astype(str).str.strip().str.lower() == new_pname.strip().lower())
+                    ]
                     if _clean_steps.empty:
                         st.error("A procedure needs at least one step — add one before updating.")
+                    elif _pending_rename and not _rename_confirmed:
+                        st.error(
+                            f'Please check the confirmation box above before renaming '
+                            f'"{edit_proc}" to "{new_pname.strip()}".'
+                        )
+                    elif _pending_rename and not _name_collision.empty:
+                        st.error(f'"{new_pname.strip()}" is already the name of another procedure — choose a different name.')
                     elif not sel_proc_id:
                         st.error("Could not identify which procedure to update — please reload and try again.")
                     else:
