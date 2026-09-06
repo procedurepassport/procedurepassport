@@ -2381,14 +2381,9 @@ if _logged_in and st.session_state["page"] not in ("login", "attending_assessmen
     st.sidebar.markdown(f"👤 **{st.session_state.get('resident_name', '')}**")
     st.sidebar.markdown(f"_{_logged_in}_")
     st.sidebar.markdown("---")
-    if st.sidebar.button("🚪 Logout", key="sb_logout_resident"):
-        for _k in list(st.session_state.keys()):
-            del st.session_state[_k]
-        st.cache_data.clear()
+    if st.sidebar.button("🏠 Back to Home", key="sb_home"):
+        st.session_state["page"] = "home"
         st.rerun()
-
-# ── Sidebar nav shortcuts (shown when logged in on relevant pages) ──
-if _logged_in and st.session_state["page"] not in ("login", "attending_assessment", "attending_confirmation"):
     st.sidebar.markdown("---")
     if st.sidebar.button("➕ Start Assessment", key="sb_start"):
         st.session_state["page"] = "start"
@@ -2399,8 +2394,11 @@ if _logged_in and st.session_state["page"] not in ("login", "attending_assessmen
     if st.sidebar.button("💬 Comments Dashboard", key="sb_comments"):
         st.session_state["page"] = "comments"
         st.rerun()
-    if st.sidebar.button("🏠 Back to Home", key="sb_home"):
-        st.session_state["page"] = "home"
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🚪 Logout", key="sb_logout_resident"):
+        for _k in list(st.session_state.keys()):
+            del st.session_state[_k]
+        st.cache_data.clear()
         st.rerun()
 
 # ── Attending-account sidebar (own login, separate from the anonymous
