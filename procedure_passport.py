@@ -2529,18 +2529,23 @@ if (
 st.markdown(
     """
 <style>
-/* Shift the whole page's content block to the left: it's normally
-   horizontally centered (equal left/right margin, i.e. equal
-   whitespace either side of the ~fixed-width content column) — a
-   transform nudges it left without touching that centering math
-   itself, taking width from the left gap and adding it to the right
-   one. Applies to every page, not just the heatmap. 50px is a rough
-   first pass (roughly half a typical left-side gap on desktop) —
-   tune the value directly if it doesn't land right, and watch for a
-   horizontal scrollbar on narrower windows, where the starting gap is
-   smaller to begin with. */
-[data-testid="stAppViewContainer"] .block-container {
-    transform: translateX(-50px);
+/* Shift the whole page's content block to the left: with layout="wide"
+   there's no true centering, but .block-container still carries its
+   own left/right padding (80px at desktop widths) — the transform
+   nudges content left within that padding, taking space from the left
+   side and adding it to the right. Applies to every page, not just
+   the heatmap. Gated to desktop widths only: below the ~900px
+   breakpoint where that padding drops to 16px, an unconditional -50px
+   shift overshot the padding entirely and pushed real content (e.g.
+   the page header, form inputs) off-screen to the left by ~34px —
+   exactly the "left side of the page is cut off" bug reported on
+   mobile portrait. Confirmed via measurement (getBoundingClientRect)
+   that 900px is comfortably past the breakpoint (80px padding there;
+   still 16px as high as 850px). */
+@media (min-width: 900px) {
+    [data-testid="stAppViewContainer"] .block-container {
+        transform: translateX(-50px);
+    }
 }
 /* Every button's label stays on one line — fit_all_button_labels()
    shrinks the font to make it fit; this is the no-JS fallback (clips
