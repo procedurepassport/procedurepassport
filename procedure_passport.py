@@ -823,7 +823,11 @@ def _render_evaluation_card(sub: dict) -> None:
     on the standalone "view one evaluation" page — same dict shape,
     same rendering, so the resident sees the exact same thing either
     way."""
-    _robo_type_line = f'<br><b>Robot:</b> {sub["robo_type"]}' if sub.get("robo_type") else ""
+    # Blank/missing sheet cells round-trip through pandas as NaN (a float),
+    # not "" — and NaN is truthy in Python, so a plain `sub.get(...)` check
+    # let older records with no robo_type recorded show up as "Robot: nan".
+    _robo_type = sub.get("robo_type")
+    _robo_type_line = f'<br><b>Robot:</b> {_robo_type}' if pd.notna(_robo_type) and str(_robo_type).strip() else ""
     st.markdown(
         f'<div class="pp-card">'
         f'<b>Resident:</b> {sub.get("resident_name", sub["resident_email"])}<br>'
