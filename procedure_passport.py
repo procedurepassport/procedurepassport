@@ -4125,7 +4125,15 @@ elif page == "admin":
                 # renders rather than letting st.selectbox raise on an
                 # out-of-range default (same guard used for the
                 # Comments Dashboard's Procedure/Attending filters).
-                if st.session_state.get("step_merge_candidate_sel", 0) >= len(_merge_candidates):
+                # isinstance check first: an *already-open* browser tab
+                # can keep session_state alive across a redeploy (the
+                # server reruns the script but doesn't reset it), so a
+                # value from a since-changed earlier version of this key
+                # can persist here with the wrong type entirely — a bare
+                # `>=` against that raises TypeError (str vs int)
+                # instead of ever reaching a rerun that would fix it.
+                _stored_step_merge_sel = st.session_state.get("step_merge_candidate_sel", 0)
+                if not isinstance(_stored_step_merge_sel, int) or _stored_step_merge_sel >= len(_merge_candidates):
                     st.session_state["step_merge_candidate_sel"] = 0
 
                 def _step_merge_candidate_label(i):
