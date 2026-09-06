@@ -1372,11 +1372,18 @@ def _build_resident_case_matrix(resident_email: str):
 
 
 def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs_map: dict,
-                              selected_proc: str, filename_stub: str) -> None:
-    """Render the progress heatmap + legends + Excel export for one
-    resident's one procedure. `merged` is the resident's full case matrix
-    from _build_resident_case_matrix (not yet filtered to a procedure) —
-    this filters it to `selected_proc` itself."""
+                              selected_proc: str, filename_stub: str,
+                              heading_suffix: str = "Progress Heatmap") -> None:
+    """Render the progress heatmap + legends for one resident's one
+    procedure. `merged` is the resident's full case matrix from
+    _build_resident_case_matrix (not yet filtered to a procedure) —
+    this filters it to `selected_proc` itself.
+
+    `heading_suffix` follows the procedure name in the section heading
+    ("{procedure} — {heading_suffix}") — the attending's Resident
+    Dashboard overrides it to "Progress Heatmap and Comments" since
+    that page's Comments section right below no longer has a heading
+    of its own once a procedure is chosen."""
     proc_data = merged[merged["case_procedure_id"] == selected_proc].copy()
     if proc_data.empty:
         st.info("No assessment data yet for this procedure.")
@@ -1498,7 +1505,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     # line when it fits, and if it doesn't, wraps with "Progress Heatmap"
     # intact on the second line rather than splitting the procedure name
     # or "Progress"/"Heatmap" from each other.
-    _heatmap_heading = header_break_before(f"{proc_display_name} —", "Progress Heatmap")
+    _heatmap_heading = header_break_before(f"{proc_display_name} —", heading_suffix)
     st.markdown(f"### {_heatmap_heading}\nMost recent cases at the top.")
 
     pivot_sorted = pivot.sort_values("date", ascending=False)
@@ -4496,6 +4503,7 @@ elif page == "attending_resident_dashboard":
         _render_resident_heatmap(
             case_matrix, steps_df, procs_map, procedure_id,
             filename_stub=resident_choice.replace(" ", "_"),
+            heading_suffix="Progress Heatmap and Comments",
         )
         st.markdown("---")
 
@@ -4504,8 +4512,12 @@ elif page == "attending_resident_dashboard":
         # entirely rather than showing controls over an empty table.
         st.info("💬 No comments recorded for this resident yet.")
     else:
-        _comments_heading = "All Comments" if show_all_comments else "Comments"
-        st.markdown(f"### 💬 {_comments_heading} — {resident_choice}")
+        if not procedure_id:
+            # Once a procedure is chosen, the heatmap's own heading above
+            # already reads "{procedure} — Progress Heatmap and Comments",
+            # covering this section too — no second heading needed here.
+            _comments_heading = "All Comments" if show_all_comments else "Comments"
+            st.markdown(f"### 💬 {_comments_heading} — {resident_choice}")
         if procedure_id:
             _toggle_label = "Show All Comments" if not show_all_comments else f"Show Only {procedure_choice} Comments"
             if st.button(_toggle_label, key="att_dash_comments_toggle"):
