@@ -1506,7 +1506,8 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     # intact on the second line rather than splitting the procedure name
     # or "Progress"/"Heatmap" from each other.
     _heatmap_heading = header_break_before(f"{proc_display_name} —", heading_suffix)
-    st.markdown(f"### {_heatmap_heading}\nMost recent cases at the top.")
+    with st.container(key="heatmap_heading_row"):
+        st.markdown(f"### {_heatmap_heading}\nMost recent cases at the top.")
 
     pivot_sorted = pivot.sort_values("date", ascending=False)
 
@@ -2508,6 +2509,25 @@ st.markdown(
 @media (min-width: 900px) {
     [data-testid="stAppViewContainer"] .block-container {
         transform: translateX(-50px);
+    }
+}
+/* Heatmap section heading ("{procedure} — Progress Heatmap[ and
+   Comments]", _render_resident_heatmap()): reclaim most of the
+   desktop-tier 80px right padding for just this heading, since its
+   text (procedure name + a deliberately unbreakable suffix — see
+   header_break_before) can be long enough to wrap to a second line in
+   a narrow band of desktop widths where that padding, not the
+   viewport itself, is what's actually too tight (confirmed via
+   measurement: e.g. at 900px wide the heading needed ~787px but only
+   had 740px available). 16px of the 80px is kept as a right-hand
+   buffer. Gated to the same >=900px tier as the shift above — below
+   it, padding is already only 16px, and reclaiming further would
+   overflow the heading past the viewport's right edge (the same
+   mistake the shift above caused unconditionally on the left,
+   before). */
+@media (min-width: 900px) {
+    .st-key-heatmap_heading_row h3 {
+        margin-right: -64px !important;
     }
 }
 /* Every button's label stays on one line — fit_all_button_labels()
