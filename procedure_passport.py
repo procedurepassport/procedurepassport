@@ -1417,21 +1417,23 @@ def _on_robo_checkbox_change(value_key: str, widget_keys: dict, clicked_label: s
         st.session_state[widget_keys[clicked_label]] = True
 
 
-def render_prep_legend(key: str, expanded: bool = False) -> None:
+def render_prep_legend(key: str, expanded: bool = False, container=None) -> None:
     """Preparation Scale Legend: a color swatch plus its full description
     for each Daily Preparation level (PREP_HEX/PREP_DESCRIPTIONS). Shared
     by the assessment/pre-fill forms (right under the Daily Preparation
     dropdown) and the dashboards (alongside the Ratings/Case Complexity
     legends) so the scale is explained the same way everywhere it's
-    used. `key` must be unique among expanders visible on the same page
-    at once."""
+    used. `container` lets this render inside st.sidebar instead of the
+    main area, same as render_rating_legend(). `key` must be unique
+    among expanders visible at once."""
+    _container = container if container is not None else st
     # Display order only (PREP_HEX itself — used elsewhere for color
     # lookups — is untouched): highest preparation (Highly Prepared)
     # first, descending to Unprepared, same convention as
     # render_rating_legend()'s Auto-first ordering.
     _items = list(PREP_HEX.items())
     _items.reverse()
-    with st.expander("Preparation Scale Legend", expanded=expanded, key=key):
+    with _container.expander("Preparation Scale Legend", expanded=expanded, key=key):
         st.markdown(
             '<div class="legend-desc-list">' +
             "".join(
@@ -1446,11 +1448,14 @@ def render_prep_legend(key: str, expanded: bool = False) -> None:
         )
 
 
-def render_complexity_legend(key: str, expanded: bool = False) -> None:
+def render_complexity_legend(key: str, expanded: bool = False, container=None) -> None:
     """Case Complexity Legend: a color swatch plus its description for
     each complexity level (COMPLEXITY_HEX/COMPLEXITY_DESCRIPTIONS), same
-    expandable swatch+description layout as render_prep_legend()."""
-    with st.expander("Case Complexity Legend", expanded=expanded, key=key):
+    expandable swatch+description layout as render_prep_legend().
+    `container` lets this render inside st.sidebar instead of the main
+    area, same as render_rating_legend()."""
+    _container = container if container is not None else st
+    with _container.expander("Case Complexity Legend", expanded=expanded, key=key):
         st.markdown(
             '<div class="legend-desc-list">' +
             "".join(
@@ -3226,6 +3231,8 @@ if (
 ) or _attending_logged_in:
     st.sidebar.markdown("---")
     render_rating_legend(key="rating_legend_sidebar", container=st.sidebar, expanded=True)
+    render_complexity_legend(key="complexity_legend_sidebar", container=st.sidebar, expanded=False)
+    render_prep_legend(key="prep_legend_sidebar", container=st.sidebar, expanded=False)
 
 # ─────────────────────────────────────────────
 # SHARED CSS
