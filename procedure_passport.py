@@ -1784,7 +1784,17 @@ def _render_evaluation_history_list(
         _heading = "All Evaluations"
     if _date_narrowed:
         _heading = f"{_heading} — {_lo.strftime('%m/%d/%Y')} - {_hi.strftime('%m/%d/%Y')}"
-    st.markdown(f"### 📜 {_heading}")
+    # If this needs to wrap onto a second line (a long procedure/person
+    # name, narrow screen), force the break to land right after one of
+    # the segment separators, never before one and never mid-phrase:
+    # every space and hyphen within each segment becomes its non-
+    # breaking counterpart (_protect_from_wrapping) — including the
+    # plain "-" between a narrowed date range's two dates, so that
+    # stays intact as one unit too — and the space right before each
+    # dash is glued to it with a non-breaking space, leaving only the
+    # regular space right after each dash as an actual wrap point.
+    _heading_wrapped = " — ".join(_protect_from_wrapping(_seg) for _seg in _heading.split(" — "))
+    st.markdown(f"### 📜 {_heading_wrapped}")
 
     # Each dropdown's options are narrowed by the *other* dropdown's
     # current selection — same behavior as the Comments Dashboard's
