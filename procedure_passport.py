@@ -209,6 +209,17 @@ SHEET_ATTENDINGS = "attendings"
 SHEET_PROCEDURES = "procedures"
 SHEET_STEPS      = "steps"
 SHEET_CASES      = "cases"
+# Canonical full column list for the cases sheet — matches save_case()'s
+# own list exactly, so any read/write here never drops a column
+# write_sheet_df would otherwise silently lose. Also used consistently
+# by every OTHER read of this sheet (not just writes/save_case) so
+# they all share one st.cache_data entry instead of each narrower
+# ad-hoc column subset costing its own separate Google Sheets API read
+# for the same underlying data.
+_CASE_COLS = ["case_id", "resident_email", "date", "specialty_id",
+              "procedure_id", "attending_id", "notes",
+              "case_complexity", "case_preparation", "overall_performance",
+              "robo_type", "improve", "how", "assessment_type", "submitted_at"]
 SHEET_SCORES     = "scores"
 SHEET_SPECIALTY  = "specialties"
 SHEET_DRAFTS     = "drafts"
@@ -778,7 +789,7 @@ def _count_step_ratings(step_id: str, procedure_id: str) -> int:
     *different* procedure that also uses this step_id must not be
     counted (or later deleted) here."""
     cases_df = read_sheet_df(
-        SHEET_CASES, expected_cols=["case_id", "resident_email", "specialty_id", "procedure_id", "assessment_type"]
+        SHEET_CASES, expected_cols=_CASE_COLS
     )
     case_ids = set(cases_df.loc[cases_df["procedure_id"] == procedure_id, "case_id"])
     score_cols = ["case_id", "step_id", "rating", "rating_num",
@@ -808,7 +819,7 @@ def _delete_step(step_id: str, procedure_id: str, delete_ratings: bool) -> int:
         return 0
 
     cases_df = read_sheet_df(
-        SHEET_CASES, expected_cols=["case_id", "resident_email", "specialty_id", "procedure_id", "assessment_type"]
+        SHEET_CASES, expected_cols=_CASE_COLS
     )
     case_ids = set(cases_df.loc[cases_df["procedure_id"] == procedure_id, "case_id"])
     score_cols = ["case_id", "step_id", "rating", "rating_num",
@@ -918,15 +929,6 @@ def _create_new_step(step_name: str) -> str:
     }])
     write_sheet_df(SHEET_STEPS, pd.concat([steps_df, new_row], ignore_index=True))
     return new_id
-
-
-# Canonical full column list for the cases sheet — matches save_case()'s
-# own list exactly, so any read/write here (counting or deleting cases)
-# never drops a column write_sheet_df would otherwise silently lose.
-_CASE_COLS = ["case_id", "resident_email", "date", "specialty_id",
-              "procedure_id", "attending_id", "notes",
-              "case_complexity", "case_preparation", "overall_performance",
-              "robo_type", "improve", "how", "assessment_type", "submitted_at"]
 
 
 def _count_procedure_cases(procedure_id: str) -> int:
@@ -5432,10 +5434,7 @@ elif page == "attending_resident_dashboard":
         residents_df = read_sheet_df(
             SHEET_RESIDENTS, expected_cols=RESIDENT_COLS
         )
-        cases_df = read_sheet_df(
-            SHEET_CASES,
-            expected_cols=["case_id", "resident_email", "specialty_id", "procedure_id", "assessment_type"],
-        )
+        cases_df = read_sheet_df(SHEET_CASES, expected_cols=_CASE_COLS)
     except ConnectionError as exc:
         show_gs_error(exc)
         if st.button("⬅️ Back to Home", key="att_dash_home_err"):
