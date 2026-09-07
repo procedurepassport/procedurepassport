@@ -1880,7 +1880,24 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             return name
         return re.sub(r"\s*\([^)]*\)", "", name).strip()
 
-    _step_display        = {s: _fmt_step_hdr(s) for s in ordered_steps}
+    # If two steps in this procedure differ only by their "(...)"
+    # parenthetical (e.g. "Knot Tying (left hand)" / "(right hand)"),
+    # stripping it from both would give them the same header — and this
+    # heatmap's own display_df further down uses these headers as real
+    # column names, so a collision means duplicate columns, which
+    # crashes the Styler ("...not compatible with non-unique index or
+    # columns") the moment it's rendered. Falls back to each colliding
+    # step's full, still-unique name instead of the shortened one.
+    _step_display: dict = {}
+    _display_groups: dict = {}
+    for _s in ordered_steps:
+        _display_groups.setdefault(_fmt_step_hdr(_s), []).append(_s)
+    for _disp, _members in _display_groups.items():
+        if len(_members) == 1:
+            _step_display[_members[0]] = _disp
+        else:
+            for _m in _members:
+                _step_display[_m] = _m
     ordered_steps_display = [_step_display[s] for s in ordered_steps]
 
     def _is_na(val) -> bool:
