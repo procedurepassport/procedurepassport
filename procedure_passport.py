@@ -2908,6 +2908,9 @@ if _logged_in and st.session_state["page"] not in ("login", "attending_assessmen
         st.session_state["page"] = "start"
         st.rerun()
     if st.sidebar.button("📊 Cumulative Dashboard", key="sb_cumulative"):
+        # Reset to unselected so the page always opens on "Choose
+        # procedure" rather than remembering the last one picked.
+        st.session_state.pop("cumulative_proc_select", None)
         st.session_state["page"] = "cumulative"
         st.rerun()
     if st.sidebar.button("💬 Comments Dashboard", key="sb_comments"):
@@ -4683,6 +4686,10 @@ elif page == "home":
             st.markdown("### 📊 Cumulative Dashboard")
             st.markdown("View your progress heatmap over time.")
             if st.button("View Dashboard", width="stretch"):
+                # Reset to unselected so the page always opens on
+                # "Choose procedure" rather than remembering the last
+                # one picked.
+                st.session_state.pop("cumulative_proc_select", None)
                 go_to("cumulative")
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -5364,12 +5371,27 @@ elif page == "cumulative":
         st.stop()
 
     # ── Procedure selector ────────────────────────────────
+    # index=None + placeholder means no procedure is pre-selected — the
+    # dropdown starts on "Choose procedure" rather than silently picking
+    # the first one. Explicit key so the sidebar/home "Cumulative
+    # Dashboard" buttons can reset it back to unselected on every fresh
+    # navigation to this page (see those buttons) — without a key,
+    # Streamlit would keep remembering whatever was last selected here.
     proc_ids      = merged["case_procedure_id"].dropna().unique()
     selected_proc = st.selectbox(
         "Procedure",
         options=sorted(proc_ids, key=lambda x: procs_map.get(x, x)),
         format_func=lambda x: procs_map.get(x, x),
+        index=None,
+        placeholder="Choose procedure",
+        key="cumulative_proc_select",
     )
+
+    if selected_proc is None:
+        st.info("Choose a procedure above to see its progress heatmap.")
+        if st.button("⬅️ Back to Home"):
+            go_to("home")
+        st.stop()
 
     # Switching procedures re-hides comments from whichever procedure
     # was previously showing, rather than leaving them displayed under
