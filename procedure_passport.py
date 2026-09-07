@@ -3958,10 +3958,11 @@ elif page == "admin":
                 })
                 st.caption(
                     "Rename or reorder existing steps — their rating history stays "
-                    "linked either way. Delete a row to remove that step. To add a "
-                    "step, use the existing-steps picker below — typing a brand-new "
-                    "step name directly into this table isn't allowed here; create "
-                    "it first with ➕ Add Step above."
+                    "linked either way. To add or delete a step, use the pickers "
+                    "below instead of typing a row here or removing one — a "
+                    "brand-new step name isn't allowed here at all (create it "
+                    "first with ➕ Add Step above), and deleting needs to show "
+                    "how many ratings it would take with it first."
                 )
                 _edited_steps_df = st.data_editor(
                     _steps_editor_df,
@@ -3973,7 +3974,14 @@ elif page == "admin":
                         ),
                         "Step": st.column_config.TextColumn("Step", required=True),
                     },
-                    num_rows="dynamic",
+                    # "fixed", not "dynamic" — adding/deleting a row here
+                    # bypassed both the existing-steps-only rule (a typed
+                    # new row) and the rating-count warning a real delete
+                    # needs (a silently dropped row never told you what
+                    # it was about to take with it). Both are now their
+                    # own dedicated, checked actions below instead; this
+                    # table is rename/reorder only.
+                    num_rows="fixed",
                     hide_index=True,
                     width="stretch",
                     key=f"edit_proc_steps_editor_{sel_proc_id}",
@@ -4009,26 +4017,8 @@ elif page == "admin":
                         (procs_df["procedure_id"] != sel_proc_id)
                         & (procs_df["procedure_name"].astype(str).str.strip().str.lower() == new_pname.strip().lower())
                     ]
-                    # A row whose step_id isn't already one of this
-                    # procedure's own is a brand-new row typed directly
-                    # into the table — no longer allowed here at all
-                    # (see the caption above): every addition has to go
-                    # through the existing-steps picker below instead,
-                    # which is the only path that can resolve a name to
-                    # a real step_id (promoting/relinking it as needed).
-                    _new_typed_rows = [
-                        str(_row["Step"]).strip() for _, _row in _clean_steps.iterrows()
-                        if not (isinstance(_row["step_id"], str) and _row["step_id"].strip() in _existing_step_ids)
-                    ]
                     if _clean_steps.empty:
                         st.error("A procedure needs at least one step — add one before updating.")
-                    elif _new_typed_rows:
-                        st.error(
-                            "Typing a new step name directly into this table isn't "
-                            "allowed: " + ", ".join(f'"{s}"' for s in _new_typed_rows) + ". "
-                            "Use the existing-steps picker below to add a step that "
-                            "already exists, or create it first with ➕ Add Step above."
-                        )
                     elif _pending_rename and not _rename_confirmed:
                         st.error(
                             f'Please check the confirmation box above before renaming '
@@ -4050,8 +4040,10 @@ elif page == "admin":
 
                         _new_step_rows = []
                         for i, _row in _clean_steps.iterrows():
-                            # Already validated above: every row's step_id
-                            # is one of this procedure's own existing ones.
+                            # num_rows="fixed" above guarantees every row's
+                            # step_id is one of this procedure's own
+                            # existing ones — no new row could ever appear
+                            # here, so no fallback id-minting is needed.
                             _sid = _row["step_id"]
                             _new_step_rows.append({
                                 "step_id":      _sid,
@@ -4126,6 +4118,47 @@ elif page == "admin":
                             st.rerun()
                         except ValueError as _epadd_exc:
                             st.error(f"⚠️ {_epadd_exc}")
+
+                st.markdown("---")
+                st.markdown("**Delete a step from this procedure**")
+                if _proc_steps_df.empty:
+                    st.caption("No steps to delete.")
+                else:
+                    _epdel_choice_name = st.selectbox(
+                        "Step to delete", _proc_steps_df["step_name"].tolist(),
+                        key=f"ep_del_step_choice_{sel_proc_id}",
+                    )
+                    _epdel_step_id = _proc_steps_df.loc[
+                        _proc_steps_df["step_name"] == _epdel_choice_name, "step_id"
+                    ].values[0]
+                    _epdel_rating_count = _count_step_ratings(_epdel_step_id, sel_proc_id)
+
+                    _epdel_confirmed = True
+                    if _epdel_rating_count > 0:
+                        st.warning(
+                            f"⚠️ {_epdel_rating_count} existing case rating(s) use this step "
+                            f'under "{edit_proc}". Deleting it can also delete those '
+                            "ratings — this can't be undone."
+                        )
+                        _epdel_confirmed = st.checkbox(
+                            f'Yes, delete "{_epdel_choice_name}" and its {_epdel_rating_count} rating(s)',
+                            key=f"confirm_ep_del_step_{sel_proc_id}_{_epdel_step_id}",
+                        )
+
+                    if st.button("Delete Step", key="btn_ep_del_step"):
+                        if not _epdel_confirmed:
+                            st.error("Please check the confirmation box above before deleting.")
+                        else:
+                            try:
+                                _epdel_n = _delete_step(_epdel_step_id, sel_proc_id, delete_ratings=True)
+                                st.success(
+                                    f'✅ Deleted "{_epdel_choice_name}"'
+                                    + (f" and {_epdel_n} rating(s)" if _epdel_n else "")
+                                )
+                                time.sleep(0.5)
+                                st.rerun()
+                            except ValueError as _epdel_exc:
+                                st.error(f"⚠️ {_epdel_exc}")
 
         with st.expander("🗑️ Delete Procedure"):
             st.caption(
