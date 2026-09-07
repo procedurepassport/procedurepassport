@@ -1293,6 +1293,7 @@ def load_case_detail(case_id: str):
         "resident_name":       resident_name,
         "procedure_id":        row.get("procedure_id", ""),
         "procedure_name":      procedure_name,
+        "attending_id":        row.get("attending_id", ""),
         "attending_name":      attending_name,
         "date":                row.get("date", ""),
         "case_complexity":     row.get("case_complexity"),
@@ -1641,6 +1642,186 @@ def _build_resident_comments_df(resident_email: str) -> pd.DataFrame:
     merged = merged[_cols + ["_date_sort"]].sort_values("_date_sort", ascending=False).drop(columns=["_date_sort"])
     merged["Date"] = merged["Date"].apply(fmt_date)
     return merged
+
+
+def _build_resident_evaluation_list(resident_email: str) -> pd.DataFrame:
+    """One row per attending-confirmed case for one resident — every
+    entry on the resident's "Complete Evaluation History" page, newest
+    first. Self-assessments are excluded, same convention as the
+    heatmap/Comments Dashboard (an unverified entry the resident wrote
+    about themselves isn't "an evaluation" in that sense). Columns:
+    case_id, Date, Procedure, Attending, _date_sort (drop the last
+    before display — kept only for re-sorting after filtering)."""
+    _cols = ["case_id", "Date", "Procedure", "Attending", "_date_sort"]
+    cases_df = read_sheet_df(SHEET_CASES, expected_cols=_CASE_COLS)
+    cases_df["case_id"] = _norm_id(cases_df["case_id"])
+    cases_df = cases_df.drop_duplicates(subset=["case_id"])
+
+    res_cases = cases_df[
+        cases_df["resident_email"].astype(str).str.strip().str.lower()
+        == str(resident_email).strip().lower()
+    ].copy()
+    res_cases = res_cases[res_cases["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment"]
+    if res_cases.empty:
+        return pd.DataFrame(columns=_cols)
+
+    atnds_lookup = dict(zip(_read_attendings_df()["attending_id"], _read_attendings_df()["attending_name"]))
+    res_cases["Attending"] = res_cases["attending_id"].apply(
+        lambda aid: attending_display_name(str(aid), atnds_lookup)
+    )
+
+    procs_df = read_sheet_df(SHEET_PROCEDURES, expected_cols=["procedure_id", "procedure_name", "specialty_id"])
+    procs_dedup = procs_df.drop_duplicates(subset=["procedure_id"])
+    merged = res_cases.merge(procs_dedup[["procedure_id", "procedure_name"]], on="procedure_id", how="left")
+    merged["Procedure"] = merged["procedure_name"].fillna(merged["procedure_id"].astype(str))
+    merged["_date_sort"] = pd.to_datetime(merged["date"], errors="coerce")
+    merged["Date"] = merged["date"].apply(fmt_date)
+    merged = merged.sort_values("_date_sort", ascending=False)
+    return merged[_cols].reset_index(drop=True)
+
+
+def _build_attending_evaluation_list(attending_id: str) -> pd.DataFrame:
+    """One row per case this attending has evaluated (directly, or was
+    present for via "Assessed Together") — every entry on the
+    attending's own "Complete Evaluation History" page, across every
+    resident, newest first. Same Self-Assessment exclusion and column
+    shape as _build_resident_evaluation_list, but keyed by attending_id
+    and returning Resident instead of Attending."""
+    _cols = ["case_id", "Date", "Procedure", "Resident", "_date_sort"]
+    cases_df = read_sheet_df(SHEET_CASES, expected_cols=_CASE_COLS)
+    cases_df["case_id"] = _norm_id(cases_df["case_id"])
+    cases_df = cases_df.drop_duplicates(subset=["case_id"])
+
+    att_cases = cases_df[cases_df["attending_id"].astype(str) == str(attending_id)].copy()
+    att_cases = att_cases[att_cases["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment"]
+    if att_cases.empty:
+        return pd.DataFrame(columns=_cols)
+
+    residents_df = read_sheet_df(SHEET_RESIDENTS, expected_cols=RESIDENT_COLS)
+    res_lookup = dict(zip(
+        residents_df["email"].astype(str).str.strip().str.lower(),
+        residents_df["name"],
+    ))
+    att_cases["Resident"] = att_cases["resident_email"].astype(str).str.strip().str.lower().map(res_lookup)
+    att_cases["Resident"] = att_cases["Resident"].fillna(att_cases["resident_email"])
+
+    procs_df = read_sheet_df(SHEET_PROCEDURES, expected_cols=["procedure_id", "procedure_name", "specialty_id"])
+    procs_dedup = procs_df.drop_duplicates(subset=["procedure_id"])
+    merged = att_cases.merge(procs_dedup[["procedure_id", "procedure_name"]], on="procedure_id", how="left")
+    merged["Procedure"] = merged["procedure_name"].fillna(merged["procedure_id"].astype(str))
+    merged["_date_sort"] = pd.to_datetime(merged["date"], errors="coerce")
+    merged["Date"] = merged["date"].apply(fmt_date)
+    merged = merged.sort_values("_date_sort", ascending=False)
+    return merged[_cols].reset_index(drop=True)
+
+
+def _render_evaluation_history_list(
+    df: pd.DataFrame,
+    *,
+    person_col: str,
+    person_noun: str,
+    preposition: str,
+    session_prefix: str,
+    return_page: str,
+) -> None:
+    """Shared body of the Complete Evaluation History page for both
+    logins: procedure/[person] filters that narrow each other's options
+    (same cross-narrowing as the Comments Dashboard's own Procedure/
+    Attending filters), a date-range filter alongside them, a
+    "{Procedure} — Evaluations {preposition} {person}"-style heading
+    that updates with the filters (same design as the Comments
+    Dashboard's own heading), and the filtered list itself as one
+    clickable row per evaluation — each opening it on the "view one
+    evaluation" page.
+
+    `df` is the full, unfiltered list for this resident/attending, from
+    _build_resident_evaluation_list / _build_attending_evaluation_list
+    (case_id, Date, Procedure, [person_col], _date_sort). `person_col`
+    is "Attending" or "Resident" — whichever the *other* party is from
+    this viewer's own login; `preposition` reads naturally in front of
+    it ("by {Attending}" vs. "for {Resident}"); `session_prefix` keeps
+    each login's filter widgets in their own session_state namespace;
+    `return_page` is where "view one evaluation"'s own Back button
+    returns to."""
+    _all_proc = "All Procedures"
+    _all_person = f"All {person_noun}s"
+    _proc_key = f"{session_prefix}_proc_filter"
+    _person_key = f"{session_prefix}_person_filter"
+    _date_key = f"{session_prefix}_date_range"
+
+    _proc_selected = st.session_state.get(_proc_key, _all_proc)
+    _person_selected = st.session_state.get(_person_key, _all_person)
+    _proc_chosen = _proc_selected != _all_proc
+    _person_chosen = _person_selected != _all_person
+    if _proc_chosen and _person_chosen:
+        _heading = f"{_proc_selected} — Evaluations {preposition} {_person_selected}"
+    elif _proc_chosen:
+        _heading = f"{_proc_selected} — All Evaluations"
+    elif _person_chosen:
+        _heading = f"All Evaluations {preposition} {_person_selected}"
+    else:
+        _heading = "All Evaluations"
+    st.markdown(f"### 📜 {_heading}")
+
+    # Each dropdown's options are narrowed by the *other* dropdown's
+    # current selection — same behavior as the Comments Dashboard's
+    # Procedure/Attending filters.
+    _proc_pool = df if _person_selected == _all_person else df[df[person_col] == _person_selected]
+    _proc_opts = [_all_proc] + sorted(_proc_pool["Procedure"].dropna().unique().tolist())
+    _person_pool = df if _proc_selected == _all_proc else df[df["Procedure"] == _proc_selected]
+    _person_opts = [_all_person] + sorted(
+        _person_pool[person_col].dropna().unique().tolist(),
+        key=lambda n: n.split()[-1] if n.split() else n,
+    )
+    # A previously-selected filter value can fall out of the newly
+    # narrowed options (because the other filter now excludes it) —
+    # reset it before the widget renders, rather than letting
+    # st.selectbox raise on a default no longer in its options.
+    if _proc_selected not in _proc_opts:
+        st.session_state[_proc_key] = _all_proc
+    if _person_selected not in _person_opts:
+        st.session_state[_person_key] = _all_person
+
+    _min_date = df["_date_sort"].min()
+    _max_date = df["_date_sort"].max()
+    _min_date = _min_date.date() if pd.notna(_min_date) else datetime.date.today()
+    _max_date = _max_date.date() if pd.notna(_max_date) else datetime.date.today()
+
+    _filter_col1, _filter_col2, _filter_col3 = st.columns(3)
+    with _filter_col1:
+        _date_range = st.date_input(
+            "Filter by Date Range", value=(_min_date, _max_date),
+            min_value=_min_date, max_value=_max_date, key=_date_key,
+        )
+    with _filter_col2:
+        _person_filter = st.selectbox(f"Filter by {person_noun}", _person_opts, key=_person_key)
+    with _filter_col3:
+        _proc_filter = st.selectbox("Filter by Procedure", _proc_opts, key=_proc_key)
+
+    filtered = df
+    if _proc_filter != _all_proc:
+        filtered = filtered[filtered["Procedure"] == _proc_filter]
+    if _person_filter != _all_person:
+        filtered = filtered[filtered[person_col] == _person_filter]
+    # date_input returns a 1-tuple while the user has only picked the
+    # range's start so far (still mid-selection) — treat that as "not
+    # filtered yet" rather than collapsing the range to a single day.
+    if isinstance(_date_range, tuple) and len(_date_range) == 2:
+        _start, _end = _date_range
+        filtered = filtered[
+            (filtered["_date_sort"].dt.date >= _start) & (filtered["_date_sort"].dt.date <= _end)
+        ]
+
+    if filtered.empty:
+        st.info("No evaluations match these filters.")
+        return
+
+    for _, _row in filtered.iterrows():
+        _label = f"📄 {_row['Procedure']} — {_row[person_col]} ({_row['Date']})"
+        if st.button(_label, key=f"{session_prefix}_row_{_row['case_id']}", width="stretch"):
+            st.session_state["viewing_case_id"] = _row["case_id"]
+            st.session_state["viewing_case_return_page"] = return_page
+            go_to("view_evaluation")
 
 
 def _render_comments_html_table(merged: pd.DataFrame, show_proc: bool, show_att: bool) -> None:
@@ -2944,6 +3125,9 @@ if _logged_in and st.session_state["page"] not in ("login", "attending_assessmen
     if st.sidebar.button("💬 Comments Dashboard", key="sb_comments"):
         st.session_state["page"] = "comments"
         st.rerun()
+    if st.sidebar.button("📜 Evaluation History", key="sb_eval_history"):
+        st.session_state["page"] = "eval_history"
+        st.rerun()
     st.sidebar.markdown("---")
     if st.sidebar.button("🚪 Logout", key="sb_logout_resident"):
         for _k in list(st.session_state.keys()):
@@ -2966,6 +3150,9 @@ if _attending_logged_in:
         st.rerun()
     if st.sidebar.button("📊 Resident Dashboard", key="sb_att_dashboard"):
         st.session_state["page"] = "attending_resident_dashboard"
+        st.rerun()
+    if st.sidebar.button("📜 Evaluation History", key="sb_att_eval_history"):
+        st.session_state["page"] = "attending_eval_history"
         st.rerun()
     st.sidebar.markdown("---")
     if st.sidebar.button("🚪 Logout", key="sb_logout_attending"):
@@ -4691,6 +4878,7 @@ elif page == "home":
                     width="stretch",
                 ):
                     st.session_state["viewing_case_id"] = _eval_row["case_id"]
+                    st.session_state["viewing_case_return_page"] = "home"
                     go_to("view_evaluation")
             st.markdown("")
     except ConnectionError:
@@ -4700,7 +4888,7 @@ elif page == "home":
     st.markdown("")
 
     with st.container(key="home_cards"):
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4 = st.columns(4)
         with c1:
             st.markdown('<div class="pp-card">', unsafe_allow_html=True)
             st.markdown("### ➕ New Assessment")
@@ -4729,19 +4917,45 @@ elif page == "home":
                 go_to("comments")
             st.markdown("</div>", unsafe_allow_html=True)
 
+        with c4:
+            st.markdown('<div class="pp-card">', unsafe_allow_html=True)
+            st.markdown("### 📜 Evaluation History")
+            st.markdown("Browse every evaluation you've received.")
+            if st.button("View History", width="stretch", key="home_eval_history_btn"):
+                go_to("eval_history")
+            st.markdown("</div>", unsafe_allow_html=True)
+
 
 # ════════════════════════════════════════════════════════════
-# PAGE: VIEW ONE EVALUATION (linked from the Home page's new-evaluation
-# badge). Purely a read-only display — nothing here needs saving; the
-# badge itself already cleared the moment Home was loaded, regardless
-# of whether any individual link below is actually opened.
+# PAGE: VIEW ONE EVALUATION. Linked from the resident Home page's
+# new-evaluation badge and from either login's Complete Evaluation
+# History list. Purely a read-only display — nothing here needs
+# saving; the Home badge itself already cleared the moment Home was
+# loaded, regardless of whether any individual link below is actually
+# opened.
 # ════════════════════════════════════════════════════════════
 elif page == "view_evaluation":
-    _resident = st.session_state.get("resident")
-    if not _resident:
+    _view_eval_is_attending = st.session_state.get("role") == "attending"
+    _resident = None if _view_eval_is_attending else st.session_state.get("resident")
+    _viewer_attending_id = st.session_state.get("attending_login_id") if _view_eval_is_attending else None
+    # Where "Back" returns to: whichever page linked here (Home's badge,
+    # or either login's Evaluation History list) sets this before
+    # navigating — falls back to each login's own home page for an old
+    # link/session that never set it.
+    _return_page = st.session_state.get("viewing_case_return_page") or (
+        "attending_home" if _view_eval_is_attending else "home"
+    )
+    _return_label = {
+        "home": "⬅️ Back to Home",
+        "attending_home": "⬅️ Back to Home",
+        "eval_history": "⬅️ Back to Evaluation History",
+        "attending_eval_history": "⬅️ Back to Evaluation History",
+    }.get(_return_page, "⬅️ Back")
+
+    if not _resident and not _viewer_attending_id:
         st.error("Not logged in.")
-        if st.button("⬅️ Back to Home"):
-            go_to("home")
+        if st.button(_return_label):
+            go_to(_return_page)
         st.stop()
 
     _viewing_case_id = st.session_state.get("viewing_case_id")
@@ -4749,35 +4963,42 @@ elif page == "view_evaluation":
         _viewed_sub = load_case_detail(_viewing_case_id)
     except ConnectionError as exc:
         show_gs_error(exc)
-        if st.button("⬅️ Back to Home"):
-            go_to("home")
+        if st.button(_return_label):
+            go_to(_return_page)
         st.stop()
 
-    if not _viewed_sub or str(_viewed_sub.get("resident_email", "")).strip().lower() != str(_resident).strip().lower():
-        # Missing case, or (shouldn't normally happen since the link is
-        # only ever generated for this resident's own cases) one that
-        # isn't this resident's — refuse either way rather than showing
-        # someone else's evaluation.
+    _owns_it = bool(_viewed_sub) and (
+        (_resident and str(_viewed_sub.get("resident_email", "")).strip().lower() == str(_resident).strip().lower())
+        or (_viewer_attending_id and str(_viewed_sub.get("attending_id", "")) == str(_viewer_attending_id))
+    )
+    if not _owns_it:
+        # Missing case, or (shouldn't normally happen — every link here
+        # is only ever generated for this viewer's own cases) one that
+        # belongs to someone else — refuse either way rather than
+        # showing someone else's evaluation.
         st.error("Evaluation not found.")
-        if st.button("⬅️ Back to Home"):
-            go_to("home")
+        if st.button(_return_label):
+            go_to(_return_page)
         st.stop()
 
     # Confirmed valid and this resident's own — drops it off the Home
     # page's badge from here on, leaving any other still-unopened new
-    # evaluations untouched.
-    try:
-        mark_evaluation_viewed(_resident, _viewed_sub["case_id"])
-    except ConnectionError:
-        pass  # already showing them the evaluation either way
+    # evaluations untouched. Only meaningful for a resident viewing
+    # their own evaluation — an attending browsing their own history
+    # has no such badge to clear.
+    if _resident:
+        try:
+            mark_evaluation_viewed(_resident, _viewed_sub["case_id"])
+        except ConnectionError:
+            pass  # already showing them the evaluation either way
 
     page_header("📄 Evaluation")
     _render_evaluation_card(_viewed_sub)
     render_prep_legend(key="prep_legend_view_evaluation")
 
     st.markdown("---")
-    if st.button("⬅️ Back to Home"):
-        go_to("home")
+    if st.button(_return_label):
+        go_to(_return_page)
 
 
 # ════════════════════════════════════════════════════════════
@@ -4793,7 +5014,7 @@ elif page == "attending_home":
     st.markdown("")
 
     with st.container(key="home_cards"):
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         with c1:
             st.markdown('<div class="pp-card">', unsafe_allow_html=True)
             st.markdown("### ➕ New Assessment")
@@ -4808,6 +5029,14 @@ elif page == "attending_home":
             st.markdown("View resident progress heatmaps and comments.")
             if st.button("View Dashboard", width="stretch", key="att_home_dashboard_btn"):
                 go_to("attending_resident_dashboard")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with c3:
+            st.markdown('<div class="pp-card">', unsafe_allow_html=True)
+            st.markdown("### 📜 Evaluation History")
+            st.markdown("Browse every evaluation you've filled out.")
+            if st.button("View History", width="stretch", key="att_home_eval_history_btn"):
+                go_to("attending_eval_history")
             st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -5590,6 +5819,50 @@ elif page == "cumulative":
 
 
 # ════════════════════════════════════════════════════════════
+# PAGE: EVALUATION HISTORY (resident) — every attending-confirmed
+# evaluation this resident has received, filterable by date range,
+# attending, and procedure; each row opens the matching "view one
+# evaluation" page (see _render_evaluation_history_list).
+# ════════════════════════════════════════════════════════════
+elif page == "eval_history":
+    mobile_tip("📱 On mobile: tap the >> icon at top left to view the sidebar.")
+    page_header("📜 Complete Evaluation History")
+    if st.button("🏠 Back to Home", key="eval_history_home_top"):
+        go_to("home")
+
+    resident = st.session_state.get("resident")
+    if not resident:
+        st.error("Not logged in.")
+        if st.button("⬅️ Back to Home"):
+            go_to("home")
+        st.stop()
+
+    try:
+        _eval_history_df = _build_resident_evaluation_list(resident)
+    except ConnectionError as exc:
+        show_gs_error(exc)
+        if st.button("⬅️ Back to Home"):
+            go_to("home")
+        st.stop()
+
+    if _eval_history_df.empty:
+        st.info("No evaluations recorded yet.")
+    else:
+        _render_evaluation_history_list(
+            _eval_history_df,
+            person_col="Attending",
+            person_noun="Attending",
+            preposition="by",
+            session_prefix="eval_hist",
+            return_page="eval_history",
+        )
+
+    st.markdown("---")
+    if st.button("⬅️ Back to Home"):
+        go_to("home")
+
+
+# ════════════════════════════════════════════════════════════
 # PAGE: ATTENDING START ASSESSMENT
 # ════════════════════════════════════════════════════════════
 elif page == "attending_start":
@@ -5835,6 +6108,51 @@ elif page == "attending_resident_dashboard":
 
     st.markdown("---")
     if st.button("⬅️ Back to Home", key="att_dash_bottom_home"):
+        go_to("attending_home")
+
+
+# ════════════════════════════════════════════════════════════
+# PAGE: EVALUATION HISTORY (attending) — every evaluation this
+# attending has filled out (or was present for, via "Assessed
+# Together"), across every resident, filterable by date range,
+# resident, and procedure; each row opens the matching "view one
+# evaluation" page (see _render_evaluation_history_list).
+# ════════════════════════════════════════════════════════════
+elif page == "attending_eval_history":
+    mobile_tip("📱 On mobile: tap the >> icon at top left to view the sidebar.")
+    page_header("📜 Complete Evaluation History")
+    if st.button("🏠 Back to Home", key="att_eval_history_home_top"):
+        go_to("attending_home")
+
+    attending_id = st.session_state.get("attending_login_id")
+    if not attending_id:
+        st.error("Not logged in.")
+        if st.button("⬅️ Back to Home"):
+            go_to("attending_home")
+        st.stop()
+
+    try:
+        _att_eval_history_df = _build_attending_evaluation_list(attending_id)
+    except ConnectionError as exc:
+        show_gs_error(exc)
+        if st.button("⬅️ Back to Home"):
+            go_to("attending_home")
+        st.stop()
+
+    if _att_eval_history_df.empty:
+        st.info("No evaluations recorded yet.")
+    else:
+        _render_evaluation_history_list(
+            _att_eval_history_df,
+            person_col="Resident",
+            person_noun="Resident",
+            preposition="for",
+            session_prefix="att_eval_hist",
+            return_page="attending_eval_history",
+        )
+
+    st.markdown("---")
+    if st.button("⬅️ Back to Home", key="att_eval_history_bottom_home"):
         go_to("attending_home")
 
 
