@@ -1838,8 +1838,7 @@ def _build_resident_case_matrix(resident_email: str):
 
 def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs_map: dict,
                               selected_proc: str, filename_stub: str,
-                              heading_suffix: str = "Progress Heatmap",
-                              after_heading=None) -> None:
+                              heading_suffix: str = "Progress Heatmap") -> None:
     """Render the progress heatmap + legends for one resident's one
     procedure. `merged` is the resident's full case matrix from
     _build_resident_case_matrix (not yet filtered to a procedure) —
@@ -1849,13 +1848,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     ("{procedure} — {heading_suffix}") — the attending's Resident
     Dashboard overrides it to "Progress Heatmap and Comments" since
     that page's Comments section right below no longer has a heading
-    of its own once a procedure is chosen.
-
-    `after_heading`, if given, is called with no arguments right after
-    the heading renders, before the heatmap table — a hook for a
-    caller-specific widget (e.g. the Cumulative Dashboard's "See
-    Comments" button) that needs to sit at that exact spot without
-    this shared function needing to know anything about it."""
+    of its own once a procedure is chosen."""
     proc_data = merged[merged["case_procedure_id"] == selected_proc].copy()
     if proc_data.empty:
         st.info("No assessment data yet for this procedure.")
@@ -1980,9 +1973,6 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     _heatmap_heading = header_break_before(f"{proc_display_name} —", heading_suffix)
     with st.container(key="heatmap_heading_row"):
         st.markdown(f"### {_heatmap_heading}\nMost recent cases at the top.")
-
-    if after_heading is not None:
-        after_heading()
 
     pivot_sorted = pivot.sort_values("date", ascending=False)
 
@@ -5330,8 +5320,28 @@ elif page == "comments":
 elif page == "cumulative":
     mobile_tip("📱 On mobile: tap the >> icon at top left to view the sidebar.")
     page_header("📊 Cumulative Dashboard")
-    if st.button("🏠 Back to Home", key="cumulative_home_top"):
-        go_to("home")
+
+    # "See Comments" sits to the left of the top "Back to Home" button.
+    # Its own visibility state (cumulative_show_comments) doesn't depend
+    # on anything else on the page, so it's safe to render this early —
+    # before login/data checks and before a procedure is even selected.
+    # The comments table it toggles still renders much further down,
+    # below the heatmap and its three legends.
+    _top_col1, _top_col2 = st.columns(2)
+    with _top_col1:
+        _comments_label = "💬 Hide Comments" if st.session_state.get("cumulative_show_comments") else "💬 See Comments"
+        if st.button(_comments_label, key="cumulative_see_comments"):
+            # Without the rerun, this button's own label (computed just
+            # above, before we knew it'd be clicked) stays whatever it
+            # already was for the rest of this run — the comments table
+            # below updates immediately, but the button text itself
+            # lags a click behind until something else reruns the page.
+            st.session_state["cumulative_show_comments"] = not st.session_state.get("cumulative_show_comments", False)
+            st.rerun()
+    with _top_col2:
+        if st.button("🏠 Back to Home", key="cumulative_home_top"):
+            go_to("home")
+
     resident = st.session_state.get("resident")
     if not resident:
         st.error("Not logged in.")
@@ -5363,29 +5373,20 @@ elif page == "cumulative":
 
     # Switching procedures re-hides comments from whichever procedure
     # was previously showing, rather than leaving them displayed under
-    # a heatmap they no longer belong to.
+    # a heatmap they no longer belong to. Only reruns when this actually
+    # flips comments from shown to hidden — the top "See Comments" button
+    # already rendered this run, so its label needs a fresh run to catch
+    # up; skipping the rerun when there's nothing to flip avoids an
+    # infinite loop (the guard below wouldn't fire again either way,
+    # since cumulative_comments_proc is already updated by then).
     if st.session_state.get("cumulative_comments_proc") != selected_proc:
         st.session_state["cumulative_comments_proc"] = selected_proc
-        st.session_state["cumulative_show_comments"] = False
-
-    def _render_comments_toggle_button() -> None:
-        # Sits right under the heatmap's own heading (via
-        # _render_resident_heatmap's after_heading hook) — the actual
-        # comments table this toggles still renders below, after the
-        # heatmap and its three legends (see below).
-        _label = "💬 Hide Comments" if st.session_state.get("cumulative_show_comments") else "💬 See Comments"
-        if st.button(_label, key="cumulative_see_comments"):
-            # Without the rerun, this button's own label (computed just
-            # above, before we knew it'd be clicked) stays whatever it
-            # already was for the rest of this run — the comments table
-            # below updates immediately, but the button text itself
-            # lags a click behind until something else reruns the page.
-            st.session_state["cumulative_show_comments"] = not st.session_state.get("cumulative_show_comments", False)
+        if st.session_state.get("cumulative_show_comments"):
+            st.session_state["cumulative_show_comments"] = False
             st.rerun()
 
     _render_resident_heatmap(
         merged, steps_df, procs_map, selected_proc, filename_stub=resident,
-        after_heading=_render_comments_toggle_button,
     )
 
     _selected_proc_name = procs_map.get(selected_proc, selected_proc)
