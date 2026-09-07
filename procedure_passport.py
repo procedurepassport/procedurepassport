@@ -5375,7 +5375,13 @@ elif page == "cumulative":
         # heatmap and its three legends (see below).
         _label = "💬 Hide Comments" if st.session_state.get("cumulative_show_comments") else "💬 See Comments"
         if st.button(_label, key="cumulative_see_comments"):
+            # Without the rerun, this button's own label (computed just
+            # above, before we knew it'd be clicked) stays whatever it
+            # already was for the rest of this run — the comments table
+            # below updates immediately, but the button text itself
+            # lags a click behind until something else reruns the page.
             st.session_state["cumulative_show_comments"] = not st.session_state.get("cumulative_show_comments", False)
+            st.rerun()
 
     _render_resident_heatmap(
         merged, steps_df, procs_map, selected_proc, filename_stub=resident,
