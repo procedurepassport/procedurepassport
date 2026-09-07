@@ -1831,7 +1831,14 @@ def _render_evaluation_history_list(
     # picking both ends of a range in a single calendar (two clicks in
     # the same popup, order-sensitive) was fiddly; separate pickers let
     # each end be set on its own, in either order.
-    _filter_col1, _filter_col2, _filter_col3, _filter_col4, _filter_col5 = st.columns(5, vertical_alignment="bottom")
+    # Unequal widths, not a plain 5-way split: the date fields only ever
+    # show "MM/DD/YYYY" and don't need as much room as the other three,
+    # whose labels are longer — "🔄 Reset Date Range" in particular
+    # wrapped to two lines at an even split (confirmed by measuring its
+    # rendered width against the narrower column it'd otherwise get).
+    _filter_col1, _filter_col2, _filter_col3, _filter_col4, _filter_col5 = st.columns(
+        [1.15, 1.15, 0.85, 0.85, 1.3], vertical_alignment="bottom"
+    )
     with _filter_col1:
         _person_filter = st.selectbox(f"Filter by {person_noun}", _person_opts, key=_person_key)
     with _filter_col2:
