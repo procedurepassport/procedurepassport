@@ -5353,6 +5353,34 @@ elif page == "comments":
 # PAGE: CUMULATIVE DASHBOARD
 # ════════════════════════════════════════════════════════════
 elif page == "cumulative":
+    if st.session_state.pop("_cumulative_scroll_to_top", False):
+        # Set once, by "Hide Comments" (further down), right when it
+        # collapses the comments section — consuming it (popping) here
+        # means this only fires on the run right after that click. Same
+        # scroll-to-top logic as the page-navigation trick above, just
+        # triggered by this one-shot flag instead of a page change (page
+        # doesn't change here — the user stays on this same page). A
+        # fresh time.time() keeps this iframe's content from ever being
+        # byte-identical to what it last sent at this call site — an
+        # unchanged srcdoc never re-fires its own <script> on a later
+        # Hide Comments click (same reasoning as that other trick).
+        st.iframe(
+            f"""
+            <!-- scroll to top after hiding comments: {time.time()} -->
+            <script>
+            (function() {{
+                window.parent.scrollTo(0, 0);
+                var doc = window.parent.document;
+                var containers = doc.querySelectorAll(
+                    '[data-testid="stAppViewContainer"], [data-testid="stMain"], section.main'
+                );
+                containers.forEach(function(c) {{ c.scrollTop = 0; }});
+            }})();
+            </script>
+            """,
+            height=1,
+        )
+
     mobile_tip("📱 On mobile: tap the >> icon at top left to view the sidebar.")
 
     # Login/data checks happen before the page header now (rather than
@@ -5503,6 +5531,9 @@ elif page == "cumulative":
                 st.markdown(f"### 💬 Comments — {_selected_proc_name}")
                 if st.button("🙈 Hide Comments", key="cumulative_hide_comments"):
                     st.session_state["cumulative_show_comments"] = False
+                    # Consumed once, right at the top of the page, to
+                    # scroll back up — see there.
+                    st.session_state["_cumulative_scroll_to_top"] = True
                     st.rerun()
 
             if st.session_state.pop("_cumulative_scroll_to_comments", False):
@@ -5519,6 +5550,15 @@ elif page == "cumulative":
                 # identical to what it last sent for that same call site
                 # (same reason the page-level scroll-to-top trick above
                 # embeds the page name).
+                #
+                # Computes its own target scroll offset against stMain
+                # directly (the container that actually scrolls in this
+                # layout) rather than el.scrollIntoView() — that landed
+                # the header a fair bit lower than the true top in
+                # practice, since it has to account for the same nested
+                # container. The small SCROLL_HEADROOM_PX subtraction
+                # lands the header just shy of flush against the very
+                # top edge, rather than jammed right against it.
                 st.iframe(
                     f"""
                     <!-- scroll to comments: {html.escape(_selected_proc_name)} -->
@@ -5526,7 +5566,14 @@ elif page == "cumulative":
                     (function() {{
                         var doc = window.parent.document;
                         var el = doc.querySelector('.st-key-cumulative_comments_anchor');
-                        if (el) el.scrollIntoView({{behavior: 'smooth', block: 'start'}});
+                        var container = doc.querySelector('[data-testid="stMain"]')
+                            || doc.querySelector('[data-testid="stAppViewContainer"]');
+                        if (!el || !container) return;
+                        var SCROLL_HEADROOM_PX = 12;
+                        var elRect = el.getBoundingClientRect();
+                        var containerRect = container.getBoundingClientRect();
+                        var target = container.scrollTop + (elRect.top - containerRect.top) - SCROLL_HEADROOM_PX;
+                        container.scrollTo({{top: Math.max(0, target), behavior: 'smooth'}});
                     }})();
                     </script>
                     """,
