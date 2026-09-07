@@ -1748,9 +1748,30 @@ def _render_evaluation_history_list(
     _proc_key = f"{session_prefix}_proc_filter"
     _person_key = f"{session_prefix}_person_filter"
     _date_key = f"{session_prefix}_date_range"
+    _start_key = f"{_date_key}_start"
+    _end_key = f"{_date_key}_end"
 
+    _min_date = df["_date_sort"].min()
+    _max_date = df["_date_sort"].max()
+    _min_date = _min_date.date() if pd.notna(_min_date) else datetime.date.today()
+    _max_date = _max_date.date() if pd.notna(_max_date) else datetime.date.today()
+
+    # Everything the heading needs is read from session_state before any
+    # of this run's own widgets are instantiated below — Streamlit
+    # already applies this rerun's trigger (e.g. just having picked a
+    # new Start Date) to session_state before the script starts
+    # executing, so the heading built from these reflects the current
+    # picks immediately, in the same run, without waiting for a second
+    # rerun.
     _proc_selected = st.session_state.get(_proc_key, _all_proc)
     _person_selected = st.session_state.get(_person_key, _all_person)
+    _start_selected = st.session_state.get(_start_key, _min_date)
+    _end_selected = st.session_state.get(_end_key, _max_date)
+    # Swapped rather than filtered-to-nothing if Start ends up picked
+    # later than End — whichever order the two were actually set in.
+    _lo, _hi = min(_start_selected, _end_selected), max(_start_selected, _end_selected)
+    _date_narrowed = _lo != _min_date or _hi != _max_date
+
     _proc_chosen = _proc_selected != _all_proc
     _person_chosen = _person_selected != _all_person
     if _proc_chosen and _person_chosen:
@@ -1761,6 +1782,8 @@ def _render_evaluation_history_list(
         _heading = f"All Evaluations {preposition} {_person_selected}"
     else:
         _heading = "All Evaluations"
+    if _date_narrowed:
+        _heading = f"{_heading} — {_lo.strftime('%m/%d/%Y')} - {_hi.strftime('%m/%d/%Y')}"
     st.markdown(f"### 📜 {_heading}")
 
     # Each dropdown's options are narrowed by the *other* dropdown's
@@ -1782,11 +1805,6 @@ def _render_evaluation_history_list(
     if _person_selected not in _person_opts:
         st.session_state[_person_key] = _all_person
 
-    _min_date = df["_date_sort"].min()
-    _max_date = df["_date_sort"].max()
-    _min_date = _min_date.date() if pd.notna(_min_date) else datetime.date.today()
-    _max_date = _max_date.date() if pd.notna(_max_date) else datetime.date.today()
-
     # Two independent date pickers rather than one range-picker widget —
     # picking both ends of a range in a single calendar (two clicks in
     # the same popup, order-sensitive) was fiddly; separate pickers let
@@ -1795,13 +1813,13 @@ def _render_evaluation_history_list(
     with _filter_col1:
         _start_date = st.date_input(
             "Start Date", value=_min_date,
-            min_value=_min_date, max_value=_max_date, key=f"{_date_key}_start",
+            min_value=_min_date, max_value=_max_date, key=_start_key,
             format="MM/DD/YYYY",
         )
     with _filter_col2:
         _end_date = st.date_input(
             "End Date", value=_max_date,
-            min_value=_min_date, max_value=_max_date, key=f"{_date_key}_end",
+            min_value=_min_date, max_value=_max_date, key=_end_key,
             format="MM/DD/YYYY",
         )
     with _filter_col3:
@@ -1814,9 +1832,6 @@ def _render_evaluation_history_list(
         filtered = filtered[filtered["Procedure"] == _proc_filter]
     if _person_filter != _all_person:
         filtered = filtered[filtered[person_col] == _person_filter]
-    # Swapped rather than filtered-to-nothing if Start ends up picked
-    # later than End — whichever order the two were actually set in.
-    _lo, _hi = min(_start_date, _end_date), max(_start_date, _end_date)
     filtered = filtered[
         (filtered["_date_sort"].dt.date >= _lo) & (filtered["_date_sort"].dt.date <= _hi)
     ]
