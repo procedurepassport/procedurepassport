@@ -5415,26 +5415,20 @@ elif page == "cumulative":
     else:
         page_header("📊 Cumulative Dashboard")
 
-    # "See Comments" sits to the left of the top "Back to Home" button,
-    # but only once a procedure is chosen AND comments aren't already
-    # showing — once they are, "Hide Comments" lives under the comments
-    # section itself instead (see below), right where the user actually
-    # is after this button scrolls them down to it.
-    if _selected_proc_id and not st.session_state.get("cumulative_show_comments"):
-        _top_col1, _top_col2, _top_spacer = st.columns([1, 1, 2])
-        with _top_col1:
-            if st.button("💬 See Comments", key="cumulative_see_comments"):
-                st.session_state["cumulative_show_comments"] = True
-                # Consumed once, right after the comments section
-                # renders below, to scroll it into view — see there.
-                st.session_state["_cumulative_scroll_to_comments"] = True
-                st.rerun()
-        with _top_col2:
-            if st.button("🏠 Back to Home", key="cumulative_home_top"):
-                go_to("home")
-    else:
-        if st.button("🏠 Back to Home", key="cumulative_home_top"):
-            go_to("home")
+    # This reserves the top row's spot in the page — right below the
+    # header, above the selector — without actually filling it in yet.
+    # It has to stay empty until *after* the selectbox is instantiated
+    # below: st.rerun(), called from inside "See Comments"'s own click
+    # handler, aborts the script right there, so anything defined later
+    # in the script (the selectbox included) never runs *this specific
+    # pass* — and Streamlit garbage-collects a keyed widget's
+    # session_state the moment a pass completes without instantiating
+    # it, which silently reset the whole page back to "Choose
+    # procedure" every time this button was clicked. Filling the
+    # placeholder only after the selectbox has already been created
+    # this run sidesteps that entirely, while still rendering it in the
+    # right visual spot.
+    _top_row_placeholder = st.empty()
 
     # ── Procedure selector ────────────────────────────────
     selected_proc = st.selectbox(
@@ -5445,6 +5439,28 @@ elif page == "cumulative":
         placeholder="Choose procedure",
         key="cumulative_proc_select",
     )
+
+    # "See Comments" sits to the left of the top "Back to Home" button,
+    # but only once a procedure is chosen AND comments aren't already
+    # showing — once they are, "Hide Comments" lives under the comments
+    # section itself instead (see below), right where the user actually
+    # is after this button scrolls them down to it.
+    with _top_row_placeholder.container():
+        if selected_proc and not st.session_state.get("cumulative_show_comments"):
+            _top_col1, _top_col2, _top_spacer = st.columns([1, 1, 2])
+            with _top_col1:
+                if st.button("💬 See Comments", key="cumulative_see_comments"):
+                    st.session_state["cumulative_show_comments"] = True
+                    # Consumed once, right after the comments section
+                    # renders below, to scroll it into view — see there.
+                    st.session_state["_cumulative_scroll_to_comments"] = True
+                    st.rerun()
+            with _top_col2:
+                if st.button("🏠 Back to Home", key="cumulative_home_top"):
+                    go_to("home")
+        else:
+            if st.button("🏠 Back to Home", key="cumulative_home_top"):
+                go_to("home")
 
     if selected_proc is None:
         st.info("Choose a procedure above to see its progress heatmap.")
