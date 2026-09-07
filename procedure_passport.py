@@ -1827,38 +1827,35 @@ def _render_evaluation_history_list(
     if _person_selected not in _person_opts:
         st.session_state[_person_key] = _all_person
 
-    # Procedure gets its own full-width row — even a 50/50 split with
-    # [person_noun] still cut off a genuinely long procedure name (measured:
-    # a realistic long title needed close to the full row width on its
-    # own), so nothing else shares this row with it.
-    _proc_filter = st.selectbox("Filter by Procedure", _proc_opts, key=_proc_key)
-
-    # [person_noun]/date fields/Reset share a second row — [person_noun]'s
-    # own names run longer than "MM/DD/YYYY" but nowhere near as long as
-    # a procedure title, so it gets more room than the date fields
-    # without needing a full row to itself. Narrower than an even
-    # split for the date fields: they only ever show "MM/DD/YYYY", and
-    # "🔄 Reset Date Range" needs more room to stay on one line
-    # (confirmed by measuring its rendered width against a narrower
-    # column).
-    _filter_row2_col1, _filter_row2_col2, _filter_row2_col3, _filter_row2_col4 = st.columns(
-        [1.15, 0.85, 0.85, 1.3], vertical_alignment="bottom"
+    # Back on one row, per feedback that the full extra row was too much —
+    # Procedure gets a bit more room than [person_noun] (a title runs
+    # longer than a name), and gap="small" alone reclaims real width
+    # from Streamlit's default inter-column spacing on top of that.
+    # Verified both together (ratio + smaller gap) against the previous
+    # single-row layout at 1024px and 1280px: Procedure gains ~19-31px
+    # (~2.5-4 characters) with every other field still safely fitting
+    # its content with no wrap/truncation — the most this row can give
+    # Procedure without something else in it breaking.
+    _filter_col1, _filter_col2, _filter_col3, _filter_col4, _filter_col5 = st.columns(
+        [1.15, 1.35, 0.85, 0.85, 1.35], vertical_alignment="bottom", gap="small"
     )
-    with _filter_row2_col1:
+    with _filter_col1:
         _person_filter = st.selectbox(f"Filter by {person_noun}", _person_opts, key=_person_key)
-    with _filter_row2_col2:
+    with _filter_col2:
+        _proc_filter = st.selectbox("Filter by Procedure", _proc_opts, key=_proc_key)
+    with _filter_col3:
         _start_date = st.date_input(
             "Start Date", value=_min_date,
             min_value=_min_date, max_value=_max_date, key=_start_key,
             format="MM/DD/YYYY",
         )
-    with _filter_row2_col3:
+    with _filter_col4:
         _end_date = st.date_input(
             "End Date", value=_max_date,
             min_value=_min_date, max_value=_max_date, key=_end_key,
             format="MM/DD/YYYY",
         )
-    with _filter_row2_col4:
+    with _filter_col5:
         if st.button("🔄 Reset Date Range", key=f"{session_prefix}_reset_dates"):
             st.session_state[f"{session_prefix}_date_nonce"] = _date_nonce + 1
             st.rerun()
