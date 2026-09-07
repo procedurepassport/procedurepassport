@@ -5411,7 +5411,7 @@ elif page == "cumulative":
     # _render_resident_heatmap below is told not to repeat it.
     if _selected_proc_id:
         _header_proc_name = procs_map.get(_selected_proc_id, _selected_proc_id)
-        page_header(header_break_before(f"{_header_proc_name} —", "Progress Heatmap"))
+        page_header(header_break_before(f"📊 {_header_proc_name} —", "Progress Heatmap"))
     else:
         page_header("📊 Cumulative Dashboard")
 
