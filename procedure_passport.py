@@ -5353,6 +5353,33 @@ elif page == "cumulative":
 
     _render_resident_heatmap(merged, steps_df, procs_map, selected_proc, filename_stub=resident)
 
+    # Switching procedures re-hides comments from whichever procedure
+    # was previously showing, rather than leaving them displayed under
+    # a heatmap they no longer belong to.
+    if st.session_state.get("cumulative_comments_proc") != selected_proc:
+        st.session_state["cumulative_comments_proc"] = selected_proc
+        st.session_state["cumulative_show_comments"] = False
+
+    _selected_proc_name = procs_map.get(selected_proc, selected_proc)
+    _comments_toggle_label = (
+        "💬 Hide Comments" if st.session_state.get("cumulative_show_comments") else "💬 See Comments"
+    )
+    if st.button(_comments_toggle_label, key="cumulative_see_comments"):
+        st.session_state["cumulative_show_comments"] = not st.session_state.get("cumulative_show_comments", False)
+
+    if st.session_state.get("cumulative_show_comments"):
+        try:
+            _cumulative_comments_df = _build_resident_comments_df(resident)
+        except ConnectionError as exc:
+            show_gs_error(exc)
+        else:
+            _proc_comments_df = _cumulative_comments_df[_cumulative_comments_df["Procedure"] == _selected_proc_name]
+            st.markdown(f"### 💬 Comments — {_selected_proc_name}")
+            if _proc_comments_df.empty:
+                st.info("No comments recorded yet for this procedure.")
+            else:
+                _render_comments_html_table(_proc_comments_df, show_proc=False, show_att=True)
+
     if st.button("⬅️ Back to Home"):
         go_to("home")
 
