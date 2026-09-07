@@ -1827,35 +1827,38 @@ def _render_evaluation_history_list(
     if _person_selected not in _person_opts:
         st.session_state[_person_key] = _all_person
 
-    # Two independent date pickers rather than one range-picker widget —
-    # picking both ends of a range in a single calendar (two clicks in
-    # the same popup, order-sensitive) was fiddly; separate pickers let
-    # each end be set on its own, in either order.
-    # Unequal widths, not a plain 5-way split: the date fields only ever
-    # show "MM/DD/YYYY" and don't need as much room as the other three,
-    # whose labels are longer — "🔄 Reset Date Range" in particular
-    # wrapped to two lines at an even split (confirmed by measuring its
-    # rendered width against the narrower column it'd otherwise get).
-    _filter_col1, _filter_col2, _filter_col3, _filter_col4, _filter_col5 = st.columns(
-        [1.15, 1.15, 0.85, 0.85, 1.3], vertical_alignment="bottom"
+    # Procedure gets its own full-width row — even a 50/50 split with
+    # [person_noun] still cut off a genuinely long procedure name (measured:
+    # a realistic long title needed close to the full row width on its
+    # own), so nothing else shares this row with it.
+    _proc_filter = st.selectbox("Filter by Procedure", _proc_opts, key=_proc_key)
+
+    # [person_noun]/date fields/Reset share a second row — [person_noun]'s
+    # own names run longer than "MM/DD/YYYY" but nowhere near as long as
+    # a procedure title, so it gets more room than the date fields
+    # without needing a full row to itself. Narrower than an even
+    # split for the date fields: they only ever show "MM/DD/YYYY", and
+    # "🔄 Reset Date Range" needs more room to stay on one line
+    # (confirmed by measuring its rendered width against a narrower
+    # column).
+    _filter_row2_col1, _filter_row2_col2, _filter_row2_col3, _filter_row2_col4 = st.columns(
+        [1.15, 0.85, 0.85, 1.3], vertical_alignment="bottom"
     )
-    with _filter_col1:
+    with _filter_row2_col1:
         _person_filter = st.selectbox(f"Filter by {person_noun}", _person_opts, key=_person_key)
-    with _filter_col2:
-        _proc_filter = st.selectbox("Filter by Procedure", _proc_opts, key=_proc_key)
-    with _filter_col3:
+    with _filter_row2_col2:
         _start_date = st.date_input(
             "Start Date", value=_min_date,
             min_value=_min_date, max_value=_max_date, key=_start_key,
             format="MM/DD/YYYY",
         )
-    with _filter_col4:
+    with _filter_row2_col3:
         _end_date = st.date_input(
             "End Date", value=_max_date,
             min_value=_min_date, max_value=_max_date, key=_end_key,
             format="MM/DD/YYYY",
         )
-    with _filter_col5:
+    with _filter_row2_col4:
         if st.button("🔄 Reset Date Range", key=f"{session_prefix}_reset_dates"):
             st.session_state[f"{session_prefix}_date_nonce"] = _date_nonce + 1
             st.rerun()
