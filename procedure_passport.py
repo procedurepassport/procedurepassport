@@ -1748,8 +1748,20 @@ def _render_evaluation_history_list(
     _proc_key = f"{session_prefix}_proc_filter"
     _person_key = f"{session_prefix}_person_filter"
     _date_key = f"{session_prefix}_date_range"
-    _start_key = f"{_date_key}_start"
-    _end_key = f"{_date_key}_end"
+    # The date pickers' own keys carry a nonce, bumped by "Reset Date
+    # Range" below — popping a date_input's session_state entry alone
+    # (tried first) reset the value it returns, but not always the
+    # visible text in the box itself: once a date's been typed directly
+    # rather than picked from the calendar, the underlying BaseWeb
+    # component tracks its own internal text separately from the value
+    # Streamlit re-sends it, and doesn't always resync just because that
+    # value changed. Giving it a brand new key instead forces Streamlit
+    # to unmount and recreate the widget from scratch, which reliably
+    # clears that stale internal state too — confirmed empirically (see
+    # scratchpad/test_filter_order_reset.py).
+    _date_nonce = st.session_state.get(f"{session_prefix}_date_nonce", 0)
+    _start_key = f"{_date_key}_start_{_date_nonce}"
+    _end_key = f"{_date_key}_end_{_date_nonce}"
 
     _min_date = df["_date_sort"].min()
     _max_date = df["_date_sort"].max()
@@ -1819,23 +1831,27 @@ def _render_evaluation_history_list(
     # picking both ends of a range in a single calendar (two clicks in
     # the same popup, order-sensitive) was fiddly; separate pickers let
     # each end be set on its own, in either order.
-    _filter_col1, _filter_col2, _filter_col3, _filter_col4 = st.columns(4)
+    _filter_col1, _filter_col2, _filter_col3, _filter_col4, _filter_col5 = st.columns(5, vertical_alignment="bottom")
     with _filter_col1:
+        _person_filter = st.selectbox(f"Filter by {person_noun}", _person_opts, key=_person_key)
+    with _filter_col2:
+        _proc_filter = st.selectbox("Filter by Procedure", _proc_opts, key=_proc_key)
+    with _filter_col3:
         _start_date = st.date_input(
             "Start Date", value=_min_date,
             min_value=_min_date, max_value=_max_date, key=_start_key,
             format="MM/DD/YYYY",
         )
-    with _filter_col2:
+    with _filter_col4:
         _end_date = st.date_input(
             "End Date", value=_max_date,
             min_value=_min_date, max_value=_max_date, key=_end_key,
             format="MM/DD/YYYY",
         )
-    with _filter_col3:
-        _person_filter = st.selectbox(f"Filter by {person_noun}", _person_opts, key=_person_key)
-    with _filter_col4:
-        _proc_filter = st.selectbox("Filter by Procedure", _proc_opts, key=_proc_key)
+    with _filter_col5:
+        if st.button("🔄 Reset Date Range", key=f"{session_prefix}_reset_dates"):
+            st.session_state[f"{session_prefix}_date_nonce"] = _date_nonce + 1
+            st.rerun()
 
     filtered = df
     if _proc_filter != _all_proc:
