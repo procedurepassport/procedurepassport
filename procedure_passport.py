@@ -1787,15 +1787,24 @@ def _render_evaluation_history_list(
     _min_date = _min_date.date() if pd.notna(_min_date) else datetime.date.today()
     _max_date = _max_date.date() if pd.notna(_max_date) else datetime.date.today()
 
-    _filter_col1, _filter_col2, _filter_col3 = st.columns(3)
+    # Two independent date pickers rather than one range-picker widget —
+    # picking both ends of a range in a single calendar (two clicks in
+    # the same popup, order-sensitive) was fiddly; separate pickers let
+    # each end be set on its own, in either order.
+    _filter_col1, _filter_col2, _filter_col3, _filter_col4 = st.columns(4)
     with _filter_col1:
-        _date_range = st.date_input(
-            "Filter by Date Range", value=(_min_date, _max_date),
-            min_value=_min_date, max_value=_max_date, key=_date_key,
+        _start_date = st.date_input(
+            "Start Date", value=_min_date,
+            min_value=_min_date, max_value=_max_date, key=f"{_date_key}_start",
         )
     with _filter_col2:
-        _person_filter = st.selectbox(f"Filter by {person_noun}", _person_opts, key=_person_key)
+        _end_date = st.date_input(
+            "End Date", value=_max_date,
+            min_value=_min_date, max_value=_max_date, key=f"{_date_key}_end",
+        )
     with _filter_col3:
+        _person_filter = st.selectbox(f"Filter by {person_noun}", _person_opts, key=_person_key)
+    with _filter_col4:
         _proc_filter = st.selectbox("Filter by Procedure", _proc_opts, key=_proc_key)
 
     filtered = df
@@ -1803,14 +1812,12 @@ def _render_evaluation_history_list(
         filtered = filtered[filtered["Procedure"] == _proc_filter]
     if _person_filter != _all_person:
         filtered = filtered[filtered[person_col] == _person_filter]
-    # date_input returns a 1-tuple while the user has only picked the
-    # range's start so far (still mid-selection) — treat that as "not
-    # filtered yet" rather than collapsing the range to a single day.
-    if isinstance(_date_range, tuple) and len(_date_range) == 2:
-        _start, _end = _date_range
-        filtered = filtered[
-            (filtered["_date_sort"].dt.date >= _start) & (filtered["_date_sort"].dt.date <= _end)
-        ]
+    # Swapped rather than filtered-to-nothing if Start ends up picked
+    # later than End — whichever order the two were actually set in.
+    _lo, _hi = min(_start_date, _end_date), max(_start_date, _end_date)
+    filtered = filtered[
+        (filtered["_date_sort"].dt.date >= _lo) & (filtered["_date_sort"].dt.date <= _hi)
+    ]
 
     if filtered.empty:
         st.info("No evaluations match these filters.")
