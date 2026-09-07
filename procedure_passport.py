@@ -1838,7 +1838,8 @@ def _build_resident_case_matrix(resident_email: str):
 
 def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs_map: dict,
                               selected_proc: str, filename_stub: str,
-                              heading_suffix: str = "Progress Heatmap") -> None:
+                              heading_suffix: str = "Progress Heatmap",
+                              show_heading: bool = True) -> None:
     """Render the progress heatmap + legends for one resident's one
     procedure. `merged` is the resident's full case matrix from
     _build_resident_case_matrix (not yet filtered to a procedure) —
@@ -1848,7 +1849,14 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     ("{procedure} — {heading_suffix}") — the attending's Resident
     Dashboard overrides it to "Progress Heatmap and Comments" since
     that page's Comments section right below no longer has a heading
-    of its own once a procedure is chosen."""
+    of its own once a procedure is chosen.
+
+    `show_heading=False` skips that "{procedure} — {heading_suffix}"
+    line entirely (the "Most recent cases at the top." caption still
+    shows) — the Cumulative Dashboard uses this once a procedure is
+    chosen, since by then its own page-level header already shows that
+    exact text; showing it a second time right here would be a plain
+    duplicate."""
     proc_data = merged[merged["case_procedure_id"] == selected_proc].copy()
     if proc_data.empty:
         st.info("No assessment data yet for this procedure.")
@@ -1989,7 +1997,10 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     # or "Progress"/"Heatmap" from each other.
     _heatmap_heading = header_break_before(f"{proc_display_name} —", heading_suffix)
     with st.container(key="heatmap_heading_row"):
-        st.markdown(f"### {_heatmap_heading}\nMost recent cases at the top.")
+        if show_heading:
+            st.markdown(f"### {_heatmap_heading}\nMost recent cases at the top.")
+        else:
+            st.markdown("Most recent cases at the top.")
 
     pivot_sorted = pivot.sort_values("date", ascending=False)
 
@@ -5343,18 +5354,73 @@ elif page == "comments":
 # ════════════════════════════════════════════════════════════
 elif page == "cumulative":
     mobile_tip("📱 On mobile: tap the >> icon at top left to view the sidebar.")
-    page_header("📊 Cumulative Dashboard")
+
+    # Login/data checks happen before the page header now (rather than
+    # right after it, as most other pages do) because the header itself
+    # needs procs_map — once a procedure is chosen it shows "{procedure}
+    # — Progress Heatmap" instead of the generic title (see below), so
+    # nothing here can be a plain page_header() call up front like usual.
+    resident = st.session_state.get("resident")
+    if not resident:
+        page_header("📊 Cumulative Dashboard")
+        st.error("Not logged in.")
+        if st.button("⬅️ Back to Home"):
+            go_to("home")
+        st.stop()
+
+    try:
+        merged, steps_df, procs_map = _build_resident_case_matrix(resident)
+    except ConnectionError as exc:
+        page_header("📊 Cumulative Dashboard")
+        show_gs_error(exc)
+        if st.button("⬅️ Back to Home"):
+            go_to("home")
+        st.stop()
+
+    if merged.empty:
+        page_header("📊 Cumulative Dashboard")
+        st.info("No cases logged yet.")
+        if st.button("⬅️ Back to Home"):
+            go_to("home")
+        st.stop()
+
+    proc_ids = merged["case_procedure_id"].dropna().unique()
+
+    # index=None + placeholder means no procedure is pre-selected — the
+    # dropdown starts on "Choose procedure" rather than silently picking
+    # the first one. Explicit key so the sidebar/home "Cumulative
+    # Dashboard" buttons can reset it back to unselected on every fresh
+    # navigation to this page (see those buttons) — without a key,
+    # Streamlit would keep remembering whatever was last selected here.
+    # Read straight out of session_state (rather than waiting for the
+    # selectbox itself, further down) so the header/top button row below
+    # can already reflect the current selection this run — Streamlit
+    # already applies any change from this rerun's trigger to
+    # session_state before the script starts executing.
+    _selected_proc_id = st.session_state.get("cumulative_proc_select")
+    if _selected_proc_id is not None and _selected_proc_id not in set(proc_ids):
+        # Stale selection from an earlier visit (the underlying data
+        # changed since) — clear it so neither the header nor the
+        # selectbox below choke on an option that no longer exists.
+        st.session_state.pop("cumulative_proc_select", None)
+        _selected_proc_id = None
+
+    # Once a procedure is chosen, its heatmap heading ("{procedure} —
+    # Progress Heatmap") takes over as the page's main header instead of
+    # the generic title — and, since it's already shown right here,
+    # _render_resident_heatmap below is told not to repeat it.
+    if _selected_proc_id:
+        _header_proc_name = procs_map.get(_selected_proc_id, _selected_proc_id)
+        page_header(header_break_before(f"{_header_proc_name} —", "Progress Heatmap"))
+    else:
+        page_header("📊 Cumulative Dashboard")
 
     # "See Comments" sits to the left of the top "Back to Home" button,
     # but only once a procedure is actually chosen — there's nothing for
-    # it to show before then. Reading the Procedure selectbox's key
-    # straight out of session_state (rather than waiting for that widget
-    # itself, which isn't created until further down the page) works
-    # because Streamlit already applies any change from this rerun's
-    # trigger to session_state before the script starts executing. The
-    # comments table this button toggles still renders much further
-    # down, below the heatmap and its three legends.
-    if st.session_state.get("cumulative_proc_select"):
+    # it to show before then. The comments table this button toggles
+    # still renders much further down, below the heatmap and its three
+    # legends.
+    if _selected_proc_id:
         _top_col1, _top_col2, _top_spacer = st.columns([1, 1, 2])
         with _top_col1:
             _comments_label = "💬 Hide Comments" if st.session_state.get("cumulative_show_comments") else "💬 See Comments"
@@ -5374,35 +5440,7 @@ elif page == "cumulative":
         if st.button("🏠 Back to Home", key="cumulative_home_top"):
             go_to("home")
 
-    resident = st.session_state.get("resident")
-    if not resident:
-        st.error("Not logged in.")
-        if st.button("⬅️ Back to Home"):
-            go_to("home")
-        st.stop()
-
-    try:
-        merged, steps_df, procs_map = _build_resident_case_matrix(resident)
-    except ConnectionError as exc:
-        show_gs_error(exc)
-        if st.button("⬅️ Back to Home"):
-            go_to("home")
-        st.stop()
-
-    if merged.empty:
-        st.info("No cases logged yet.")
-        if st.button("⬅️ Back to Home"):
-            go_to("home")
-        st.stop()
-
     # ── Procedure selector ────────────────────────────────
-    # index=None + placeholder means no procedure is pre-selected — the
-    # dropdown starts on "Choose procedure" rather than silently picking
-    # the first one. Explicit key so the sidebar/home "Cumulative
-    # Dashboard" buttons can reset it back to unselected on every fresh
-    # navigation to this page (see those buttons) — without a key,
-    # Streamlit would keep remembering whatever was last selected here.
-    proc_ids      = merged["case_procedure_id"].dropna().unique()
     selected_proc = st.selectbox(
         "Procedure",
         options=sorted(proc_ids, key=lambda x: procs_map.get(x, x)),
@@ -5434,6 +5472,7 @@ elif page == "cumulative":
 
     _render_resident_heatmap(
         merged, steps_df, procs_map, selected_proc, filename_stub=resident,
+        show_heading=False,
     )
 
     _selected_proc_name = procs_map.get(selected_proc, selected_proc)
