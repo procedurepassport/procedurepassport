@@ -4994,6 +4994,7 @@ elif page == "view_evaluation":
 
     page_header("📄 Evaluation")
     _render_evaluation_card(_viewed_sub)
+    render_rating_legend(key="rating_legend_view_evaluation")
     render_prep_legend(key="prep_legend_view_evaluation")
 
     st.markdown("---")
