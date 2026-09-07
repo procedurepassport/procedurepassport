@@ -5416,22 +5416,18 @@ elif page == "cumulative":
         page_header("📊 Cumulative Dashboard")
 
     # "See Comments" sits to the left of the top "Back to Home" button,
-    # but only once a procedure is actually chosen — there's nothing for
-    # it to show before then. The comments table this button toggles
-    # still renders much further down, below the heatmap and its three
-    # legends.
-    if _selected_proc_id:
+    # but only once a procedure is chosen AND comments aren't already
+    # showing — once they are, "Hide Comments" lives under the comments
+    # section itself instead (see below), right where the user actually
+    # is after this button scrolls them down to it.
+    if _selected_proc_id and not st.session_state.get("cumulative_show_comments"):
         _top_col1, _top_col2, _top_spacer = st.columns([1, 1, 2])
         with _top_col1:
-            _comments_label = "💬 Hide Comments" if st.session_state.get("cumulative_show_comments") else "💬 See Comments"
-            if st.button(_comments_label, key="cumulative_see_comments"):
-                # Without the rerun, this button's own label (computed
-                # just above, before we knew it'd be clicked) stays
-                # whatever it already was for the rest of this run — the
-                # comments table below updates immediately, but the
-                # button text itself lags a click behind until something
-                # else reruns the page.
-                st.session_state["cumulative_show_comments"] = not st.session_state.get("cumulative_show_comments", False)
+            if st.button("💬 See Comments", key="cumulative_see_comments"):
+                st.session_state["cumulative_show_comments"] = True
+                # Consumed once, right after the comments section
+                # renders below, to scroll it into view — see there.
+                st.session_state["_cumulative_scroll_to_comments"] = True
                 st.rerun()
         with _top_col2:
             if st.button("🏠 Back to Home", key="cumulative_home_top"):
@@ -5483,7 +5479,44 @@ elif page == "cumulative":
             show_gs_error(exc)
         else:
             _proc_comments_df = _cumulative_comments_df[_cumulative_comments_df["Procedure"] == _selected_proc_name]
-            st.markdown(f"### 💬 Comments — {_selected_proc_name}")
+            # "Hide Comments" lives here, right under this section's own
+            # header, rather than back up at the top of the page — after
+            # scrolling down to read comments, the user shouldn't have to
+            # scroll back up just to collapse them again.
+            with st.container(key="cumulative_comments_anchor"):
+                st.markdown(f"### 💬 Comments — {_selected_proc_name}")
+                if st.button("🙈 Hide Comments", key="cumulative_hide_comments"):
+                    st.session_state["cumulative_show_comments"] = False
+                    st.rerun()
+
+            if st.session_state.pop("_cumulative_scroll_to_comments", False):
+                # Set once, by the top "See Comments" button, right when
+                # it turns comments on — consuming it (popping) here means
+                # this only scrolls on the run right after that click, not
+                # on every later rerun while comments stay visible (e.g.
+                # switching procedures elsewhere on the page would
+                # otherwise yank the scroll position back down every
+                # time too). The section name is embedded in the iframe's
+                # own content purely so it differs from whatever was last
+                # rendered at this spot — Streamlit doesn't re-fire a
+                # <script> inside an iframe whose content is byte-
+                # identical to what it last sent for that same call site
+                # (same reason the page-level scroll-to-top trick above
+                # embeds the page name).
+                st.iframe(
+                    f"""
+                    <!-- scroll to comments: {html.escape(_selected_proc_name)} -->
+                    <script>
+                    (function() {{
+                        var doc = window.parent.document;
+                        var el = doc.querySelector('.st-key-cumulative_comments_anchor');
+                        if (el) el.scrollIntoView({{behavior: 'smooth', block: 'start'}});
+                    }})();
+                    </script>
+                    """,
+                    height=1,
+                )
+
             if _proc_comments_df.empty:
                 st.info("No comments recorded yet for this procedure.")
             else:
