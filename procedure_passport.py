@@ -1796,11 +1796,13 @@ def _render_evaluation_history_list(
         _start_date = st.date_input(
             "Start Date", value=_min_date,
             min_value=_min_date, max_value=_max_date, key=f"{_date_key}_start",
+            format="MM/DD/YYYY",
         )
     with _filter_col2:
         _end_date = st.date_input(
             "End Date", value=_max_date,
             min_value=_min_date, max_value=_max_date, key=f"{_date_key}_end",
+            format="MM/DD/YYYY",
         )
     with _filter_col3:
         _person_filter = st.selectbox(f"Filter by {person_noun}", _person_opts, key=_person_key)
