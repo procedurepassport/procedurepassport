@@ -982,6 +982,39 @@ def _delete_procedure(procedure_id: str, delete_cases: bool) -> dict:
     return {"steps": n_steps, "cases": n_cases, "scores": n_scores}
 
 
+def _count_specialty_usage(specialty_id: str) -> dict:
+    """How many residents/attendings/procedures reference
+    `specialty_id`. Unlike a procedure's cases (tightly-coupled
+    historical data), these are just categorized *by* the specialty —
+    deleting it doesn't cascade to them (see _delete_specialty()), so
+    this is purely informational for the confirmation prompt."""
+    residents_df  = read_sheet_df(SHEET_RESIDENTS, expected_cols=RESIDENT_COLS)
+    attendings_df = _read_attendings_df()
+    procs_df      = read_sheet_df(SHEET_PROCEDURES, expected_cols=["procedure_id", "procedure_name", "specialty_id"])
+    return {
+        "residents":  int((residents_df["specialty_id"] == specialty_id).sum()),
+        "attendings": int((attendings_df["specialty_id"] == specialty_id).sum()),
+        "procedures": int((procs_df["specialty_id"] == specialty_id).sum()),
+    }
+
+
+def _delete_specialty(specialty_id: str) -> None:
+    """Remove one specialty's row in `specialties`. Residents/
+    attendings/procedures that reference it are left exactly as they
+    are — not deleted or reassigned, unlike deleting a procedure (see
+    _delete_procedure()) or a step. Their specialty_id just stops
+    resolving to a friendly name anywhere it's looked up (every such
+    lookup in this app already falls back to showing the raw id via
+    `.map(lookup).fillna(id)`, so nothing breaks — it just reads as an
+    id instead of a name until it's given a specialty again). Raises
+    ValueError if the specialty doesn't exist."""
+    spec_df = read_sheet_df(SHEET_SPECIALTY, expected_cols=["specialty_id", "specialty_name"])
+    _mask = spec_df["specialty_id"] == specialty_id
+    if not _mask.any():
+        raise ValueError("Could not find that specialty — please reload and try again.")
+    write_sheet_df(SHEET_SPECIALTY, spec_df[~_mask].reset_index(drop=True))
+
+
 def save_case(
     resident_email: str,
     date,
@@ -3600,6 +3633,54 @@ elif page == "admin":
                         st.rerun()
                 else:
                     st.error("Please fill in both fields.")
+
+        if not specialties.empty:
+            with st.expander("🗑️ Delete Specialty"):
+                st.caption(
+                    "Removes a specialty. Residents, attendings, and "
+                    "procedures already assigned to it are left as-is — "
+                    "not deleted or reassigned — they just show its raw "
+                    "id instead of a name until given a different one."
+                )
+                _del_spec_name = st.selectbox(
+                    "Specialty", specialties["specialty_name"], key="del_spec_sel"
+                )
+                _del_spec_id = specialties.loc[
+                    specialties["specialty_name"] == _del_spec_name, "specialty_id"
+                ].values[0]
+                _del_spec_usage = _count_specialty_usage(_del_spec_id)
+                _del_spec_total = sum(_del_spec_usage.values())
+
+                st.markdown(f"**Specialty:** {_del_spec_name} ({_del_spec_id})")
+                st.markdown(
+                    f"**In use by:** {_del_spec_usage['residents']} resident(s), "
+                    f"{_del_spec_usage['attendings']} attending(s), "
+                    f"{_del_spec_usage['procedures']} procedure(s)"
+                )
+
+                _del_spec_confirmed = True
+                if _del_spec_total > 0:
+                    st.warning(
+                        f'⚠️ "{_del_spec_name}" is still assigned to {_del_spec_total} '
+                        "resident(s)/attending(s)/procedure(s). They won't be deleted "
+                        "or changed — they'll just show its id instead of a name."
+                    )
+                    _del_spec_confirmed = st.checkbox(
+                        f'Yes, delete "{_del_spec_name}"',
+                        key=f"confirm_del_spec_{_del_spec_id}",
+                    )
+
+                if st.button("Delete Specialty", key="btn_del_spec"):
+                    if not _del_spec_confirmed:
+                        st.error("Please check the confirmation box above before deleting.")
+                    else:
+                        try:
+                            _delete_specialty(_del_spec_id)
+                            st.success(f'✅ Deleted "{_del_spec_name}"')
+                            time.sleep(0.5)
+                            st.rerun()
+                        except ValueError as _del_spec_exc:
+                            st.error(f"⚠️ {_del_spec_exc}")
     except ConnectionError as exc:
         show_gs_error(exc)
 
