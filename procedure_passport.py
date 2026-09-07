@@ -3697,6 +3697,19 @@ elif page == "admin":
         residents = read_sheet_df(
             SHEET_RESIDENTS, expected_cols=RESIDENT_COLS
         )
+        # Every resident-picking dropdown below shows email (the sheet's
+        # own identifier), but is still ordered alphabetically by last
+        # name for the same reason the name-based Resident/Attending
+        # pickers elsewhere in the app already are — last name is what
+        # people actually look up a colleague by. Computed once here and
+        # reused (as _residents_by_last["email"]) rather than re-sorted
+        # at each picker.
+        _residents_by_last = residents.copy()
+        _residents_by_last["_last"] = _residents_by_last["name"].astype(str).apply(
+            lambda n: n.split()[-1] if n.split() else n
+        )
+        _residents_by_last = _residents_by_last.sort_values("_last", kind="stable")
+
         disp = residents.merge(spec_df, how="left", on="specialty_id")
         st.dataframe(disp[["email", "name", "specialty_name", "created_at"]], width="stretch")
 
@@ -3716,7 +3729,7 @@ elif page == "admin":
         if not residents.empty:
             with st.expander("✏️ Edit Resident"):
                 edit_res_email = st.selectbox(
-                    "Select resident to edit", residents["email"], key="edit_res_select"
+                    "Select resident to edit", _residents_by_last["email"], key="edit_res_select"
                 )
                 _edit_res_row = residents[residents["email"] == edit_res_email].iloc[0]
                 _edit_res_spec_match = spec_df.loc[
@@ -3763,7 +3776,7 @@ elif page == "admin":
 
             with st.expander("🔑 Reset Password"):
                 st.caption("Clears their stored password — their next login will prompt them to set a new one.")
-                reset_email = st.selectbox("Select resident", residents["email"], key="reset_res_pw")
+                reset_email = st.selectbox("Select resident", _residents_by_last["email"], key="reset_res_pw")
                 if st.button("Reset Password", key="btn_reset_res_pw"):
                     clear_password(reset_email)
                     st.success(f"✅ Password cleared for {reset_email}")
@@ -3771,7 +3784,7 @@ elif page == "admin":
                     st.rerun()
 
             with st.expander("🗑️ Delete Resident"):
-                del_email = st.selectbox("Select resident to delete", residents["email"], key="del_res")
+                del_email = st.selectbox("Select resident to delete", _residents_by_last["email"], key="del_res")
                 if st.button("Delete", key="btn_del_res"):
                     updated = residents[residents["email"] != del_email].reset_index(drop=True)
                     write_sheet_df(SHEET_RESIDENTS, updated)
@@ -3836,7 +3849,9 @@ elif page == "admin":
                     "Start Assessment, and Resident Dashboard."
                 )
                 edit_att_name = st.selectbox(
-                    "Select attending to edit", attendings["attending_name"], key="edit_att_select"
+                    "Select attending to edit",
+                    sorted(attendings["attending_name"], key=lambda n: n.split()[-1] if n.split() else n),
+                    key="edit_att_select",
                 )
                 _edit_row = attendings[attendings["attending_name"] == edit_att_name].iloc[0]
                 _edit_spec_name_match = spec_df.loc[
@@ -3898,7 +3913,9 @@ elif page == "admin":
                     st.caption("_No attendings have a login email set yet — add one under Edit Attending above._")
                 else:
                     reset_att = st.selectbox(
-                        "Select attending", _att_with_email["attending_name"], key="reset_att_pw"
+                        "Select attending",
+                        sorted(_att_with_email["attending_name"], key=lambda n: n.split()[-1] if n.split() else n),
+                        key="reset_att_pw",
                     )
                     if st.button("Reset Password", key="btn_reset_att_pw"):
                         _reset_email = _att_with_email.loc[
@@ -3910,7 +3927,11 @@ elif page == "admin":
                         st.rerun()
 
             with st.expander("🗑️ Delete Attending"):
-                del_att = st.selectbox("Select attending to delete", attendings["attending_name"], key="del_att")
+                del_att = st.selectbox(
+                    "Select attending to delete",
+                    sorted(attendings["attending_name"], key=lambda n: n.split()[-1] if n.split() else n),
+                    key="del_att",
+                )
                 if st.button("Delete", key="btn_del_att"):
                     _del_row = attendings[attendings["attending_name"] == del_att].iloc[0]
                     _del_email = "" if pd.isna(_del_row["email"]) else str(_del_row["email"]).strip()
