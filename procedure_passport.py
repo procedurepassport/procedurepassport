@@ -5328,24 +5328,32 @@ elif page == "cumulative":
     mobile_tip("📱 On mobile: tap the >> icon at top left to view the sidebar.")
     page_header("📊 Cumulative Dashboard")
 
-    # "See Comments" sits to the left of the top "Back to Home" button.
-    # Its own visibility state (cumulative_show_comments) doesn't depend
-    # on anything else on the page, so it's safe to render this early —
-    # before login/data checks and before a procedure is even selected.
-    # The comments table it toggles still renders much further down,
-    # below the heatmap and its three legends.
-    _top_col1, _top_col2, _top_spacer = st.columns([1, 1, 2])
-    with _top_col1:
-        _comments_label = "💬 Hide Comments" if st.session_state.get("cumulative_show_comments") else "💬 See Comments"
-        if st.button(_comments_label, key="cumulative_see_comments"):
-            # Without the rerun, this button's own label (computed just
-            # above, before we knew it'd be clicked) stays whatever it
-            # already was for the rest of this run — the comments table
-            # below updates immediately, but the button text itself
-            # lags a click behind until something else reruns the page.
-            st.session_state["cumulative_show_comments"] = not st.session_state.get("cumulative_show_comments", False)
-            st.rerun()
-    with _top_col2:
+    # "See Comments" sits to the left of the top "Back to Home" button,
+    # but only once a procedure is actually chosen — there's nothing for
+    # it to show before then. Reading the Procedure selectbox's key
+    # straight out of session_state (rather than waiting for that widget
+    # itself, which isn't created until further down the page) works
+    # because Streamlit already applies any change from this rerun's
+    # trigger to session_state before the script starts executing. The
+    # comments table this button toggles still renders much further
+    # down, below the heatmap and its three legends.
+    if st.session_state.get("cumulative_proc_select"):
+        _top_col1, _top_col2, _top_spacer = st.columns([1, 1, 2])
+        with _top_col1:
+            _comments_label = "💬 Hide Comments" if st.session_state.get("cumulative_show_comments") else "💬 See Comments"
+            if st.button(_comments_label, key="cumulative_see_comments"):
+                # Without the rerun, this button's own label (computed
+                # just above, before we knew it'd be clicked) stays
+                # whatever it already was for the rest of this run — the
+                # comments table below updates immediately, but the
+                # button text itself lags a click behind until something
+                # else reruns the page.
+                st.session_state["cumulative_show_comments"] = not st.session_state.get("cumulative_show_comments", False)
+                st.rerun()
+        with _top_col2:
+            if st.button("🏠 Back to Home", key="cumulative_home_top"):
+                go_to("home")
+    else:
         if st.button("🏠 Back to Home", key="cumulative_home_top"):
             go_to("home")
 
