@@ -5327,7 +5327,7 @@ elif page == "cumulative":
     # before login/data checks and before a procedure is even selected.
     # The comments table it toggles still renders much further down,
     # below the heatmap and its three legends.
-    _top_col1, _top_col2, _top_spacer = st.columns([1, 1, 4])
+    _top_col1, _top_col2, _top_spacer = st.columns([1, 1, 2])
     with _top_col1:
         _comments_label = "💬 Hide Comments" if st.session_state.get("cumulative_show_comments") else "💬 See Comments"
         if st.button(_comments_label, key="cumulative_see_comments"):
