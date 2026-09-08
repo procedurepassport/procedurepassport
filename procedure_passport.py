@@ -6678,12 +6678,29 @@ elif page == "attending_assessment":
     if _draft:
         st.markdown("---")
         st.markdown("**This form was pre-filled from the resident's self-assessment, please confirm:**")
+        # Mutually exclusive: checking one live-unchecks the other,
+        # rather than just warning about it at submit time (still kept
+        # below too, as a defensive fallback). "_shadow_*" holds each
+        # box's value as of the last run that didn't have both checked
+        # — since only one checkbox can actually change per rerun (a
+        # single click), whichever one differs from its own shadow is
+        # the one just clicked, and wins.
+        _shadow_no_changes   = st.session_state.get("_shadow_accept_no_changes", False)
+        _shadow_with_changes = st.session_state.get("_shadow_accept_with_changes", False)
         _accept_no_changes = st.checkbox(
             "No changes. Accept Resident Self-Assessment", key="assess_accept_no_changes"
         )
         _accept_with_changes = st.checkbox(
             "Changes As Made Above", key="assess_accept_with_changes"
         )
+        if _accept_no_changes and _accept_with_changes:
+            if _accept_no_changes != _shadow_no_changes:
+                st.session_state["assess_accept_with_changes"] = False
+            else:
+                st.session_state["assess_accept_no_changes"] = False
+            st.rerun()
+        st.session_state["_shadow_accept_no_changes"]   = _accept_no_changes
+        st.session_state["_shadow_accept_with_changes"] = _accept_with_changes
 
     st.markdown("---")
     if st.button("✅ Submit Evaluation", type="primary", width="stretch"):
