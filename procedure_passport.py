@@ -66,6 +66,7 @@ if (
     st.session_state["procedure_id"] = query_params.get("procedure_id", "")
     st.session_state["specialty_id"] = query_params.get("specialty_id", "")
     st.session_state["attending_id"] = query_params.get("attending_id", "")
+    st.session_state["self_eval_request_id"] = query_params.get("request_id", "")
     _self_link_date = query_params.get("date", "")
     try:
         st.session_state["date"] = datetime.date.fromisoformat(_self_link_date) if _self_link_date else datetime.date.today()
@@ -100,6 +101,7 @@ _defaults: dict = {
     "draft_id":                "",
     "assessment_mode":         "together",  # "together" or "self", set from Start
     "self_eval_requested_by_attending": False,  # True only when assessment_mode "self" came from an attending's magic link (mode=resident_self), not the resident's own Start page
+    "self_eval_request_id":    "",     # set alongside self_eval_requested_by_attending — the self_eval_requests row to delete once this is fulfilled
     "blank_magic_link":        None,   # filled after Generate a Blank Magic Link
     "attending_link_date":     "",     # resident's chosen date, carried by a blank magic link
     "last_assessment_type":    None,   # "Assessed Together" or "Self-Assessment"
@@ -287,6 +289,19 @@ DRAFT_COLS = [
     "attending_id", "case_complexity", "case_preparation",
     "overall_performance", "robo_type", "improve", "how", "notes",
     "scores_json", "created_at",
+]
+
+# An attending's outstanding request for a resident's self-evaluation
+# (see attending_start's "Create Magic Link Request for Resident
+# Self-Evaluation" button) — tracked so it can be shown as a Home page
+# notification for the resident IN ADDITION to the magic link itself,
+# with the two cross-referenced against the same row: its mere
+# presence means "not yet fulfilled"; completing that self-assessment,
+# by either route, deletes it — so it can only ever be fulfilled once.
+SHEET_SELF_EVAL_REQUESTS = "self_eval_requests"
+SELF_EVAL_REQUEST_COLS = [
+    "request_id", "resident_email", "date", "specialty_id",
+    "procedure_id", "attending_id", "created_at",
 ]
 
 # ─────────────────────────────────────────────
@@ -1184,14 +1199,14 @@ def save_draft(
 
 
 def load_draft(draft_id: str):
-    """Fetch a pre-fill draft by id. Returns None if missing, blank, or the
-    sheet can't be reached — callers should fall back to a blank form."""
+    """Fetch a pre-fill draft by id. Returns None if missing or blank —
+    raises ConnectionError if the sheet can't be reached, rather than
+    swallowing it, so the caller can tell "genuinely already consumed"
+    (safe to treat as already-reviewed) apart from "transient network
+    failure" (must not be treated as already-reviewed)."""
     if not draft_id:
         return None
-    try:
-        drafts_df = read_sheet_df(SHEET_DRAFTS, expected_cols=DRAFT_COLS)
-    except ConnectionError:
-        return None
+    drafts_df = read_sheet_df(SHEET_DRAFTS, expected_cols=DRAFT_COLS)
     if drafts_df.empty:
         return None
     drafts_df   = drafts_df.copy()
@@ -1239,6 +1254,80 @@ def delete_draft(draft_id: str) -> None:
         remaining = drafts_df[drafts_df["draft_id"] != target]
         if len(remaining) != len(drafts_df):
             write_sheet_df(SHEET_DRAFTS, remaining)
+    except Exception:
+        pass
+
+
+def save_self_eval_request(
+    resident_email: str,
+    date,
+    specialty_id: str,
+    procedure_id: str,
+    attending_id: str,
+) -> str:
+    """Persist an attending's request for a resident's self-evaluation;
+    returns the new request_id, embedded in the magic link's query
+    string AND used to find/clear this same row again once fulfilled
+    (see delete_self_eval_request()) — the one thing both the magic
+    link and the resident Home page notification have in common."""
+    request_id = uuid.uuid4().hex[:12]
+    df = read_sheet_df(SHEET_SELF_EVAL_REQUESTS, expected_cols=SELF_EVAL_REQUEST_COLS)
+    df = pd.concat([df, pd.DataFrame([{
+        "request_id":      request_id,
+        "resident_email":  resident_email,
+        "date":            str(date),
+        "specialty_id":    specialty_id,
+        "procedure_id":    procedure_id,
+        "attending_id":    attending_id,
+        "created_at":      datetime.datetime.utcnow().isoformat(),
+    }])], ignore_index=True)
+    write_sheet_df(SHEET_SELF_EVAL_REQUESTS, df)
+    return request_id
+
+
+def load_self_eval_request(request_id: str):
+    """Fetch a pending self-eval request by id. Returns None if missing,
+    already fulfilled (deleted), or the sheet can't be reached."""
+    if not request_id:
+        return None
+    drafts_df = read_sheet_df(SHEET_SELF_EVAL_REQUESTS, expected_cols=SELF_EVAL_REQUEST_COLS)
+    if drafts_df.empty:
+        return None
+    drafts_df = drafts_df.copy()
+    drafts_df["request_id"] = _norm_id(drafts_df["request_id"])
+    target = _norm_id(pd.Series([request_id])).iloc[0]
+    match  = drafts_df[drafts_df["request_id"] == target]
+    if match.empty:
+        return None
+    row = match.iloc[0]
+    return {
+        "request_id":     row["request_id"],
+        "resident_email": row.get("resident_email", ""),
+        "date":           row.get("date", ""),
+        "specialty_id":   row.get("specialty_id", ""),
+        "procedure_id":   row.get("procedure_id", ""),
+        "attending_id":   row.get("attending_id", ""),
+    }
+
+
+def delete_self_eval_request(request_id: str) -> None:
+    """Remove a fulfilled (or cancelled) request. Cleanup only — never
+    raises. This is what actually cross-references the magic link and
+    the Home page notification against each other: whichever route the
+    resident completes the self-assessment through, this same row
+    disappears, so the other route reads it as already fulfilled too."""
+    if not request_id:
+        return
+    try:
+        df = read_sheet_df(SHEET_SELF_EVAL_REQUESTS, expected_cols=SELF_EVAL_REQUEST_COLS)
+        if df.empty:
+            return
+        df = df.copy()
+        df["request_id"] = _norm_id(df["request_id"])
+        target    = _norm_id(pd.Series([request_id])).iloc[0]
+        remaining = df[df["request_id"] != target]
+        if len(remaining) != len(df):
+            write_sheet_df(SHEET_SELF_EVAL_REQUESTS, remaining)
     except Exception:
         pass
 
@@ -5047,6 +5136,62 @@ elif page == "home":
     except ConnectionError:
         pass  # badge is a nice-to-have — don't block the Home page over it
 
+    # "Self-evaluation requested" badge: attending-initiated requests
+    # (see attending_start's "Create Magic Link Request for Resident
+    # Self-Evaluation" button) for this resident, not yet fulfilled —
+    # shown here in addition to whatever link the attending sent
+    # directly, so this can be started even without that link. A
+    # request's mere presence means "still pending"; completing the
+    # self-assessment (either from here or from the link) is what
+    # actually removes it (delete_self_eval_request()), so it can only
+    # ever be fulfilled once — same cross-reference idea as the
+    # attending Home page's own "pending self-evaluation" badge.
+    try:
+        _pending_requests = read_sheet_df(SHEET_SELF_EVAL_REQUESTS, expected_cols=SELF_EVAL_REQUEST_COLS)
+        _pending_requests = _pending_requests[
+            _pending_requests["resident_email"].astype(str).str.strip().str.lower()
+            == str(_resident_email).strip().lower()
+        ]
+        if not _pending_requests.empty:
+            _n = len(_pending_requests)
+            st.info(f"📝 {_n} self-evaluation{'s' if _n != 1 else ''} requested by your attending!")
+            _, _home_proc_df2, _, _home_atnd_df2 = load_refs()
+            _home_proc_names2 = {str(k): v for k, v in zip(_home_proc_df2["procedure_id"], _home_proc_df2["procedure_name"])}
+            _home_atnd_lookup2 = dict(zip(_home_atnd_df2["attending_id"], _home_atnd_df2["attending_name"]))
+            _pending_requests = _pending_requests.copy()
+            _pending_requests["_created_sort"] = pd.to_datetime(_pending_requests["created_at"], errors="coerce")
+            _pending_requests = _pending_requests.sort_values("_created_sort", ascending=False)
+            for _, _req_row in _pending_requests.iterrows():
+                _proc_label = _home_proc_names2.get(str(_req_row["procedure_id"]), str(_req_row["procedure_id"]))
+                _att_label  = attending_display_name(str(_req_row["attending_id"]), _home_atnd_lookup2)
+                if st.button(
+                    f"📝 {_proc_label} — requested by {_att_label} ({fmt_date(_req_row.get('date'))})",
+                    key=f"start_requested_self_eval_{_req_row['request_id']}",
+                    width="stretch",
+                ):
+                    # Same session_state keys the magic link's own
+                    # ?mode=resident_self routing sets, just populated
+                    # directly instead of via query params.
+                    st.session_state["procedure_id"] = _req_row["procedure_id"]
+                    st.session_state["specialty_id"] = _req_row["specialty_id"]
+                    st.session_state["attending_id"] = _req_row["attending_id"]
+                    try:
+                        st.session_state["date"] = datetime.date.fromisoformat(str(_req_row["date"]))
+                    except (ValueError, TypeError):
+                        st.session_state["date"] = datetime.date.today()
+                    st.session_state["assessment_mode"]      = "self"
+                    st.session_state["self_eval_requested_by_attending"] = True
+                    st.session_state["self_eval_request_id"] = _req_row["request_id"]
+                    st.session_state["scores"]               = {}
+                    st.session_state["notes"]                = ""
+                    st.session_state["improve"]              = ""
+                    st.session_state["how"]                  = ""
+                    st.session_state["generated_magic_link"] = None
+                    go_to("assessment")
+            st.markdown("")
+    except ConnectionError:
+        pass  # badge is a nice-to-have — don't block the Home page over it
+
     st.markdown("_What would you like to do today?_")
     st.markdown("")
 
@@ -5335,11 +5480,14 @@ elif page == "start":
         st.session_state["generated_magic_link"] = None
         st.session_state["assessment_mode"]      = mode
         # This is the resident's own voluntary pick, not one that came
-        # from an attending's magic link — clears any stale True left
-        # over from an earlier self-eval-request visit this session, so
-        # the assessment page's header doesn't wrongly claim this one
-        # was attending-requested too.
+        # from an attending's magic link — clears any stale True (and
+        # its request_id) left over from an earlier self-eval-request
+        # visit this session, so the assessment page's header doesn't
+        # wrongly claim this one was attending-requested too, and so
+        # finishing this fresh, unrelated self-assessment doesn't also
+        # delete that old request out from under a still-pending one.
         st.session_state["self_eval_requested_by_attending"] = False
+        st.session_state["self_eval_request_id"] = ""
         go_to("assessment")
 
     _selection_incomplete = not (procedure_chosen and attending_chosen)
@@ -5405,6 +5553,32 @@ elif page == "assessment":
         st.stop()
 
     is_admin = st.session_state["resident"] in ADMINS
+
+    # If this page was reached via an attending's self-eval request
+    # (magic link or the Home page notification) that's already been
+    # fulfilled — a reused link, or clicking both the link and the
+    # notification — block it here rather than letting the resident
+    # redo (and duplicate) an already-completed self-assessment. A
+    # request's mere presence in self_eval_requests means "not yet
+    # fulfilled"; completing it below (the "self" Finish button)
+    # deletes it, which is what this check is actually watching for.
+    if (
+        st.session_state.get("assessment_mode") == "self"
+        and st.session_state.get("self_eval_requested_by_attending")
+        and st.session_state.get("self_eval_request_id")
+    ):
+        try:
+            _pending_request = load_self_eval_request(st.session_state["self_eval_request_id"])
+        except ConnectionError as exc:
+            show_gs_error(exc)
+            st.stop()
+        if _pending_request is None:
+            page_header("✅ Already Completed")
+            st.success("This self-evaluation has already been completed. Thank you!")
+            st.markdown("_No further action is needed — your attending has already been notified._")
+            if st.button("🏠 Back to Home", type="primary"):
+                go_to("home")
+            st.stop()
 
     steps = steps_df[steps_df["procedure_id"] == st.session_state["procedure_id"]].sort_values("step_order")
     if steps.empty:
@@ -5631,6 +5805,15 @@ elif page == "assessment":
                         improve=st.session_state.get("improve", ""),
                         how=st.session_state.get("how", ""),
                     )
+                    # Fulfills the attending's original request (if this
+                    # self-assessment came from one) — removes it from
+                    # both the resident Home page badge and, on a future
+                    # visit, the magic link itself (see the "Already
+                    # Completed" check above), regardless of which of
+                    # the two routes was actually used just now.
+                    if st.session_state.get("self_eval_request_id"):
+                        delete_self_eval_request(st.session_state["self_eval_request_id"])
+                        st.session_state["self_eval_request_id"] = ""
                     _att_match = atnd_df[atnd_df["attending_id"].astype(str).str.strip()
                                           == str(st.session_state.get("attending_id", "")).strip()]
                     safe_att = _att_match["attending_name"].values[0].replace(" ", "_") if len(_att_match) > 0 else "Unknown"
@@ -6192,15 +6375,33 @@ elif page == "attending_start":
             # this file (mode=resident_self) and _complete_login()'s
             # resident branch, which picks it back up right after login
             # if they weren't already signed in when they opened it.
-            base_url = st.secrets.get("APP_BASE_URL", "https://procedurepassport.streamlit.app")
-            st.session_state["att_start_self_link"] = (
-                f"{base_url}/?mode=resident_self"
-                f"&resident={res_map[resident_choice]}"
-                f"&procedure_id={proc_map[procedure_choice]}"
-                f"&specialty_id={specialty_id}"
-                f"&attending_id={st.session_state.get('attending_login_id', '')}"
-                f"&date={case_date}"
-            )
+            # Also persisted as a self_eval_requests row (not just a
+            # URL) so it can be shown on the resident's own Home page
+            # too, in addition to this link — the request_id embedded
+            # in the link cross-references the two against each other,
+            # so fulfilling it through either route removes it from
+            # both (see delete_self_eval_request(), called once the
+            # resident actually completes this self-assessment).
+            try:
+                _self_eval_request_id = save_self_eval_request(
+                    resident_email=res_map[resident_choice],
+                    date=case_date,
+                    specialty_id=specialty_id,
+                    procedure_id=proc_map[procedure_choice],
+                    attending_id=st.session_state.get("attending_login_id", ""),
+                )
+                base_url = st.secrets.get("APP_BASE_URL", "https://procedurepassport.streamlit.app")
+                st.session_state["att_start_self_link"] = (
+                    f"{base_url}/?mode=resident_self"
+                    f"&resident={res_map[resident_choice]}"
+                    f"&procedure_id={proc_map[procedure_choice]}"
+                    f"&specialty_id={specialty_id}"
+                    f"&attending_id={st.session_state.get('attending_login_id', '')}"
+                    f"&date={case_date}"
+                    f"&request_id={_self_eval_request_id}"
+                )
+            except ConnectionError as exc:
+                show_gs_error(exc)
 
     if st.session_state.get("att_start_self_link"):
         st.success(f"✅ A self-evaluation link is ready to send {resident_choice}:")
@@ -6465,7 +6666,27 @@ elif page == "attending_assessment":
 
     # Pre-fill from the resident's self-assessment draft, if this link carries one.
     draft_id = st.session_state.get("draft_id", "")
-    _draft   = load_draft(draft_id) if draft_id else None
+    try:
+        _draft = load_draft(draft_id) if draft_id else None
+    except ConnectionError as exc:
+        show_gs_error(exc)
+        st.stop()
+
+    # A draft_id was provided but no longer resolves to anything — this
+    # specific self-evaluation has already been reviewed and submitted
+    # (via this same link, the "Pending self-evaluation" Home page
+    # badge, or a second open tab). Block re-review here instead of
+    # silently falling through to a blank form that could still be
+    # submitted as a duplicate case for the same procedure.
+    if draft_id and _draft is None:
+        page_header("✅ Already Reviewed")
+        st.success("This self-evaluation has already been reviewed and submitted. No further action is needed.")
+        if st.session_state.get("role") == "attending" and st.session_state.get("attending_login_email"):
+            if st.button("🏠 Back to Home", type="primary"):
+                go_to("attending_home")
+        else:
+            st.markdown("_You may now close this window._")
+        st.stop()
 
     try:
         _, proc_df_att, steps_df, _ = load_refs()
@@ -6746,6 +6967,17 @@ elif page == "attending_assessment":
 
     st.markdown("---")
     if st.button("✅ Submit Evaluation", type="primary", width="stretch"):
+        # Re-check right at submit time, not just at page load — closes
+        # the gap where someone else (another tab, or the resident's
+        # own badge/link opened twice) already reviewed and consumed
+        # this same draft in between this page loading and this click.
+        _draft_still_pending = True
+        if draft_id:
+            try:
+                _draft_still_pending = load_draft(draft_id) is not None
+            except ConnectionError as exc:
+                show_gs_error(exc)
+                st.stop()
         _has_value = (
             case_complexity != "— Select complexity —"
             or case_preparation != "Not Assessed"
@@ -6766,6 +6998,10 @@ elif page == "attending_assessment":
         )
         if not _has_value:
             st.warning("Please provide at least one rating or comment before submitting.")
+        elif draft_id and not _draft_still_pending:
+            st.warning("This self-evaluation has already been reviewed and submitted — "
+                       "someone (possibly you, in another tab) already submitted it. "
+                       "Please refresh; no further action is needed.")
         elif _draft and not (_accept_no_changes or _accept_with_changes):
             st.warning("Please check one of the two boxes above before submitting.")
         elif _draft and _accept_no_changes and _accept_with_changes:
