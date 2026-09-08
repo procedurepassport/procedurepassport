@@ -72,6 +72,7 @@ if (
     except ValueError:
         st.session_state["date"] = datetime.date.today()
     st.session_state["assessment_mode"]      = "self"
+    st.session_state["self_eval_requested_by_attending"] = True
     st.session_state["scores"]               = {}
     st.session_state["notes"]                = ""
     st.session_state["improve"]              = ""
@@ -98,6 +99,7 @@ _defaults: dict = {
     "generated_magic_link":    None,   # filled after Generate Magic Link
     "draft_id":                "",
     "assessment_mode":         "together",  # "together" or "self", set from Start
+    "self_eval_requested_by_attending": False,  # True only when assessment_mode "self" came from an attending's magic link (mode=resident_self), not the resident's own Start page
     "blank_magic_link":        None,   # filled after Generate a Blank Magic Link
     "attending_link_date":     "",     # resident's chosen date, carried by a blank magic link
     "last_assessment_type":    None,   # "Assessed Together" or "Self-Assessment"
@@ -5114,6 +5116,57 @@ elif page == "attending_home":
         header_break_before("👋 Welcome back,", st.session_state["attending_login_name"]),
         tier_text="👋 Welcome back,",
     )
+
+    # "Pending self-evaluation" badge: self-assessment drafts a
+    # resident has generated a magic link for (see the Self-Assess
+    # page's "Generate Pre-Filled Magic Link for Attending and Notify
+    # the Attending" button) that this attending hasn't reviewed yet.
+    # A draft's mere presence here means "still pending" — reviewing
+    # it on attending_assessment (submitting or accepting as-is) is
+    # what actually removes it (delete_draft()), same idea as the
+    # resident Home page's own "new evaluation" badge tracking.
+    try:
+        _drafts_df = read_sheet_df(SHEET_DRAFTS, expected_cols=DRAFT_COLS)
+        _pending_drafts = _drafts_df[
+            _drafts_df["attending_id"].astype(str).str.strip()
+            == str(st.session_state.get("attending_login_id", "")).strip()
+        ]
+        if not _pending_drafts.empty:
+            _n = len(_pending_drafts)
+            st.success(f"🔔 You have {_n} self-evaluation{'s' if _n != 1 else ''} pending your review!")
+            _, _home_proc_df, _, _ = load_refs()
+            _home_proc_names = {str(k): v for k, v in zip(_home_proc_df["procedure_id"], _home_proc_df["procedure_name"])}
+            _home_residents_df = read_sheet_df(SHEET_RESIDENTS, expected_cols=RESIDENT_COLS)
+            _home_res_lookup = dict(zip(
+                _home_residents_df["email"].astype(str).str.strip().str.lower(),
+                _home_residents_df["name"],
+            ))
+            _pending_drafts = _pending_drafts.copy()
+            _pending_drafts["_created_sort"] = pd.to_datetime(_pending_drafts["created_at"], errors="coerce")
+            _pending_drafts = _pending_drafts.sort_values("_created_sort", ascending=False)
+            for _, _draft_row in _pending_drafts.iterrows():
+                _proc_label = _home_proc_names.get(str(_draft_row["procedure_id"]), str(_draft_row["procedure_id"]))
+                _res_email  = str(_draft_row.get("resident_email", ""))
+                _res_label  = _home_res_lookup.get(_res_email.strip().lower(), _res_email)
+                if st.button(
+                    f"📝 {_proc_label} — {_res_label} ({fmt_date(_draft_row.get('date'))})",
+                    key=f"review_self_eval_{_draft_row['draft_id']}",
+                    width="stretch",
+                ):
+                    # Same session_state keys the magic link's own
+                    # ?mode=attending routing sets, just populated
+                    # directly instead of via query params — reuses
+                    # attending_assessment as-is.
+                    st.session_state["resident"]       = _draft_row["resident_email"]
+                    st.session_state["procedure_id"]   = _draft_row["procedure_id"]
+                    st.session_state["specialty_id"]   = _draft_row["specialty_id"]
+                    st.session_state["attending_name"] = st.session_state.get("attending_login_name", "").replace(" ", "_")
+                    st.session_state["draft_id"]        = _draft_row["draft_id"]
+                    go_to("attending_assessment")
+            st.markdown("")
+    except ConnectionError:
+        pass  # badge is a nice-to-have — don't block the Home page over it
+
     st.markdown("_What would you like to do today?_")
     st.markdown("")
 
@@ -5222,6 +5275,12 @@ elif page == "start":
         st.session_state["how"]                  = ""
         st.session_state["generated_magic_link"] = None
         st.session_state["assessment_mode"]      = mode
+        # This is the resident's own voluntary pick, not one that came
+        # from an attending's magic link — clears any stale True left
+        # over from an earlier self-eval-request visit this session, so
+        # the assessment page's header doesn't wrongly claim this one
+        # was attending-requested too.
+        st.session_state["self_eval_requested_by_attending"] = False
         go_to("assessment")
 
     _selection_incomplete = not (procedure_chosen and attending_chosen)
@@ -5299,14 +5358,31 @@ elif page == "assessment":
     _proc_rows = proc_df.loc[proc_df["procedure_id"] == st.session_state["procedure_id"], "procedure_name"].values
     _proc_name = _proc_rows[0] if len(_proc_rows) else "Assessment"
     mobile_tip("📱 On mobile: tap the >> icon at top left to view the sidebar.")
-    # tier_text excludes the resident's name from _header_max()'s length
-    # tier so a long name doesn't needlessly drop the header into a
-    # smaller ceiling; the fit script still measures and shrinks the
-    # full displayed text (name included) if it doesn't actually fit.
-    page_header(
-        header_break_before(f"📝 {_proc_name}", f"Assessment for {st.session_state['resident_name']}"),
-        tier_text=f"📝 {_proc_name} Assessment",
-    )
+    # tier_text excludes the resident's/attending's name(s) from
+    # _header_max()'s length tier so a long one doesn't needlessly drop
+    # the header into a smaller ceiling; the fit script still measures
+    # and shrinks the full displayed text (names included) if it
+    # doesn't actually fit.
+    if st.session_state.get("assessment_mode") == "self" and st.session_state.get("self_eval_requested_by_attending"):
+        # Reached via an attending's own "Create Magic Link Request for
+        # Resident Self-Evaluation" — call out plainly that this
+        # specific self-eval was requested by that attending, not one
+        # the resident started on their own.
+        _att_match = atnd_df[atnd_df["attending_id"].astype(str).str.strip()
+                              == str(st.session_state.get("attending_id", "")).strip()]
+        _requesting_attending = _att_match["attending_name"].values[0] if len(_att_match) else "Unknown"
+        page_header(
+            header_break_before(
+                f"📝 {_proc_name} Self-Assessment for",
+                f"{st.session_state['resident_name']} by {_requesting_attending}",
+            ),
+            tier_text=f"📝 {_proc_name} Self-Assessment",
+        )
+    else:
+        page_header(
+            header_break_before(f"📝 {_proc_name}", f"Assessment for {st.session_state['resident_name']}"),
+            tier_text=f"📝 {_proc_name} Assessment",
+        )
     assessment_instructions_note()
 
     # Back button placed at the top, clearly separated from Finish (Fix 7)
@@ -5474,7 +5550,7 @@ elif page == "assessment":
                     show_gs_error(exc)
 
     else:  # _mode == "self"
-        if st.button("🔗 Generate Pre-Filled Magic Link for Attending", type="primary", width="stretch"):
+        if st.button("🔗 Generate Pre-Filled Magic Link for Attending and Notify the Attending", type="primary", width="stretch"):
             if not _assessment_has_value():
                 st.warning("Please provide at least one rating or comment before generating a link.")
             else:
