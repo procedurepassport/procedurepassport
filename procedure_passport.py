@@ -1685,19 +1685,24 @@ def _build_resident_evaluation_list(resident_email: str) -> pd.DataFrame:
     return merged[_cols].reset_index(drop=True)
 
 
-def _build_attending_evaluation_list(attending_id: str) -> pd.DataFrame:
+def _build_attending_evaluation_list(attending_id: str | None) -> pd.DataFrame:
     """One row per case this attending has evaluated (directly, or was
     present for via "Assessed Together") — every entry on the
     attending's own "Complete Evaluation History" page, across every
     resident, newest first. Same Self-Assessment exclusion and column
     shape as _build_resident_evaluation_list, but keyed by attending_id
-    and returning Resident instead of Attending."""
+    and returning Resident instead of Attending.
+
+    attending_id=None skips that filter entirely, returning every
+    confirmed evaluation in the system regardless of which attending
+    performed it — backs that page's "Show all evaluations" toggle."""
     _cols = ["case_id", "Date", "Procedure", "Resident", "_date_sort"]
     cases_df = read_sheet_df(SHEET_CASES, expected_cols=_CASE_COLS)
     cases_df["case_id"] = _norm_id(cases_df["case_id"])
     cases_df = cases_df.drop_duplicates(subset=["case_id"])
 
-    att_cases = cases_df[cases_df["attending_id"].astype(str) == str(attending_id)].copy()
+    att_cases = cases_df if attending_id is None else cases_df[cases_df["attending_id"].astype(str) == str(attending_id)]
+    att_cases = att_cases.copy()
     att_cases = att_cases[att_cases["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment"]
     if att_cases.empty:
         return pd.DataFrame(columns=_cols)
@@ -6196,8 +6201,28 @@ elif page == "attending_eval_history":
             go_to("attending_home")
         st.stop()
 
+    # Defaults to just this attending's own evaluations; toggling this
+    # on switches to every evaluation in the system, any attending —
+    # same Resident/Procedure/date-range filters either way, same as
+    # the resident login's own history page.
+    _show_all_evals = st.toggle(
+        "Show all evaluations (regardless of attending)", key="att_eval_hist_show_all",
+    )
+    _eval_scope = "all" if _show_all_evals else "mine"
+    if st.session_state.get("att_eval_hist_scope") != _eval_scope:
+        st.session_state["att_eval_hist_scope"] = _eval_scope
+        # Which residents/procedures/dates are even available differs
+        # between scopes — clear the filters (and force the date
+        # pickers to remount via a fresh nonce) so a selection from one
+        # scope doesn't linger as an invalid or out-of-range value in
+        # the other, rather than risk st.date_input raising on a value
+        # outside its new min/max.
+        st.session_state.pop("att_eval_hist_proc_filter", None)
+        st.session_state.pop("att_eval_hist_person_filter", None)
+        st.session_state["att_eval_hist_date_nonce"] = st.session_state.get("att_eval_hist_date_nonce", 0) + 1
+
     try:
-        _att_eval_history_df = _build_attending_evaluation_list(attending_id)
+        _att_eval_history_df = _build_attending_evaluation_list(None if _show_all_evals else attending_id)
     except ConnectionError as exc:
         show_gs_error(exc)
         if st.button("⬅️ Back to Home"):
