@@ -6715,6 +6715,11 @@ elif page == "attending_assessment":
             st.warning("You checked “Changes As Made Above,” but nothing was actually "
                        "changed from the resident's self-assessment. Please make a change, "
                        "or check “No changes. Accept Resident Self-Assessment” instead.")
+        elif _draft and _accept_no_changes and not _matches_draft:
+            st.warning("You checked “No changes. Accept Resident Self-Assessment,” but the "
+                       "form no longer matches the resident's original self-assessment. "
+                       "Please check “Changes As Made Above” instead, or revert your edits "
+                       "back to what the resident originally entered.")
         else:
             if _draft:
                 _assessment_type = ("Attending Evaluation (Accepted Self-Assessment, No Changes)"
