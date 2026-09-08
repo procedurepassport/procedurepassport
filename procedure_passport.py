@@ -2432,8 +2432,38 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             st.markdown(f"### {_heatmap_heading}\nMost recent cases at the top.")
         else:
             st.markdown("Most recent cases at the top.")
+        st.caption("*across all procedures")
 
     pivot_sorted = pivot.sort_values("date", ascending=False)
+
+    # A step can be "shared" — merged (see _apply_step_merge) onto one
+    # step_id used by more than one procedure, same label everywhere it
+    # appears. For those, "# Assessed" counts every assessment of that
+    # step_id across ALL of this resident's procedures (via `merged`,
+    # the function's full, procedure-unfiltered case matrix), not just
+    # this one procedure — marked with a trailing "*" so it reads
+    # differently from an ordinary per-procedure count.
+    _steps_this_proc_df = steps_df[steps_df["procedure_id"] == selected_proc]
+    _step_id_by_name = {
+        str(n): str(i).strip() for n, i in zip(_steps_this_proc_df["step_name"], _steps_this_proc_df["step_id"])
+    }
+    _step_procedure_counts = (
+        steps_df.assign(_sid=steps_df["step_id"].astype(str).str.strip())
+        .groupby("_sid")["procedure_id"].nunique()
+    )
+
+    _assessed = {"date": "", "attending_name": "# Assessed*", "case_complexity": pd.NA,
+                 "overall_performance": pd.NA, "case_preparation": pd.NA}
+    for _s in ordered_steps:
+        _sid = _step_id_by_name.get(str(_s))
+        _is_shared_step = bool(_sid) and _step_procedure_counts.get(_sid, 1) > 1
+        if _is_shared_step:
+            _count = int((~merged.loc[merged["step_id"] == _sid, "rating"].apply(_is_unrated)).sum())
+            _assessed[_s] = f"{_count}*"
+        else:
+            _vals = pivot_sorted[_s]
+            _count = int((~_vals.apply(_is_unrated)).sum())
+            _assessed[_s] = str(_count)
 
     _mr = {"date": "", "attending_name": "📌 Most Recent", "case_complexity": pd.NA,
            "overall_performance": pd.NA, "case_preparation": pd.NA}
@@ -2452,7 +2482,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         else:
             _best[_s] = max(_vals.tolist(), key=lambda v: RATING_TO_NUM.get(v, -1))
 
-    _summary_df = pd.DataFrame([_mr, _best])
+    _summary_df = pd.DataFrame([_assessed, _mr, _best])
     # Daily Preparation is the third meta column after Overall
     # Performance/Case Complexity — never reported for the two summary
     # rows above (pd.NA, same as the other two), only per real case.
@@ -2492,10 +2522,20 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     for _c in _rating_cols:
         display_df[_c] = " "
 
-    # The first two display rows are always the "📌 Most Recent"/"🏆 Best"
-    # summary rows; real case rows (in pivot_sorted's newest-first order)
-    # start right after them.
-    _N_SUMMARY_ROWS = 2
+    # Unlike every other row (Most Recent/Best/real cases), whose step
+    # cells show nothing but a color swatch, "# Assessed" (always row 0)
+    # needs its actual count text visible — restore it, from the values
+    # captured into _orig_vals just above, right back onto row 0 for the
+    # step columns only (its meta-column cells stay blank, same as
+    # Most Recent/Best's own).
+    for _c in ordered_steps_display:
+        if _c in display_df.columns:
+            display_df.loc[0, _c] = _orig_vals[_c].iloc[0]
+
+    # The first three display rows are always the "# Assessed"/"📌 Most
+    # Recent"/"🏆 Best" summary rows; real case rows (in pivot_sorted's
+    # newest-first order) start right after them.
+    _N_SUMMARY_ROWS = 3
 
     def _is_real_progress(val) -> bool:
         """A rating that actually demonstrates something — everything
@@ -2666,21 +2706,22 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             {"selector": "tbody tr", "props": [("border-bottom", "1px solid #bbb")]},
             {"selector": "tbody tr:nth-child(1)", "props": [("border-bottom", "2px solid #555")]},
             {"selector": "tbody tr:nth-child(2)", "props": [("border-bottom", "2px solid #555")]},
+            {"selector": "tbody tr:nth-child(3)", "props": [("border-bottom", "2px solid #555")]},
             # Bold bottom edge, same as the left/right ones below —
             # :last-child always resolves to whichever row actually ends
             # up last regardless of case count.
             {"selector": "tbody tr:last-child td", "props": [("border-bottom", "2px solid #555")]},
         ]
         # Bold divider between Attending and Overall Performance — only
-        # from the fourth row down (tbody's 3rd child on): the header is
-        # row 1, and tbody rows 1-2 are the merged Most Recent/Best
-        # summary cells, which have no separate Attending/Overall
-        # Performance cells to put a border between at all (that whole
-        # span is one cell). :nth-child(n+3) selects tbody row 3
+        # from the fifth row down (tbody's 4th child on): the header is
+        # row 1, and tbody rows 1-3 are the merged # Assessed/Most
+        # Recent/Best summary cells, which have no separate Attending/
+        # Overall Performance cells to put a border between at all (that
+        # whole span is one cell). :nth-child(n+4) selects tbody row 4
         # onward — the first real case and every one after it.
         _attending_idx = all_cols.index("Attending")
         table_styles.append({
-            "selector": f"tbody tr:nth-child(n+3) td.col{_attending_idx}",
+            "selector": f"tbody tr:nth-child(n+4) td.col{_attending_idx}",
             "props": [("border-right", "2px solid #555")],
         })
         if "Daily Preparation" in all_cols and ordered_steps_display:
@@ -2755,9 +2796,9 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         def _merge_summary_label_cells(html_str, n_summary_rows, first_col, last_col, label_col, extra_style=""):
             """Merges the <td> cells from first_col..last_col (0-indexed,
             inclusive) into one, in each of the first n_summary_rows
-            <tbody> rows — used to let the "📌 Most Recent"/"🏆 Best"
-            label push right up against Case Complexity instead of being
-            boxed into Attending's own (narrower) column. label_col's own
+            <tbody> rows — used to let the "# Assessed*"/"📌 Most Recent"/
+            "🏆 Best" label push right up against Case Complexity instead
+            of being boxed into Attending's own (narrower) column. label_col's own
             cell (which carries the actual label text) survives with a
             colspan added; the other cells in the range are dropped
             outright. pandas Styler gives every cell a unique
@@ -2801,7 +2842,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         _vheader_idx = {idx for idx, c in enumerate(all_cols) if c in _vheader_cols}
         _heatmap_html = styled.to_html()
         _heatmap_html = _merge_summary_label_cells(
-            _heatmap_html, n_summary_rows=2,
+            _heatmap_html, n_summary_rows=3,
             first_col=all_cols.index("Date"), last_col=all_cols.index("Daily Preparation"),
             label_col=all_cols.index("Attending"),
             # border-right matches the same bold meta/steps divider added
