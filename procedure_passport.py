@@ -3233,7 +3233,7 @@ def suppress_picker_keyboards() -> None:
     )
 
 
-def page_header(text: str, tier_text: str | None = None) -> None:
+def page_header(text: str, tier_text: str | None = None, force_break: bool = False) -> None:
     """Render a page's main H1 header, then measure its actual rendered
     width in the browser and scale the font to exactly fill the
     container — no leftover right-hand margin — while never exceeding
@@ -3254,9 +3254,20 @@ def page_header(text: str, tier_text: str | None = None) -> None:
     name) that shouldn't itself push the header into a smaller ceiling
     tier just for being long. The real fit still measures the full
     displayed text's actual rendered width, so it still shrinks further
-    than that ceiling if the full text doesn't fit."""
+    than that ceiling if the full text doesn't fit.
+
+    force_break: split `text` on its first "\\n" and join the two halves
+    with a real <br> — always two lines, on every viewport width — unlike
+    header_break_before()'s single breakable space, which only wraps
+    there on narrow/mobile widths, and only if the full text doesn't
+    already fit on one line at that width. Only meaningful when `text`
+    actually contains a "\\n"; without one this is a no-op."""
     max_rem = _header_max(tier_text if tier_text is not None else text)
-    escaped = html.escape(text)
+    if force_break and "\n" in text:
+        _line1, _line2 = text.split("\n", 1)
+        escaped = f"{html.escape(_line1)}<br>{html.escape(_line2)}"
+    else:
+        escaped = html.escape(text)
     st.markdown(
         f'<div class="pp-page-header-wrap"><h1 class="pp-page-header">'
         f'{escaped}</h1></div>',
@@ -3296,43 +3307,59 @@ def page_header(text: str, tier_text: str | None = None) -> None:
             function fit() {{
                 var containerWidth = wrap.clientWidth;
                 if (!containerWidth) return;
-                var fullText = el.textContent;
-                // header_break_before() (see its Python definition)
-                // builds some headers with
-                // exactly one regular, breakable space and non-breaking
-                // spaces (nbsp) everywhere else, marking one deliberate
-                // wrap point. On a narrow (mobile) screen, measure each
-                // side of that point separately and take the wider one —
-                // rather than assuming (as an earlier version of this
-                // script did) that the text splits into two *even*
-                // halves, which let a lopsided split (e.g. a long
-                // procedure name, short resident name) overflow its line
-                // and trigger the CSS's overflow-wrap: break-word
-                // mid-word. Headers without such a point (or on desktop)
-                // measure as one line, same as always.
-                var mobile = window.parent.innerWidth <= 600;
-                var breakIdx = mobile && fullText.indexOf(nbsp) > -1
-                    ? fullText.indexOf(' ') : -1;
-                var widest = breakIdx > -1
-                    ? Math.max(
-                        measureWidth(fullText.slice(0, breakIdx), maxPx),
-                        measureWidth(fullText.slice(breakIdx + 1), maxPx)
-                      )
-                    : measureWidth(fullText, maxPx);
-                // The two-segment (breakIdx > -1) case approximates two
-                // separate wrapped lines from single-line nowrap probe
-                // measurements of each segment — each segment (kept
-                // unbreakable internally via nbsp) still has to survive
-                // the browser's own multi-line layout afterward, which
-                // can round a hair differently than the probe. An
-                // unusually long unbroken segment (e.g. a long combined
-                // first+last name) could then overflow its line by a
-                // pixel or two and get pushed onto a clipped 3rd line by
-                // the CSS's -webkit-line-clamp safety net. The plain
-                // single-line case doesn't have that extra layout step,
-                // so it keeps the tighter margin that was already tuned
-                // to fill the header's width precisely.
-                var safety = breakIdx > -1 ? 0.9 : 0.96;
+                // page_header(force_break=True) puts a real <br> in the
+                // markup — this header is always two lines, on every
+                // viewport width, not just a wrap point that only kicks
+                // in on mobile if the full text doesn't fit as one line.
+                // Its presence means measuring each side of it
+                // independently, same idea as the breakIdx path below,
+                // just unconditional rather than mobile-gated.
+                var brEl = el.querySelector('br');
+                var widest, safety;
+                if (brEl) {{
+                    var line1 = brEl.previousSibling ? brEl.previousSibling.textContent : '';
+                    var line2 = brEl.nextSibling ? brEl.nextSibling.textContent : '';
+                    widest = Math.max(measureWidth(line1, maxPx), measureWidth(line2, maxPx));
+                    safety = 0.9;
+                }} else {{
+                    var fullText = el.textContent;
+                    // header_break_before() (see its Python definition)
+                    // builds some headers with
+                    // exactly one regular, breakable space and non-breaking
+                    // spaces (nbsp) everywhere else, marking one deliberate
+                    // wrap point. On a narrow (mobile) screen, measure each
+                    // side of that point separately and take the wider one —
+                    // rather than assuming (as an earlier version of this
+                    // script did) that the text splits into two *even*
+                    // halves, which let a lopsided split (e.g. a long
+                    // procedure name, short resident name) overflow its line
+                    // and trigger the CSS's overflow-wrap: break-word
+                    // mid-word. Headers without such a point (or on desktop)
+                    // measure as one line, same as always.
+                    var mobile = window.parent.innerWidth <= 600;
+                    var breakIdx = mobile && fullText.indexOf(nbsp) > -1
+                        ? fullText.indexOf(' ') : -1;
+                    widest = breakIdx > -1
+                        ? Math.max(
+                            measureWidth(fullText.slice(0, breakIdx), maxPx),
+                            measureWidth(fullText.slice(breakIdx + 1), maxPx)
+                          )
+                        : measureWidth(fullText, maxPx);
+                    // The two-segment (breakIdx > -1) case approximates two
+                    // separate wrapped lines from single-line nowrap probe
+                    // measurements of each segment — each segment (kept
+                    // unbreakable internally via nbsp) still has to survive
+                    // the browser's own multi-line layout afterward, which
+                    // can round a hair differently than the probe. An
+                    // unusually long unbroken segment (e.g. a long combined
+                    // first+last name) could then overflow its line by a
+                    // pixel or two and get pushed onto a clipped 3rd line by
+                    // the CSS's -webkit-line-clamp safety net. The plain
+                    // single-line case doesn't have that extra layout step,
+                    // so it keeps the tighter margin that was already tuned
+                    // to fill the header's width precisely.
+                    safety = breakIdx > -1 ? 0.9 : 0.96;
+                }}
                 var finalPx = widest <= containerWidth
                     ? maxPx
                     : Math.max(1, maxPx * (containerWidth / widest) * safety);
@@ -5853,11 +5880,9 @@ elif page == "assessment":
                               == str(st.session_state.get("attending_id", "")).strip()]
         _requesting_attending = _att_match["attending_name"].values[0] if len(_att_match) else "Unknown"
         page_header(
-            header_break_before(
-                f"📝 Self-Assessment requested by {_requesting_attending}",
-                f"{_proc_name}",
-            ),
+            f"📝 Self-Assessment requested by {_requesting_attending}\n{_proc_name}",
             tier_text=f"📝 Self-Assessment requested by {_proc_name}",
+            force_break=True,
         )
     else:
         page_header(
