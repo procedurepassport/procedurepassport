@@ -2838,6 +2838,21 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
 
             return re.sub(r"(<th\b[^>]*>)(.*?)(</th>)", _wrap, html_str, flags=re.DOTALL)
 
+        def _wrap_assessed_row_counts(html_str, step_col_indices):
+            """Wraps the "# Assessed" row's (always tbody row 0) step-
+            column cell text in <span class="pp-assessed-count"> — every
+            other row's step cells are blank (color swatch only, see
+            the " " blanking above), so this row alone needs real text
+            fitted into the same fixed-size box, via the shrink-to-fit
+            script right after this table is rendered."""
+            for col in step_col_indices:
+                html_str = re.sub(
+                    rf'(<td id="[^"]*_row0_col{col}"[^>]*>)(.*?)(</td>)',
+                    r'\1<span class="pp-assessed-count">\2</span>\3',
+                    html_str, count=1, flags=re.DOTALL,
+                )
+            return html_str
+
         styled = styled.set_table_styles(table_styles)
         _vheader_idx = {idx for idx, c in enumerate(all_cols) if c in _vheader_cols}
         _heatmap_html = styled.to_html()
@@ -2860,7 +2875,66 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             ),
         )
         _heatmap_html = _wrap_vheader_labels(_heatmap_html, _vheader_idx)
+        if ordered_steps_display:
+            _heatmap_html = _wrap_assessed_row_counts(
+                _heatmap_html, [all_cols.index(c) for c in ordered_steps_display]
+            )
         st.markdown(_heatmap_html, unsafe_allow_html=True)
+
+        if ordered_steps_display:
+            # "# Assessed" row's count cells (e.g. "16*") are real text
+            # in the same fixed-size box every other row's step cells
+            # use for a color swatch only — shrink each one's font-size
+            # (no floor: the row staying exactly as tall as Most Recent/
+            # Best below it takes priority over legibility at any
+            # particular size) until it fits on one line without
+            # overflowing its cell, rather than wrapping to a second
+            # line and growing the whole row taller than its neighbors.
+            st.iframe(
+                """
+                <script>
+                (function() {
+                    var doc = window.parent.document;
+                    var spans = doc.querySelectorAll('.pp-assessed-count');
+                    var maxPx = 12.8; // matches the table's own 0.8rem base font-size
+                    function measureWidth(str, fontPx, refEl) {
+                        var probe = doc.createElement('span');
+                        probe.style.position = 'absolute';
+                        probe.style.visibility = 'hidden';
+                        probe.style.whiteSpace = 'nowrap';
+                        probe.style.fontSize = fontPx + 'px';
+                        var computed = window.parent.getComputedStyle(refEl);
+                        probe.style.fontFamily = computed.fontFamily;
+                        probe.style.fontWeight = computed.fontWeight;
+                        probe.textContent = str;
+                        doc.body.appendChild(probe);
+                        var w = probe.scrollWidth;
+                        doc.body.removeChild(probe);
+                        return w;
+                    }
+                    function fitAll() {
+                        spans.forEach(function(el) {
+                            var td = el.closest('td');
+                            if (!td) return;
+                            var containerWidth = td.clientWidth - 8; // 4px padding each side
+                            if (containerWidth <= 0) return;
+                            var text = el.textContent;
+                            el.style.whiteSpace = 'nowrap';
+                            var fullWidth = measureWidth(text, maxPx, el);
+                            if (fullWidth <= containerWidth) {
+                                el.style.fontSize = maxPx + 'px';
+                                return;
+                            }
+                            el.style.fontSize = Math.max(1, maxPx * (containerWidth / fullWidth) * 0.96) + 'px';
+                        });
+                    }
+                    fitAll();
+                    window.parent.addEventListener('resize', fitAll);
+                })();
+                </script>
+                """,
+                height=1,
+            )
 
     except Exception as _heatmap_err:
         st.warning(
