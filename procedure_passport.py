@@ -46,6 +46,40 @@ if (
     st.session_state["attending_link_date"] = query_params.get("date", "")
     st.session_state["_magic_routed"]     = True
 
+# An attending's magic link requesting a resident's own self-
+# evaluation (see attending_start's "Create Magic Link Request for
+# Resident Self-Evaluation" button) — pre-fills a Self-Assess entry
+# (procedure/attending/date from the link) and routes straight to the
+# assessment page, skipping Start's own pickers entirely. Unlike the
+# attending flow above, this can't work anonymously: a self-assessment
+# is tied to a real resident account, so nothing happens here until
+# `role` is actually "resident" — which, on a first visit via this
+# link, only becomes true after they log in and _complete_login()
+# reruns the script, landing back here with the same query params
+# (still in the URL) and picking this same block back up.
+if (
+    query_params.get("mode") == "resident_self"
+    and st.session_state.get("role") == "resident"
+    and st.session_state.get("resident")
+    and not st.session_state.get("_magic_routed")
+):
+    st.session_state["procedure_id"] = query_params.get("procedure_id", "")
+    st.session_state["specialty_id"] = query_params.get("specialty_id", "")
+    st.session_state["attending_id"] = query_params.get("attending_id", "")
+    _self_link_date = query_params.get("date", "")
+    try:
+        st.session_state["date"] = datetime.date.fromisoformat(_self_link_date) if _self_link_date else datetime.date.today()
+    except ValueError:
+        st.session_state["date"] = datetime.date.today()
+    st.session_state["assessment_mode"]      = "self"
+    st.session_state["scores"]               = {}
+    st.session_state["notes"]                = ""
+    st.session_state["improve"]              = ""
+    st.session_state["how"]                  = ""
+    st.session_state["generated_magic_link"] = None
+    st.session_state["page"]                 = "assessment"
+    st.session_state["_magic_routed"]        = True
+
 # ─────────────────────────────────────────────
 # SESSION STATE DEFAULTS
 # ─────────────────────────────────────────────
@@ -5993,18 +6027,45 @@ elif page == "attending_start":
 
     st.markdown("---")
 
-    if st.button("Start Assessment", type="primary", width="stretch",
-                 disabled=not (resident_chosen and procedure_chosen)):
-        # Reuses the same session keys — and the same blank assessment
-        # page — the anonymous "Blank Magic Link" flow feeds into, just
-        # populated directly instead of via a link's query params.
-        st.session_state["resident"]            = res_map[resident_choice]
-        st.session_state["procedure_id"]        = proc_map[procedure_choice]
-        st.session_state["specialty_id"]        = specialty_id
-        st.session_state["attending_name"]      = st.session_state.get("attending_login_name", "").replace(" ", "_")
-        st.session_state["draft_id"]            = ""
-        st.session_state["attending_link_date"] = str(case_date)
-        go_to("attending_assessment")
+    _att_start_cols = st.columns(2)
+    with _att_start_cols[0]:
+        if st.button("Start Assessment", type="primary", width="stretch", key="att_start_go_btn",
+                     disabled=not (resident_chosen and procedure_chosen)):
+            # Reuses the same session keys — and the same blank assessment
+            # page — the anonymous "Blank Magic Link" flow feeds into, just
+            # populated directly instead of via a link's query params.
+            st.session_state["resident"]            = res_map[resident_choice]
+            st.session_state["procedure_id"]        = proc_map[procedure_choice]
+            st.session_state["specialty_id"]        = specialty_id
+            st.session_state["attending_name"]      = st.session_state.get("attending_login_name", "").replace(" ", "_")
+            st.session_state["draft_id"]            = ""
+            st.session_state["attending_link_date"] = str(case_date)
+            go_to("attending_assessment")
+    with _att_start_cols[1]:
+        if st.button("🔗 Create Magic Link Request for Resident Self-Evaluation", width="stretch",
+                     key="att_start_self_link_btn", disabled=not (resident_chosen and procedure_chosen)):
+            # Unlike the anonymous attending magic-link flow above, a
+            # self-evaluation is tied to the resident's own account —
+            # this link only pre-fills the assessment (procedure/
+            # attending/date) once the resident is logged in as
+            # themselves; see the query-param routing near the top of
+            # this file (mode=resident_self) and _complete_login()'s
+            # resident branch, which picks it back up right after login
+            # if they weren't already signed in when they opened it.
+            base_url = st.secrets.get("APP_BASE_URL", "https://procedurepassport.streamlit.app")
+            st.session_state["att_start_self_link"] = (
+                f"{base_url}/?mode=resident_self"
+                f"&resident={res_map[resident_choice]}"
+                f"&procedure_id={proc_map[procedure_choice]}"
+                f"&specialty_id={specialty_id}"
+                f"&attending_id={st.session_state.get('attending_login_id', '')}"
+                f"&date={case_date}"
+            )
+
+    if st.session_state.get("att_start_self_link"):
+        st.success(f"✅ A self-evaluation link is ready to send {resident_choice}:")
+        copy_link_button(st.session_state["att_start_self_link"], key="copy_att_self_link")
+        st.code(st.session_state["att_start_self_link"], language="text")
 
     st.markdown("---")
     if st.button("⬅️ Back to Home", key="att_start_bottom_home"):
