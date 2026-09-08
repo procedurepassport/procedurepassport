@@ -1336,7 +1336,11 @@ def load_case_detail(case_id: str):
     # even when opened much later by the resident.
     _had_draft, _changes = False, []
     _diff_raw = row.get("self_assessment_diff")
-    if _diff_raw and not pd.isna(_diff_raw):
+    # pd.isna() must run first: a column missing from an older sheet
+    # row reads back as pd.NA (not NaN/None), and pd.NA's own __bool__
+    # raises TypeError ("boolean value is ambiguous") rather than
+    # returning False, so `if _diff_raw` alone would crash on it.
+    if not pd.isna(_diff_raw) and _diff_raw:
         try:
             _diff_parsed = json.loads(_diff_raw)
             _had_draft = bool(_diff_parsed.get("had_draft"))
