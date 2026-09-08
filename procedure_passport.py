@@ -255,7 +255,8 @@ SHEET_CASES      = "cases"
 _CASE_COLS = ["case_id", "resident_email", "date", "specialty_id",
               "procedure_id", "attending_id", "notes",
               "case_complexity", "case_preparation", "overall_performance",
-              "robo_type", "improve", "how", "assessment_type", "submitted_at"]
+              "robo_type", "improve", "how", "assessment_type",
+              "self_assessment_diff", "submitted_at"]
 SHEET_SCORES     = "scores"
 SHEET_SPECIALTY  = "specialties"
 SHEET_DRAFTS     = "drafts"
@@ -1068,6 +1069,7 @@ def save_case(
     improve: str = "",
     how: str = "",
     assessment_type: str = "",
+    self_assessment_diff: str = "",
 ) -> str:
     """Persist a case + its step scores; returns the new case_id.
 
@@ -1078,13 +1080,22 @@ def save_case(
 
     robo_type ("Xi"/"SP"/"DV5") is only meaningful for a robotic
     procedure (see _is_robotic_procedure) — None otherwise.
+
+    self_assessment_diff: JSON string ({"had_draft": bool, "changes":
+    [[label, old, new], ...]}) capturing what the attending changed
+    from the resident's original self-assessment, if this case row was
+    reviewed from a draft — empty string otherwise. Persisted (rather
+    than kept only in session_state) so the same "what changed" view
+    can be shown to the resident later, in a different session, via
+    load_case_detail().
     """
     case_id   = uuid.uuid4().hex[:12]
 
     case_cols = ["case_id", "resident_email", "date", "specialty_id",
                  "procedure_id", "attending_id", "notes",
                  "case_complexity", "case_preparation", "overall_performance",
-                 "robo_type", "improve", "how", "assessment_type", "submitted_at"]
+                 "robo_type", "improve", "how", "assessment_type",
+                 "self_assessment_diff", "submitted_at"]
     cases_df  = read_sheet_df(SHEET_CASES, expected_cols=case_cols)
     cases_df  = pd.concat([cases_df, pd.DataFrame([{
         "case_id":             case_id,
@@ -1101,6 +1112,7 @@ def save_case(
         "improve":             improve,
         "how":                 how,
         "assessment_type":     assessment_type,
+        "self_assessment_diff": self_assessment_diff,
         # Distinct from `date` (the procedure's own date, picked by
         # whoever filled the form — can be well in the past) — this is
         # when the row was actually saved, which the "new evaluation"
@@ -1280,13 +1292,7 @@ def load_case_detail(case_id: str):
     Returns None if no such case exists."""
     if not case_id:
         return None
-    cases_df = read_sheet_df(
-        SHEET_CASES,
-        expected_cols=["case_id", "resident_email", "date", "specialty_id",
-                       "procedure_id", "attending_id", "notes",
-                       "case_complexity", "case_preparation", "overall_performance",
-                       "robo_type", "improve", "how", "assessment_type", "submitted_at"],
-    )
+    cases_df = read_sheet_df(SHEET_CASES, expected_cols=_CASE_COLS)
     cases_df["case_id"] = _norm_id(cases_df["case_id"])
     target = _norm_id(pd.Series([case_id])).iloc[0]
     match = cases_df[cases_df["case_id"] == target]
@@ -1323,6 +1329,21 @@ def load_case_detail(case_id: str):
     ]
     resident_name = res_match["name"].values[0] if len(res_match) else row.get("resident_email", "")
 
+    # Reconstitutes the "what changed from the resident's self-assessment"
+    # diff persisted by save_case() at attending-review time, if any —
+    # same shape as the live attending_submission dict built right after
+    # submission, so this case can show identical "before/after" info
+    # even when opened much later by the resident.
+    _had_draft, _changes = False, []
+    _diff_raw = row.get("self_assessment_diff")
+    if _diff_raw and not pd.isna(_diff_raw):
+        try:
+            _diff_parsed = json.loads(_diff_raw)
+            _had_draft = bool(_diff_parsed.get("had_draft"))
+            _changes   = [tuple(c) for c in _diff_parsed.get("changes", [])]
+        except (ValueError, TypeError):
+            pass
+
     return {
         "case_id":             row["case_id"],
         "resident_email":      row.get("resident_email", ""),
@@ -1340,9 +1361,42 @@ def load_case_detail(case_id: str):
         "improve":             _clean(row.get("improve")),
         "how":                 _clean(row.get("how")),
         "assessment_type":     row.get("assessment_type", ""),
+        "had_draft":           _had_draft,
+        "changes":             _changes,
         "scores":              scores,
         "steps":               steps,
     }
+
+
+def _render_self_assessment_diff(sub: dict) -> None:
+    """The "what changed from the resident's original self-assessment"
+    section — a top-of-page note plus a side-by-side, highlighted
+    before/after row per changed field. Shared by attending_confirmation
+    (right after a live submission) and view_evaluation (opened later,
+    by the resident, from their own history/dashboard) so both show the
+    identical comparison, sourced from the same "had_draft"/"changes"
+    keys — live in session_state right after submission, or reconstituted
+    from the persisted self_assessment_diff column via load_case_detail()
+    when viewed later. No-op when the case had no self-assessment draft
+    to compare against at all (e.g. a blank attending evaluation)."""
+    if not sub.get("had_draft"):
+        return
+    _changes = sub.get("changes") or []
+    if _changes:
+        st.warning(
+            f"✏️ {len(_changes)} change{'s' if len(_changes) != 1 else ''} "
+            f"{'were' if len(_changes) != 1 else 'was'} made from the resident's "
+            f"original self-assessment:"
+        )
+        for _label, _old, _new in _changes:
+            st.markdown(f"**{_label}**")
+            _diff_cols = st.columns(2)
+            with _diff_cols[0]:
+                st.error(f"Before: {_old}")
+            with _diff_cols[1]:
+                st.success(f"After: {_new}")
+    else:
+        st.info("✅ No changes were made from the resident's original self-assessment.")
 
 
 def _render_evaluation_card(sub: dict) -> None:
@@ -5098,6 +5152,7 @@ elif page == "view_evaluation":
             pass  # already showing them the evaluation either way
 
     page_header("📄 Evaluation")
+    _render_self_assessment_diff(_viewed_sub)
     _render_evaluation_card(_viewed_sub)
     render_rating_legend(key="rating_legend_view_evaluation")
     render_prep_legend(key="prep_legend_view_evaluation")
@@ -6737,6 +6792,36 @@ elif page == "attending_assessment":
                 if st.session_state.get("role") == "attending" and st.session_state.get("attending_login_id")
                 else f"magic_{attending_name}"
             )
+            # Field-by-field diff against the resident's original
+            # self-assessment — only meaningful when there was a draft
+            # to compare against at all (a blank assessment has no
+            # "before" to diff against). Computed before save_case() so
+            # it can be persisted onto the case row itself (as JSON) —
+            # not just kept in session_state — so the same "what
+            # changed" view can be shown later to the resident, in a
+            # different session, from load_case_detail().
+            _changes: list = []
+            if _draft:
+                if case_complexity != _draft_resolved_complexity:
+                    _changes.append(("Case Complexity", _draft_resolved_complexity, case_complexity))
+                if case_preparation != _draft_resolved_preparation:
+                    _changes.append(("Daily Preparation", _draft_resolved_preparation, case_preparation))
+                if o_score != _draft_resolved_o:
+                    _changes.append(("Overall Performance", _draft_resolved_o, o_score))
+                if notes != _d.get("notes", ""):
+                    _changes.append(("Comments", _d.get("notes", "") or "(blank)", notes or "(blank)"))
+                if improve != _d.get("improve", ""):
+                    _changes.append(("In order to improve this", _d.get("improve", "") or "(blank)", improve or "(blank)"))
+                if how != _d.get("how", ""):
+                    _changes.append(("Do this", _d.get("how", "") or "(blank)", how or "(blank)"))
+                _step_name_lookup = dict(zip(steps["step_id"], steps["step_name"]))
+                for _sid, _new_val in scores.items():
+                    _old_val = _draft_resolved_scores.get(_sid, "Not Assessed")
+                    if _new_val != _old_val:
+                        _changes.append((_step_name_lookup.get(_sid, _sid), _old_val, _new_val))
+            _self_assessment_diff = (
+                json.dumps({"had_draft": True, "changes": _changes}) if _draft else ""
+            )
             try:
                 case_id = save_case(
                     resident_email=resident_email,
@@ -6753,33 +6838,10 @@ elif page == "attending_assessment":
                     improve=improve,
                     how=how,
                     assessment_type=_assessment_type,
+                    self_assessment_diff=_self_assessment_diff,
                 )
                 if draft_id:
                     delete_draft(draft_id)
-                # Field-by-field diff against the resident's original
-                # self-assessment, for the confirmation page's "what
-                # changed" section — only meaningful when there was a
-                # draft to compare against at all (a blank assessment
-                # has no "before" to diff against).
-                _changes: list = []
-                if _draft:
-                    if case_complexity != _draft_resolved_complexity:
-                        _changes.append(("Case Complexity", _draft_resolved_complexity, case_complexity))
-                    if case_preparation != _draft_resolved_preparation:
-                        _changes.append(("Daily Preparation", _draft_resolved_preparation, case_preparation))
-                    if o_score != _draft_resolved_o:
-                        _changes.append(("Overall Performance", _draft_resolved_o, o_score))
-                    if notes != _d.get("notes", ""):
-                        _changes.append(("Comments", _d.get("notes", "") or "(blank)", notes or "(blank)"))
-                    if improve != _d.get("improve", ""):
-                        _changes.append(("In order to improve this", _d.get("improve", "") or "(blank)", improve or "(blank)"))
-                    if how != _d.get("how", ""):
-                        _changes.append(("Do this", _d.get("how", "") or "(blank)", how or "(blank)"))
-                    _step_name_lookup = dict(zip(steps["step_id"], steps["step_name"]))
-                    for _sid, _new_val in scores.items():
-                        _old_val = _draft_resolved_scores.get(_sid, "Not Assessed")
-                        if _new_val != _old_val:
-                            _changes.append((_step_name_lookup.get(_sid, _sid), _old_val, _new_val))
                 # Store submission summary for the confirmation page
                 st.session_state["attending_submission"] = {
                     "had_draft":           bool(_draft),
@@ -6819,23 +6881,7 @@ elif page == "attending_confirmation":
     page_header("✅ Evaluation Submitted")
     st.success("Thank you! Your evaluation has been recorded.")
 
-    if sub.get("had_draft"):
-        _sub_changes = sub.get("changes") or []
-        if _sub_changes:
-            st.warning(
-                f"✏️ {len(_sub_changes)} change{'s' if len(_sub_changes) != 1 else ''} "
-                f"{'were' if len(_sub_changes) != 1 else 'was'} made from the resident's "
-                f"original self-assessment:"
-            )
-            for _label, _old, _new in _sub_changes:
-                st.markdown(f"**{_label}**")
-                _diff_cols = st.columns(2)
-                with _diff_cols[0]:
-                    st.error(f"Before: {_old}")
-                with _diff_cols[1]:
-                    st.success(f"After: {_new}")
-        else:
-            st.info("✅ No changes were made from the resident's original self-assessment.")
+    _render_self_assessment_diff(sub)
 
     _render_evaluation_card(sub)
 
