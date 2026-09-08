@@ -13,6 +13,8 @@ import gspread
 from gspread_dataframe import get_as_dataframe, set_with_dataframe
 from google.oauth2.service_account import Credentials
 import numpy as np
+import urllib.request
+import urllib.error
 
 
 st.set_page_config(
@@ -386,6 +388,96 @@ def write_sheet_df_no_shrink(sheet_name: str, df: pd.DataFrame) -> None:
             f"rows to {len(df)}. Please reload and try again — nothing was written."
         )
     write_sheet_df(sheet_name, df)
+
+
+# ─────────────────────────────────────────────
+# EMAIL NOTIFICATIONS (Resend)
+# ─────────────────────────────────────────────
+# Three events email out: a magic link being created (notifies whichever
+# side didn't create it — attending or resident), a resident's self-
+# assessment becoming available for review (emailed from the same call
+# site as its magic link, since the two happen at the same instant), and
+# an attending's completed evaluation becoming available (notifies the
+# resident). Configured via st.secrets:
+#   RESEND_API_KEY    — required; every send below is silently skipped
+#                        without it, so the app works with no email
+#                        configured at all.
+#   RESEND_FROM_EMAIL — optional, e.g.
+#                        "Procedure Passport <notifications@yourdomain.org>".
+#                        Defaults to Resend's shared onboarding@resend.dev
+#                        sender, which Resend restricts to sending only to
+#                        the Resend account's own verified address — a
+#                        real domain must be verified in the Resend
+#                        dashboard before this can actually reach
+#                        residents/attendings at large.
+def send_email_notification(to_email: str, subject: str, body_html: str) -> None:
+    """Best-effort transactional email via Resend's HTTP API — never
+    raises. A failed or skipped send (no API key configured, blank
+    recipient, network error, Resend rejecting the request) must never
+    block or roll back the evaluation/magic-link action that triggered
+    it, so every failure is only printed to the server console
+    (`streamlit run` output, or the Streamlit Cloud "Manage app" logs)
+    for troubleshooting rather than surfaced to the user."""
+    to_email = str(to_email or "").strip()
+    api_key  = st.secrets.get("RESEND_API_KEY", "")
+    if not api_key or not to_email:
+        return
+    from_addr = st.secrets.get("RESEND_FROM_EMAIL", "Procedure Passport <onboarding@resend.dev>")
+    try:
+        req = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=json.dumps({
+                "from":    from_addr,
+                "to":      [to_email],
+                "subject": subject,
+                "html":    body_html,
+            }).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type":  "application/json",
+            },
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=10)
+    except Exception as exc:
+        print(f"[email] Resend send to {to_email} failed: {exc}")
+
+
+def _app_login_link() -> str:
+    base_url = st.secrets.get("APP_BASE_URL", "https://procedurepassport.streamlit.app")
+    return f'<p><a href="{html.escape(base_url)}">Log in to Procedure Passport</a> to view it.</p>'
+
+
+def notify_new_evaluation_request(to_email: str, requester_name: str, procedure_name: str, requested_by: str) -> None:
+    """Emailed the instant a magic link is created — to whichever side
+    didn't create it. `requested_by` is "resident" or "attending": who
+    initiated the request, so the copy reads correctly for either
+    direction (this also covers a resident's self-assessment becoming
+    available for the attending to review, since that always happens by
+    generating one of these links)."""
+    if requested_by == "resident":
+        subject = f"Evaluation request from {requester_name}: {procedure_name}"
+        intro   = f"{requester_name} has requested a procedure evaluation from you"
+    else:
+        subject = f"Self-evaluation request from Dr. {requester_name}: {procedure_name}"
+        intro   = f"Dr. {requester_name} has requested a self-evaluation from you"
+    body = (
+        f"<p>{html.escape(intro)} for <b>{html.escape(str(procedure_name))}</b> "
+        f"on Procedure Passport.</p>" + _app_login_link()
+    )
+    send_email_notification(to_email, subject, body)
+
+
+def notify_evaluation_completed(resident_email: str, attending_name: str, procedure_name: str) -> None:
+    """Emailed to the resident the instant an attending's completed
+    evaluation — whether submitted via magic link or by a logged-in
+    attending — is saved."""
+    subject = f"New evaluation from Dr. {attending_name}: {procedure_name}"
+    body = (
+        f"<p>Dr. {html.escape(str(attending_name))} has completed an evaluation of your "
+        f"<b>{html.escape(str(procedure_name))}</b> case.</p>" + _app_login_link()
+    )
+    send_email_notification(resident_email, subject, body)
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -5644,6 +5736,13 @@ elif page == "start":
                     f"&attending_name={safe_att}"
                     f"&date={st.session_state['date']}"
                 )
+                _att_email = _att_match["email"].values[0] if len(_att_match) > 0 else ""
+                notify_new_evaluation_request(
+                    to_email=_att_email,
+                    requester_name=st.session_state.get("resident_name", st.session_state["resident"]),
+                    procedure_name=procedure,
+                    requested_by="resident",
+                )
 
     if st.session_state.get("blank_magic_link"):
         st.success("✅ A blank link is ready for your attending:")
@@ -5940,6 +6039,13 @@ elif page == "assessment":
                         f"&specialty_id={st.session_state['specialty_id']}"
                         f"&attending_name={safe_att}"
                         f"&draft_id={draft_id}"
+                    )
+                    _att_email = _att_match["email"].values[0] if len(_att_match) > 0 else ""
+                    notify_new_evaluation_request(
+                        to_email=_att_email,
+                        requester_name=st.session_state.get("resident_name", st.session_state["resident"]),
+                        procedure_name=_proc_name,
+                        requested_by="resident",
                     )
                     go_to("magic_link_ready")
                 except ConnectionError as exc:
@@ -6514,6 +6620,12 @@ elif page == "attending_start":
                     f"&attending_id={st.session_state.get('attending_login_id', '')}"
                     f"&date={case_date}"
                     f"&request_id={_self_eval_request_id}"
+                )
+                notify_new_evaluation_request(
+                    to_email=res_map[resident_choice],
+                    requester_name=st.session_state.get("attending_login_name", ""),
+                    procedure_name=procedure_choice,
+                    requested_by="attending",
                 )
             except ConnectionError as exc:
                 show_gs_error(exc)
@@ -7197,6 +7309,11 @@ elif page == "attending_assessment":
                 )
                 if draft_id:
                     delete_draft(draft_id)
+                notify_evaluation_completed(
+                    resident_email=resident_email,
+                    attending_name=display_attending,
+                    procedure_name=_att_proc_name,
+                )
                 # Store submission summary for the confirmation page
                 st.session_state["attending_submission"] = {
                     "had_draft":           bool(_draft),
