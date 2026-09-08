@@ -3533,7 +3533,7 @@ if (
     _logged_in and st.session_state["page"] not in ("login", "attending_assessment", "attending_confirmation")
 ) or _attending_logged_in:
     st.sidebar.markdown("---")
-    render_rating_legend(key="rating_legend_sidebar", container=st.sidebar, expanded=True)
+    render_rating_legend(key="rating_legend_sidebar", container=st.sidebar, expanded=False)
     render_complexity_legend(key="complexity_legend_sidebar", container=st.sidebar, expanded=False)
     render_prep_legend(key="prep_legend_sidebar", container=st.sidebar, expanded=False)
 
