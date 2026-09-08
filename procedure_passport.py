@@ -5854,10 +5854,10 @@ elif page == "assessment":
         _requesting_attending = _att_match["attending_name"].values[0] if len(_att_match) else "Unknown"
         page_header(
             header_break_before(
-                f"📝 {_proc_name} Self-Assessment for",
-                f"{st.session_state['resident_name']} by {_requesting_attending}",
+                f"📝 Self-Assessment requested by {_requesting_attending}",
+                f"{_proc_name}",
             ),
-            tier_text=f"📝 {_proc_name} Self-Assessment",
+            tier_text=f"📝 Self-Assessment requested by {_proc_name}",
         )
     else:
         page_header(
