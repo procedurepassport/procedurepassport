@@ -437,9 +437,46 @@ def send_email_notification(to_email: str, subject: str, body_html: str) -> None
         print(f"[email] Gmail send to {to_email} failed: {exc}")
 
 
-def _app_login_link() -> str:
+def _email_card(heading: str, message_html: str, cta_label: str) -> str:
+    """Wraps one notification's content in a small centered "card" with a
+    prominent, button-styled call-to-action link — as close to "the form
+    is right here" as a plain HTML email can get, since real interactive
+    forms are stripped out by every major email client. Inline styles
+    only (no <style> block, no external CSS) — that's the one thing that
+    reliably survives Gmail/Outlook/Apple Mail's HTML sanitizing. The
+    button itself degrades gracefully in older Outlook (loses its rounded
+    corners, still shows as a clickable colored box) rather than
+    disappearing outright."""
     base_url = st.secrets.get("APP_BASE_URL", "https://procedurepassport.streamlit.app")
-    return f'<p><a href="{html.escape(base_url)}">Log in to Procedure Passport</a> to view it.</p>'
+    url = html.escape(base_url)
+    return f"""
+    <div style="font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                max-width:480px;margin:0 auto;padding:8px;">
+      <div style="text-align:center;margin-bottom:20px;">
+        <span style="font-size:22px;">🩺</span>
+        <span style="font-size:16px;font-weight:600;color:#1f2937;margin-left:6px;">
+          Procedure Passport
+        </span>
+      </div>
+      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;
+                  padding:28px 24px;">
+        <h2 style="margin:0 0 12px;font-size:18px;color:#111827;">{html.escape(heading)}</h2>
+        <p style="margin:0;font-size:15px;line-height:1.5;color:#374151;">{message_html}</p>
+        <div style="text-align:center;margin:28px 0 8px;">
+          <a href="{url}"
+             style="background-color:#2563eb;color:#ffffff;text-decoration:none;
+                    font-weight:600;font-size:15px;padding:13px 30px;border-radius:8px;
+                    display:inline-block;">
+            {html.escape(cta_label)}
+          </a>
+        </div>
+      </div>
+      <p style="text-align:center;font-size:12px;color:#9ca3af;margin-top:16px;">
+        Or paste this link into your browser:<br>
+        <a href="{url}" style="color:#6b7280;word-break:break-all;">{url}</a>
+      </p>
+    </div>
+    """
 
 
 def notify_new_evaluation_request(to_email: str, requester_name: str, procedure_name: str, requested_by: str) -> None:
@@ -449,17 +486,18 @@ def notify_new_evaluation_request(to_email: str, requester_name: str, procedure_
     direction (this also covers a resident's self-assessment becoming
     available for the attending to review, since that always happens by
     generating one of these links)."""
+    proc = html.escape(str(procedure_name))
     if requested_by == "resident":
-        subject = f"Evaluation request from {requester_name}: {procedure_name}"
-        intro   = f"{requester_name} has requested a procedure evaluation from you"
+        subject  = f"Evaluation request from {requester_name}: {procedure_name}"
+        heading  = "New Evaluation Request"
+        message  = f"<b>{html.escape(str(requester_name))}</b> has requested a procedure evaluation from you for <b>{proc}</b>."
+        cta      = "Complete Evaluation →"
     else:
-        subject = f"Self-evaluation request from Dr. {requester_name}: {procedure_name}"
-        intro   = f"Dr. {requester_name} has requested a self-evaluation from you"
-    body = (
-        f"<p>{html.escape(intro)} for <b>{html.escape(str(procedure_name))}</b> "
-        f"on Procedure Passport.</p>" + _app_login_link()
-    )
-    send_email_notification(to_email, subject, body)
+        subject  = f"Self-evaluation request from Dr. {requester_name}: {procedure_name}"
+        heading  = "Self-Evaluation Requested"
+        message  = f"<b>Dr. {html.escape(str(requester_name))}</b> has requested a self-evaluation from you for <b>{proc}</b>."
+        cta      = "Start Self-Evaluation →"
+    send_email_notification(to_email, subject, _email_card(heading, message, cta))
 
 
 def notify_evaluation_completed(resident_email: str, attending_name: str, procedure_name: str) -> None:
@@ -467,11 +505,13 @@ def notify_evaluation_completed(resident_email: str, attending_name: str, proced
     evaluation — whether submitted via magic link or by a logged-in
     attending — is saved."""
     subject = f"New evaluation from Dr. {attending_name}: {procedure_name}"
-    body = (
-        f"<p>Dr. {html.escape(str(attending_name))} has completed an evaluation of your "
-        f"<b>{html.escape(str(procedure_name))}</b> case.</p>" + _app_login_link()
+    message = (
+        f"<b>Dr. {html.escape(str(attending_name))}</b> has completed an evaluation of your "
+        f"<b>{html.escape(str(procedure_name))}</b> case."
     )
-    send_email_notification(resident_email, subject, body)
+    send_email_notification(
+        resident_email, subject, _email_card("New Evaluation Available", message, "View Evaluation →")
+    )
 
 
 @st.cache_data(ttl=300, show_spinner=False)
