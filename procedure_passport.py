@@ -5656,14 +5656,14 @@ elif page == "magic_link_ready":
 
     page_header("🔗 Magic Link Ready")
     st.success("✅ Your self-assessment was saved, and a pre-filled link is ready for your attending:")
-    copy_link_button(st.session_state["generated_magic_link"], key="copy_generated_link")
-    st.code(st.session_state.get("generated_magic_link", ""), language="text")
-    st.caption("The attending can review and adjust every field before submitting.")
     st.info(
         "📬 Your attending has also been notified in their own Procedure "
         "Passport account — they'll see this pending self-evaluation on "
-        "their Home page even without the link above."
+        "their Home page even without the link below."
     )
+    copy_link_button(st.session_state["generated_magic_link"], key="copy_generated_link")
+    st.code(st.session_state.get("generated_magic_link", ""), language="text")
+    st.caption("The attending can review and adjust every field before submitting.")
 
     st.markdown("---")
     col1, col2, col3 = st.columns(3)
