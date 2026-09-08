@@ -6756,8 +6756,34 @@ elif page == "attending_assessment":
                 )
                 if draft_id:
                     delete_draft(draft_id)
+                # Field-by-field diff against the resident's original
+                # self-assessment, for the confirmation page's "what
+                # changed" section — only meaningful when there was a
+                # draft to compare against at all (a blank assessment
+                # has no "before" to diff against).
+                _changes: list = []
+                if _draft:
+                    if case_complexity != _draft_resolved_complexity:
+                        _changes.append(("Case Complexity", _draft_resolved_complexity, case_complexity))
+                    if case_preparation != _draft_resolved_preparation:
+                        _changes.append(("Daily Preparation", _draft_resolved_preparation, case_preparation))
+                    if o_score != _draft_resolved_o:
+                        _changes.append(("Overall Performance", _draft_resolved_o, o_score))
+                    if notes != _d.get("notes", ""):
+                        _changes.append(("Comments", _d.get("notes", "") or "(blank)", notes or "(blank)"))
+                    if improve != _d.get("improve", ""):
+                        _changes.append(("In order to improve this", _d.get("improve", "") or "(blank)", improve or "(blank)"))
+                    if how != _d.get("how", ""):
+                        _changes.append(("Do this", _d.get("how", "") or "(blank)", how or "(blank)"))
+                    _step_name_lookup = dict(zip(steps["step_id"], steps["step_name"]))
+                    for _sid, _new_val in scores.items():
+                        _old_val = _draft_resolved_scores.get(_sid, "Not Assessed")
+                        if _new_val != _old_val:
+                            _changes.append((_step_name_lookup.get(_sid, _sid), _old_val, _new_val))
                 # Store submission summary for the confirmation page
                 st.session_state["attending_submission"] = {
+                    "had_draft":           bool(_draft),
+                    "changes":             _changes,
                     "case_id":             case_id,
                     "resident_email":      resident_email,
                     "resident_name":       _resident_display_name,
@@ -6793,8 +6819,25 @@ elif page == "attending_confirmation":
     page_header("✅ Evaluation Submitted")
     st.success("Thank you! Your evaluation has been recorded.")
 
+    if sub.get("had_draft"):
+        _sub_changes = sub.get("changes") or []
+        if _sub_changes:
+            st.warning(
+                f"✏️ {len(_sub_changes)} change{'s' if len(_sub_changes) != 1 else ''} "
+                f"{'were' if len(_sub_changes) != 1 else 'was'} made from the resident's "
+                f"original self-assessment:"
+            )
+            for _label, _old, _new in _sub_changes:
+                st.markdown(f"**{_label}**")
+                _diff_cols = st.columns(2)
+                with _diff_cols[0]:
+                    st.error(f"Before: {_old}")
+                with _diff_cols[1]:
+                    st.success(f"After: {_new}")
+        else:
+            st.info("✅ No changes were made from the resident's original self-assessment.")
+
     _render_evaluation_card(sub)
-    render_prep_legend(key="prep_legend_attending_confirmation")
 
     st.markdown("---")
     if st.session_state.get("role") == "attending" and st.session_state.get("attending_login_email"):
