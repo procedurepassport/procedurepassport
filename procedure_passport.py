@@ -2595,7 +2595,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         ("cystoscopy to confirm",                             "Cystoscopy Confirmation"),
         # Open ureteral reimplant
         ("cystotomy and intravesical",                        "Cystotomy/Intravesical Exposure"),
-        ("circumferential ureteral mobilization adequate",    "Ureteral Mobilization Adequate for Reimplantation"),
+        ("circumferential ureteral mobilization adequate",    "Ureteral Mobilization"),
         ("develop a mucosal tunnel",                          "Mucosal Tunnel and Transpose Ureter"),
     ]
     for _s in ordered_steps:
