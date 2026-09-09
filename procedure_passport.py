@@ -2646,11 +2646,11 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     # Daily Preparation is the third meta column after Overall
     # Performance/Case Complexity — never reported for the two summary
     # rows above (pd.NA, same as the other two), only per real case.
-    # robo_type (the Robot column, right before Overall Performance) is
-    # the same — always pd.NA on the three summary rows above, which
-    # doesn't actually matter since _merge_summary_label_cells below
-    # collapses this whole Date..Daily Preparation span into one label
-    # cell on those rows regardless of what's in it.
+    # robo_type (the Robot System column, right before Overall
+    # Performance) is the same — always pd.NA on the three summary rows
+    # above, which doesn't actually matter since _merge_summary_label_cells
+    # below collapses this whole Date..Daily Preparation span into one
+    # label cell on those rows regardless of what's in it.
     _meta_cols  = ["date", "attending_name", "robo_type", "overall_performance", "case_complexity", "case_preparation"]
 
     display_df = pd.concat(
@@ -2664,7 +2664,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     display_df = display_df.rename(columns={
         "date":                "Date",
         "attending_name":      "Attending",
-        "robo_type":           "Robot",
+        "robo_type":           "Robot System",
         "case_complexity":     "Case Complexity",
         "overall_performance": "Overall Performance",
         "case_preparation":    "Daily Preparation",
@@ -2674,7 +2674,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
 
     display_df["Date"]      = display_df["Date"].fillna("")
     display_df["Attending"] = display_df["Attending"].fillna("")
-    display_df["Robot"]     = display_df["Robot"].fillna("")
+    display_df["Robot System"] = display_df["Robot System"].fillna("")
 
     _rating_cols = [c for c in ordered_steps_display + ["Case Complexity", "Overall Performance", "Daily Preparation"]
                     if c in display_df.columns]
@@ -2855,7 +2855,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
                 **_META_CELL_PROPS,
             )
             .set_properties(
-                subset=["Robot"],
+                subset=["Robot System"],
                 # Plain text ("Xi"/"SP"/"DV5"), not a color swatch like
                 # its meta-column neighbors — same fixed width as the
                 # step columns (box-sizing: border-box, same as those
@@ -2896,14 +2896,14 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             {"selector": "tbody tr:last-child td", "props": [("border-bottom", "2px solid #555")]},
         ]
         # Bold divider between the identifying columns (Attending, and
-        # Robot right after it) and Overall Performance — only from the
-        # fifth row down (tbody's 4th child on): the header is row 1,
-        # and tbody rows 1-3 are the merged # Assessed/Most Recent/Best
-        # summary cells, which have no separate Attending/Robot/Overall
-        # Performance cells to put a border between at all (that whole
-        # span is one cell). :nth-child(n+4) selects tbody row 4 onward
-        # — the first real case and every one after it.
-        _pre_rating_idx = all_cols.index("Robot")
+        # Robot System right after it) and Overall Performance — only
+        # from the fifth row down (tbody's 4th child on): the header is
+        # row 1, and tbody rows 1-3 are the merged # Assessed/Most
+        # Recent/Best summary cells, which have no separate Attending/
+        # Robot System/Overall Performance cells to put a border between
+        # at all (that whole span is one cell). :nth-child(n+4) selects
+        # tbody row 4 onward — the first real case and every one after it.
+        _pre_rating_idx = all_cols.index("Robot System")
         table_styles.append({
             "selector": f"tbody tr:nth-child(n+4) td.col{_pre_rating_idx}",
             "props": [("border-right", "2px solid #555")],
@@ -2937,7 +2937,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             "props": [("border-right", "2px solid #555")],
         })
         _vheader_cols  = [c for c in all_cols
-                           if c in ordered_steps_display or c in _META_COL_NAMES]
+                           if c in ordered_steps_display or c in _META_COL_NAMES or c == "Robot System"]
 
         # Rotated column headers: forced to one line (no wrapping, no
         # shrink-to-fit) with no cap on the header row's height — a long
@@ -3022,23 +3022,6 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
 
             return re.sub(r"(<th\b[^>]*>)(.*?)(</th>)", _wrap, html_str, flags=re.DOTALL)
 
-        def _blank_col_header(html_str, col_idx):
-            """Empties one column's <th> header text, leaving the cell
-            (and its styling) in place — used for the Robot column,
-            which doesn't need a header label of its own."""
-            _col_idx_re = re.compile(r"\bcol(\d+)\b")
-
-            def _blank(m):
-                open_tag, close_tag = m.group(1), m.group(3)
-                if "col_heading" not in open_tag:
-                    return m.group(0)
-                idx_match = _col_idx_re.search(open_tag)
-                if not idx_match or int(idx_match.group(1)) != col_idx:
-                    return m.group(0)
-                return f"{open_tag}{close_tag}"
-
-            return re.sub(r"(<th\b[^>]*>)(.*?)(</th>)", _blank, html_str, flags=re.DOTALL)
-
         def _wrap_assessed_row_counts(html_str, step_col_indices):
             """Wraps the "# Assessed" row's (always tbody row 0) step-
             column cell text in <span class="pp-assessed-count"> — every
@@ -3076,7 +3059,6 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             ),
         )
         _heatmap_html = _wrap_vheader_labels(_heatmap_html, _vheader_idx)
-        _heatmap_html = _blank_col_header(_heatmap_html, all_cols.index("Robot"))
         if ordered_steps_display:
             _heatmap_html = _wrap_assessed_row_counts(
                 _heatmap_html, [all_cols.index(c) for c in ordered_steps_display]
