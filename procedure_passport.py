@@ -2586,6 +2586,8 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         ("dissection of preperitoneal space",             "Reservoir Placement"),
         ("creation of dartos pouch",                      "Pump Placement"),
         ("connecting device",                             "Tubing Connections and Test"),
+        ("dissect to",                                     "Dissect to Endopelvic Fascia"),
+        ("cystoscopy to confirm",                          "Cystoscopy Confirmation"),
     ]
     for _s in ordered_steps:
         if isinstance(_s, str):
