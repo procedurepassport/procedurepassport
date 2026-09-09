@@ -2597,6 +2597,10 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         ("cystotomy and intravesical",                        "Cystotomy/Intravesical Exposure"),
         ("circumferential ureteral mobilization adequate",    "Ureteral Mobilization"),
         ("develop a mucosal tunnel",                          "Mucosal Tunnel and Transpose Ureter"),
+        # Orchiopexy (inguinal/scrotal)
+        ("mobilize the spermatic cord",                       "Mobilize Spermatic Cord/Testis"),
+        ("dissect hernia sac to",                             "Dissect/Ligate Hernia Sac"),
+        ("create tunnel and",                                 "Deliver Testis to the Scrotum"),
     ]
     for _s in ordered_steps:
         if isinstance(_s, str):
