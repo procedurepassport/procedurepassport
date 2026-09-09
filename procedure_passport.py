@@ -2325,7 +2325,7 @@ def _build_resident_case_matrix(resident_email: str):
                                                              "specialty_id", "procedure_id",
                                                              "attending_id", "notes",
                                                              "case_complexity", "overall_performance",
-                                                             "case_preparation", "assessment_type"])
+                                                             "case_preparation", "robo_type", "assessment_type"])
     scores_df = read_sheet_df(SHEET_SCORES, expected_cols=["case_id", "step_id", "rating", "rating_num",
                                                              "case_complexity", "overall_performance"])
     steps_df  = read_sheet_df(SHEET_STEPS,  expected_cols=["step_id", "procedure_id", "step_order", "step_name"])
@@ -2363,6 +2363,7 @@ def _build_resident_case_matrix(resident_email: str):
             "case_complexity":     row.get("case_complexity"),
             "overall_performance": row.get("overall_performance"),
             "case_preparation":    row.get("case_preparation"),
+            "robo_type":           row.get("robo_type"),
         }
 
     if not resident_cases:
@@ -2452,6 +2453,16 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     else:
         proc_data["case_preparation"] = proc_data["case_preparation"].fillna("Not Assessed")
 
+    # Same NaN-in-a-group-by-key guard as case_preparation above —
+    # robo_type is blank for every non-robotic procedure and for any
+    # robotic case predating this field, and pivot_table would silently
+    # drop those rows entirely rather than just leave the new Robot
+    # column blank for them.
+    if "robo_type" not in proc_data.columns:
+        proc_data["robo_type"] = ""
+    else:
+        proc_data["robo_type"] = proc_data["robo_type"].fillna("")
+
     ordered_steps = (
         steps_df[steps_df["procedure_id"] == selected_proc]
         .sort_values("step_order")["step_name"]
@@ -2520,7 +2531,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         return _is_na(val) or (isinstance(val, str) and val.strip() in _UNRATED_VALUES)
 
     pivot = proc_data.pivot_table(
-        index=["date", "attending_name", "case_id", "overall_performance", "case_complexity", "case_preparation"],
+        index=["date", "attending_name", "robo_type", "case_id", "overall_performance", "case_complexity", "case_preparation"],
         columns="step_name",
         values="rating",
         aggfunc="first",
@@ -2530,7 +2541,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         if step not in pivot.columns:
             pivot[step] = pd.NA
 
-    pivot = pivot[["date", "attending_name", "case_id", "overall_performance", "case_complexity", "case_preparation"] + ordered_steps]
+    pivot = pivot[["date", "attending_name", "robo_type", "case_id", "overall_performance", "case_complexity", "case_preparation"] + ordered_steps]
 
     # Some procedures still have a step literally named "Case
     # Preparation" — a legacy per-step rating from before Daily
@@ -2602,7 +2613,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     )
 
     _assessed = {"date": "", "attending_name": "# Assessed*", "case_complexity": pd.NA,
-                 "overall_performance": pd.NA, "case_preparation": pd.NA}
+                 "overall_performance": pd.NA, "case_preparation": pd.NA, "robo_type": pd.NA}
     for _s in ordered_steps:
         _sid = _step_id_by_name.get(str(_s))
         _is_shared_step = bool(_sid) and _step_procedure_counts.get(_sid, 1) > 1
@@ -2615,14 +2626,14 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             _assessed[_s] = str(_count)
 
     _mr = {"date": "", "attending_name": "📌 Most Recent", "case_complexity": pd.NA,
-           "overall_performance": pd.NA, "case_preparation": pd.NA}
+           "overall_performance": pd.NA, "case_preparation": pd.NA, "robo_type": pd.NA}
     for _s in ordered_steps:
         _vals = pivot_sorted[_s]
         _vals = _vals[~_vals.apply(_is_unrated)]
         _mr[_s] = _vals.iloc[0] if not _vals.empty else pd.NA
 
     _best = {"date": "", "attending_name": "🏆 Best", "case_complexity": pd.NA,
-             "overall_performance": pd.NA, "case_preparation": pd.NA}
+             "overall_performance": pd.NA, "case_preparation": pd.NA, "robo_type": pd.NA}
     for _s in ordered_steps:
         _vals = pivot_sorted[_s]
         _vals = _vals[~_vals.apply(_is_unrated)]
@@ -2635,7 +2646,12 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     # Daily Preparation is the third meta column after Overall
     # Performance/Case Complexity — never reported for the two summary
     # rows above (pd.NA, same as the other two), only per real case.
-    _meta_cols  = ["date", "attending_name", "overall_performance", "case_complexity", "case_preparation"]
+    # robo_type (the Robot column, right before Overall Performance) is
+    # the same — always pd.NA on the three summary rows above, which
+    # doesn't actually matter since _merge_summary_label_cells below
+    # collapses this whole Date..Daily Preparation span into one label
+    # cell on those rows regardless of what's in it.
+    _meta_cols  = ["date", "attending_name", "robo_type", "overall_performance", "case_complexity", "case_preparation"]
 
     display_df = pd.concat(
         [_summary_df[_meta_cols + ordered_steps],
@@ -2648,6 +2664,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     display_df = display_df.rename(columns={
         "date":                "Date",
         "attending_name":      "Attending",
+        "robo_type":           "Robot",
         "case_complexity":     "Case Complexity",
         "overall_performance": "Overall Performance",
         "case_preparation":    "Daily Preparation",
@@ -2657,6 +2674,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
 
     display_df["Date"]      = display_df["Date"].fillna("")
     display_df["Attending"] = display_df["Attending"].fillna("")
+    display_df["Robot"]     = display_df["Robot"].fillna("")
 
     _rating_cols = [c for c in ordered_steps_display + ["Case Complexity", "Overall Performance", "Daily Preparation"]
                     if c in display_df.columns]
@@ -2836,6 +2854,16 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
                 subset=list(_META_COL_NAMES),
                 **_META_CELL_PROPS,
             )
+            .set_properties(
+                subset=["Robot"],
+                # Plain text ("Xi"/"SP"/"DV5"), not a color swatch like
+                # its meta-column neighbors — narrow fixed width still
+                # keeps this row from growing taller than the color
+                # cells around it.
+                **{"width": "34px", "min-width": "34px", "max-width": "34px",
+                   "text-align": "center", "white-space": "nowrap",
+                   "font-size": "0.7rem", "line-height": "1"},
+            )
         )
         if ordered_steps_display:
             styled = styled.set_properties(
@@ -2861,16 +2889,17 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             # up last regardless of case count.
             {"selector": "tbody tr:last-child td", "props": [("border-bottom", "2px solid #555")]},
         ]
-        # Bold divider between Attending and Overall Performance — only
-        # from the fifth row down (tbody's 4th child on): the header is
-        # row 1, and tbody rows 1-3 are the merged # Assessed/Most
-        # Recent/Best summary cells, which have no separate Attending/
-        # Overall Performance cells to put a border between at all (that
-        # whole span is one cell). :nth-child(n+4) selects tbody row 4
-        # onward — the first real case and every one after it.
-        _attending_idx = all_cols.index("Attending")
+        # Bold divider between the identifying columns (Attending, and
+        # Robot right after it) and Overall Performance — only from the
+        # fifth row down (tbody's 4th child on): the header is row 1,
+        # and tbody rows 1-3 are the merged # Assessed/Most Recent/Best
+        # summary cells, which have no separate Attending/Robot/Overall
+        # Performance cells to put a border between at all (that whole
+        # span is one cell). :nth-child(n+4) selects tbody row 4 onward
+        # — the first real case and every one after it.
+        _pre_rating_idx = all_cols.index("Robot")
         table_styles.append({
-            "selector": f"tbody tr:nth-child(n+4) td.col{_attending_idx}",
+            "selector": f"tbody tr:nth-child(n+4) td.col{_pre_rating_idx}",
             "props": [("border-right", "2px solid #555")],
         })
         if "Daily Preparation" in all_cols and ordered_steps_display:
@@ -2987,6 +3016,23 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
 
             return re.sub(r"(<th\b[^>]*>)(.*?)(</th>)", _wrap, html_str, flags=re.DOTALL)
 
+        def _blank_col_header(html_str, col_idx):
+            """Empties one column's <th> header text, leaving the cell
+            (and its styling) in place — used for the Robot column,
+            which doesn't need a header label of its own."""
+            _col_idx_re = re.compile(r"\bcol(\d+)\b")
+
+            def _blank(m):
+                open_tag, close_tag = m.group(1), m.group(3)
+                if "col_heading" not in open_tag:
+                    return m.group(0)
+                idx_match = _col_idx_re.search(open_tag)
+                if not idx_match or int(idx_match.group(1)) != col_idx:
+                    return m.group(0)
+                return f"{open_tag}{close_tag}"
+
+            return re.sub(r"(<th\b[^>]*>)(.*?)(</th>)", _blank, html_str, flags=re.DOTALL)
+
         def _wrap_assessed_row_counts(html_str, step_col_indices):
             """Wraps the "# Assessed" row's (always tbody row 0) step-
             column cell text in <span class="pp-assessed-count"> — every
@@ -3024,6 +3070,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             ),
         )
         _heatmap_html = _wrap_vheader_labels(_heatmap_html, _vheader_idx)
+        _heatmap_html = _blank_col_header(_heatmap_html, all_cols.index("Robot"))
         if ordered_steps_display:
             _heatmap_html = _wrap_assessed_row_counts(
                 _heatmap_html, [all_cols.index(c) for c in ordered_steps_display]
