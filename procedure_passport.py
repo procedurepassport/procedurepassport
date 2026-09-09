@@ -2703,7 +2703,18 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         _sid = _step_id_by_name.get(str(_s))
         _is_shared_step = bool(_sid) and _step_procedure_counts.get(_sid, 1) > 1
         if _is_shared_step:
-            _count = int((~merged.loc[merged["step_id"] == _sid, "rating"].apply(_is_unrated)).sum())
+            _shared_ratings = merged.loc[merged["step_id"] == _sid, "rating"]
+            # merged.loc[...] can come back empty — this resident may have
+            # no score row anywhere (any procedure) for this shared
+            # step_id yet. .apply() on an empty object-dtype Series stays
+            # object-dtype, and pandas' .sum() on an empty object Series
+            # returns '' (not 0), so int(...) below would blow up with
+            # "invalid literal for int() with base 10: ''" rather than
+            # just reporting a count of zero.
+            if _shared_ratings.empty:
+                _count = 0
+            else:
+                _count = int((~_shared_ratings.apply(_is_unrated)).sum())
             _assessed[_s] = f"{_count}*"
         else:
             _vals = pivot_sorted[_s]
