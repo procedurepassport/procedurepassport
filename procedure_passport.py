@@ -2857,12 +2857,18 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             .set_properties(
                 subset=["Robot"],
                 # Plain text ("Xi"/"SP"/"DV5"), not a color swatch like
-                # its meta-column neighbors — narrow fixed width still
-                # keeps this row from growing taller than the color
-                # cells around it.
-                **{"width": "34px", "min-width": "34px", "max-width": "34px",
-                   "text-align": "center", "white-space": "nowrap",
-                   "font-size": "0.7rem", "line-height": "1"},
+                # its meta-column neighbors — same fixed width as the
+                # step columns (box-sizing: border-box, same as those
+                # cells' own _color_cell_props, so the width actually
+                # matches rather than just claiming the same number).
+                # Tighter side padding and a smaller font than the
+                # table's other text columns (Date/Attending) fit
+                # "DV5", the widest of the three labels, on one line
+                # rather than wrapping or overflowing the box.
+                **{"width": f"{_STEP_CELL_WIDTH_PX}px", "min-width": f"{_STEP_CELL_WIDTH_PX}px",
+                   "max-width": f"{_STEP_CELL_WIDTH_PX}px", "box-sizing": "border-box",
+                   "text-align": "center", "white-space": "nowrap", "padding": "4px 1px",
+                   "font-size": "0.6rem", "line-height": "1"},
             )
         )
         if ordered_steps_display:
