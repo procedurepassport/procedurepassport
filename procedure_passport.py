@@ -3184,14 +3184,37 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
 
             return re.sub(r"(<th\b[^>]*>)(.*?)(</th>)", _wrap, html_str, flags=re.DOTALL)
 
-        def _wrap_assessed_row_counts(html_str, step_col_indices):
+        def _wrap_assessed_row_counts(html_str, step_col_indices, size_px):
             """Wraps the "# Assessed" row's (always tbody row 0) step-
             column cell text in <span class="pp-assessed-count"> — every
             other row's step cells are blank (color swatch only, see
             the " " blanking above), so this row alone needs real text
-            fitted into the same fixed-size box, via the shrink-to-fit
-            script right after this table is rendered."""
+            fitted into its box, via the shrink-to-fit script right
+            after this table is rendered.
+
+            Also forces that cell's box to a fixed size_px x size_px
+            square (plus white-space:nowrap, so the shrink-to-fit
+            script's own JS-side nowrap isn't the only thing standing
+            between it and a two-line wrap before that script runs) —
+            appended onto the end of the style attribute set_properties()
+            already put there via _STEP_CELL_PROPS (width x
+            _COLOR_CELL_HEIGHT_PX), so these later same-property
+            declarations win within that one style attribute without
+            needing !important. Only this row's own height changes —
+            an HTML table's row height is scoped to that row alone, so
+            this can't make any OTHER row (Most Recent/Best/real cases)
+            taller even though they share this column's fixed width."""
+            _square_style = (
+                f"width:{size_px}px;min-width:{size_px}px;max-width:{size_px}px;"
+                f"height:{size_px}px;min-height:{size_px}px;max-height:{size_px}px;"
+                "white-space:nowrap;"
+            )
             for col in step_col_indices:
+                html_str = re.sub(
+                    rf'(<td id="[^"]*_row0_col{col}"[^>]*style="[^"]*)(")',
+                    rf'\1{_square_style}\2',
+                    html_str, count=1,
+                )
                 html_str = re.sub(
                     rf'(<td id="[^"]*_row0_col{col}"[^>]*>)(.*?)(</td>)',
                     r'\1<span class="pp-assessed-count">\2</span>\3',
@@ -3223,19 +3246,20 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         _heatmap_html = _wrap_vheader_labels(_heatmap_html, _vheader_idx)
         if ordered_steps_display:
             _heatmap_html = _wrap_assessed_row_counts(
-                _heatmap_html, [all_cols.index(c) for c in ordered_steps_display]
+                _heatmap_html, [all_cols.index(c) for c in ordered_steps_display],
+                size_px=_STEP_CELL_WIDTH_PX,
             )
         st.markdown(_heatmap_html, unsafe_allow_html=True)
 
         if ordered_steps_display:
             # "# Assessed" row's count cells (e.g. "16*") are real text
-            # in the same fixed-size box every other row's step cells
-            # use for a color swatch only — shrink each one's font-size
-            # (no floor: the row staying exactly as tall as Most Recent/
-            # Best below it takes priority over legibility at any
-            # particular size) until it fits on one line without
-            # overflowing its cell, rather than wrapping to a second
-            # line and growing the whole row taller than its neighbors.
+            # in a fixed-size square box (see _wrap_assessed_row_counts)
+            # every other row's step cells use for a color swatch only
+            # — shrink each one's font-size (no floor: fitting on one
+            # line takes priority over legibility at any particular
+            # size) until it fits without overflowing its cell, rather
+            # than wrapping to a second line and growing the row taller
+            # than its own fixed height.
             st.iframe(
                 """
                 <script>
