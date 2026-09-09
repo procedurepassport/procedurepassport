@@ -2610,6 +2610,9 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         ("cystotomy and identify ureteral orifices",          "Cystotomy and ID Ureteral Orifices"),
         ("initial incision and develop the correct plane",    "Initial Incision/Plane Development"),
         ("identify distal extent of the dissection",          "ID Distal Extent of the Dissection"),
+        # Robotic Bedsiding
+        ("exchanging robotic instruments",                    "Exchange Instruments"),
+        ("spatial understanding of the surgical field",       "Spatial Understanding"),
     ]
     for _s in ordered_steps:
         if isinstance(_s, str):
