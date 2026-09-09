@@ -100,11 +100,13 @@ _defaults: dict = {
     "viewing_case_id":         None,   # set before go_to("view_evaluation")
     "attending_submission":    None,   # filled after magic-link submit
     "generated_magic_link":    None,   # filled after Generate Magic Link
+    "generated_magic_link_email": None,  # (sent, subject, to_email) — the notify_new_evaluation_request() result for it
     "draft_id":                "",
     "assessment_mode":         "together",  # "together" or "self", set from Start
     "self_eval_requested_by_attending": False,  # True only when assessment_mode "self" came from an attending's magic link (mode=resident_self), not the resident's own Start page
     "self_eval_request_id":    "",     # set alongside self_eval_requested_by_attending — the self_eval_requests row to delete once this is fulfilled
     "blank_magic_link":        None,   # filled after Generate a Blank Magic Link
+    "blank_magic_link_email":  None,   # (sent, subject, to_email) — the notify_new_evaluation_request() result for it
     "attending_link_date":     "",     # resident's chosen date, carried by a blank magic link
     "last_assessment_type":    None,   # "Assessed Together" or "Self-Assessment"
     "role":                    None,   # "resident", "admin", or "attending" — set at login
@@ -410,19 +412,23 @@ def write_sheet_df_no_shrink(sheet_name: str, df: pd.DataFrame) -> None:
 #                         SMTP.
 # Both are required; every send below is silently skipped without them,
 # so the app works with no email configured at all.
-def send_email_notification(to_email: str, subject: str, body_html: str) -> None:
+def send_email_notification(to_email: str, subject: str, body_html: str) -> bool:
     """Best-effort transactional email via Gmail SMTP — never raises. A
     failed or skipped send (no credentials configured, blank recipient,
     network error, Gmail rejecting the login/message) must never block
     or roll back the evaluation/magic-link action that triggered it, so
     every failure is only printed to the server console (`streamlit run`
     output, or the Streamlit Cloud "Manage app" logs) for troubleshooting
-    rather than surfaced to the user."""
+    rather than surfaced as an error to the user. Returns whether the
+    email actually went out, so a call site can show a plain "an email
+    was sent" note when it's useful to say so — never an error/warning
+    when it's False, since "no email configured" is a normal, silent
+    state, not a problem to flag."""
     to_email = str(to_email or "").strip()
     gmail_address      = st.secrets.get("GMAIL_ADDRESS", "")
     gmail_app_password = st.secrets.get("GMAIL_APP_PASSWORD", "")
     if not gmail_address or not gmail_app_password or not to_email:
-        return
+        return False
     try:
         msg = EmailMessage()
         msg["Subject"] = subject
@@ -433,8 +439,10 @@ def send_email_notification(to_email: str, subject: str, body_html: str) -> None
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=10) as server:
             server.login(gmail_address, gmail_app_password)
             server.send_message(msg)
+        return True
     except Exception as exc:
         print(f"[email] Gmail send to {to_email} failed: {exc}")
+        return False
 
 
 def _email_card(heading: str, message_html: str, cta_label: str) -> str:
@@ -479,13 +487,17 @@ def _email_card(heading: str, message_html: str, cta_label: str) -> str:
     """
 
 
-def notify_new_evaluation_request(to_email: str, requester_name: str, procedure_name: str, requested_by: str) -> None:
+def notify_new_evaluation_request(to_email: str, requester_name: str, procedure_name: str, requested_by: str) -> tuple[bool, str]:
     """Emailed the instant a magic link is created — to whichever side
     didn't create it. `requested_by` is "resident" or "attending": who
     initiated the request, so the copy reads correctly for either
     direction (this also covers a resident's self-assessment becoming
     available for the attending to review, since that always happens by
-    generating one of these links)."""
+    generating one of these links). Returns (sent, subject) — sent is
+    False when email isn't configured or the send failed (see
+    send_email_notification()); subject is handed back so a call site
+    can tell the user what was actually sent, not just that something
+    was, without duplicating this function's own subject-line wording."""
     proc = html.escape(str(procedure_name))
     if requested_by == "resident":
         subject  = f"Evaluation request from {requester_name}: {procedure_name}"
@@ -497,21 +509,32 @@ def notify_new_evaluation_request(to_email: str, requester_name: str, procedure_
         heading  = "Self-Evaluation Requested"
         message  = f"<b>Dr. {html.escape(str(requester_name))}</b> has requested a self-evaluation from you for <b>{proc}</b>."
         cta      = "Start Self-Evaluation →"
-    send_email_notification(to_email, subject, _email_card(heading, message, cta))
+    sent = send_email_notification(to_email, subject, _email_card(heading, message, cta))
+    return sent, subject
 
 
-def notify_evaluation_completed(resident_email: str, attending_name: str, procedure_name: str) -> None:
+def notify_evaluation_completed(resident_email: str, attending_name: str, procedure_name: str) -> tuple[bool, str]:
     """Emailed to the resident the instant an attending's completed
     evaluation — whether submitted via magic link or by a logged-in
-    attending — is saved."""
+    attending — is saved. Returns (sent, subject); see
+    notify_new_evaluation_request()'s docstring for why."""
     subject = f"New evaluation from Dr. {attending_name}: {procedure_name}"
     message = (
         f"<b>Dr. {html.escape(str(attending_name))}</b> has completed an evaluation of your "
         f"<b>{html.escape(str(procedure_name))}</b> case."
     )
-    send_email_notification(
+    sent = send_email_notification(
         resident_email, subject, _email_card("New Evaluation Available", message, "View Evaluation →")
     )
+    return sent, subject
+
+
+def _email_sent_note(to_email: str, subject: str) -> None:
+    """Small UI note shown right under whatever action just triggered an
+    email — so the user can see, in the moment, that a notification
+    actually went out and what it said, not just trust it happened
+    silently in the background."""
+    st.caption(f"📧 Notification email sent to {to_email}: “{subject}”")
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -5798,17 +5821,21 @@ elif page == "start":
                     f"&date={st.session_state['date']}"
                 )
                 _att_email = _att_match["email"].values[0] if len(_att_match) > 0 else ""
-                notify_new_evaluation_request(
+                _sent, _subject = notify_new_evaluation_request(
                     to_email=_att_email,
                     requester_name=st.session_state.get("resident_name", st.session_state["resident"]),
                     procedure_name=procedure,
                     requested_by="resident",
                 )
+                st.session_state["blank_magic_link_email"] = (_sent, _subject, _att_email)
 
     if st.session_state.get("blank_magic_link"):
         st.success("✅ A blank link is ready for your attending:")
         copy_link_button(st.session_state["blank_magic_link"], key="copy_blank_link")
         st.code(st.session_state["blank_magic_link"], language="text")
+        _sent, _subject, _to_email = st.session_state.get("blank_magic_link_email") or (False, "", "")
+        if _sent:
+            _email_sent_note(_to_email, _subject)
 
     st.markdown("---")
     if st.button("⬅️ Back to Home"):
@@ -6100,12 +6127,13 @@ elif page == "assessment":
                         f"&draft_id={draft_id}"
                     )
                     _att_email = _att_match["email"].values[0] if len(_att_match) > 0 else ""
-                    notify_new_evaluation_request(
+                    _sent, _subject = notify_new_evaluation_request(
                         to_email=_att_email,
                         requester_name=st.session_state.get("resident_name", st.session_state["resident"]),
                         procedure_name=_proc_name,
                         requested_by="resident",
                     )
+                    st.session_state["generated_magic_link_email"] = (_sent, _subject, _att_email)
                     go_to("magic_link_ready")
                 except ConnectionError as exc:
                     show_gs_error(exc)
@@ -6186,6 +6214,9 @@ elif page == "magic_link_ready":
     copy_link_button(st.session_state["generated_magic_link"], key="copy_generated_link")
     st.code(st.session_state.get("generated_magic_link", ""), language="text")
     st.caption("The attending can review and adjust every field before submitting.")
+    _sent, _subject, _to_email = st.session_state.get("generated_magic_link_email") or (False, "", "")
+    if _sent:
+        _email_sent_note(_to_email, _subject)
 
     st.markdown("---")
     col1, col2, col3 = st.columns(3)
@@ -6680,12 +6711,13 @@ elif page == "attending_start":
                     f"&date={case_date}"
                     f"&request_id={_self_eval_request_id}"
                 )
-                notify_new_evaluation_request(
+                _sent, _subject = notify_new_evaluation_request(
                     to_email=res_map[resident_choice],
                     requester_name=st.session_state.get("attending_login_name", ""),
                     procedure_name=procedure_choice,
                     requested_by="attending",
                 )
+                st.session_state["att_start_self_link_email"] = (_sent, _subject, res_map[resident_choice])
             except ConnectionError as exc:
                 show_gs_error(exc)
 
@@ -6693,6 +6725,9 @@ elif page == "attending_start":
         st.success(f"✅ A self-evaluation link is ready to send {resident_choice}:")
         copy_link_button(st.session_state["att_start_self_link"], key="copy_att_self_link")
         st.code(st.session_state["att_start_self_link"], language="text")
+        _sent, _subject, _to_email = st.session_state.get("att_start_self_link_email") or (False, "", "")
+        if _sent:
+            _email_sent_note(_to_email, _subject)
 
     st.markdown("---")
     if st.button("⬅️ Back to Home", key="att_start_bottom_home"):
@@ -7368,7 +7403,7 @@ elif page == "attending_assessment":
                 )
                 if draft_id:
                     delete_draft(draft_id)
-                notify_evaluation_completed(
+                _email_sent, _email_subject = notify_evaluation_completed(
                     resident_email=resident_email,
                     attending_name=display_attending,
                     procedure_name=_att_proc_name,
@@ -7394,6 +7429,8 @@ elif page == "attending_assessment":
                     "assessment_type":     _assessment_type,
                     "scores":              scores,
                     "steps":               steps[["step_id", "step_name"]].to_dict("records"),
+                    "email_sent":          _email_sent,
+                    "email_subject":       _email_subject,
                 }
                 go_to("attending_confirmation")
             except ConnectionError as exc:
@@ -7411,6 +7448,8 @@ elif page == "attending_confirmation":
 
     page_header("✅ Evaluation Submitted")
     st.success("Thank you! Your evaluation has been recorded.")
+    if sub.get("email_sent"):
+        _email_sent_note(sub["resident_email"], sub.get("email_subject", ""))
 
     _render_self_assessment_diff(sub)
 
