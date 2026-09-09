@@ -2589,11 +2589,12 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     # shown in this header changes; the full name (pivot table column,
     # ratings, legends, Excel export, etc.) is untouched everywhere
     # else, same as _fmt_step_hdr's own shortening above.
-    for _s in ordered_steps:
-        if isinstance(_s, str):
-            _lname = _s.lower()
-            if "foreskin" in _lname and "phimosis" in _lname:
-                _step_display[_s] = "Foreskin/Phimosis Reduced"
+    if selected_proc == "O_CIRC":
+        for _s in ordered_steps:
+            if isinstance(_s, str):
+                _lname = _s.lower()
+                if "foreskin" in _lname and "phimosis" in _lname:
+                    _step_display[_s] = "Foreskin/Phimosis Reduced"
 
     # Same idea for a handful of other procedures' own steps — several
     # of their full names are long enough to still be unreadable once
@@ -2601,55 +2602,62 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     # the START of each full step name (case-insensitively) rather
     # than the whole thing, since that's the part that actually
     # identifies which step it is — the rest of the wording can vary
-    # without breaking the match. Only what's shown in this header
+    # without breaking the match.
+    #
+    # Each entry is scoped to its own procedure_id — NOT matched
+    # against every procedure's steps — because a short, generic-
+    # sounding prefix from one procedure can also be the start of a
+    # totally unrelated step in a different procedure (e.g. IPP's
+    # "dissect to" — meant for its own endopelvic-fascia step — also
+    # happened to match Autologous Fascial Sling's unrelated "Dissect
+    # to Anterior Rectus Fascia" step; both real steps then collapsed
+    # onto the same override text, and two step columns sharing one
+    # display name crashes the Styler with "not compatible with non-
+    # unique index or columns"). Only what's shown in this header
     # changes; the full step name (pivot table column, ratings,
-    # legend, Excel export, etc.) is untouched everywhere else. One
-    # shared list/loop across procedures is fine — `ordered_steps`
-    # here is always just the currently selected procedure's own
-    # steps, so there's no cross-procedure collision risk even though
-    # entries below span several different procedures.
+    # legend, Excel export, etc.) is untouched everywhere else.
     _STEP_HEADER_PREFIX_OVERRIDES = [
         # Inflatable penile prosthesis
-        ("patient positioning and sterile prep",              "Patient Positioning/Prep"),
-        ("incision, dissection",                              "Exposure of Corporal Bodies"),
-        ("placement of stay sutures for future",              "Placement of Stay Sutures"),
-        ("sizing and selection of cylinder and rear tip",     "Cylinder Sizing and Selection"),
-        ("insertion of distal portion",                       "Distal Placement with Keith Needle"),
-        ("insertion of proximal",                             "Proximal Insertion"),
-        ("securing cylinders",                                "Tunica Closure"),
-        ("dissection of preperitoneal space",                 "Reservoir Placement"),
-        ("creation of dartos pouch",                          "Pump Placement"),
-        ("connecting device",                                 "Tubing Connections and Test"),
-        ("dissect to",                                        "Dissect to Endopelvic Fascia"),
-        ("cystoscopy to confirm",                             "Cystoscopy Confirmation"),
+        ("IPP", "patient positioning and sterile prep",              "Patient Positioning/Prep"),
+        ("IPP", "incision, dissection",                              "Exposure of Corporal Bodies"),
+        ("IPP", "placement of stay sutures for future",              "Placement of Stay Sutures"),
+        ("IPP", "sizing and selection of cylinder and rear tip",     "Cylinder Sizing and Selection"),
+        ("IPP", "insertion of distal portion",                       "Distal Placement with Keith Needle"),
+        ("IPP", "insertion of proximal",                             "Proximal Insertion"),
+        ("IPP", "securing cylinders",                                "Tunica Closure"),
+        ("IPP", "dissection of preperitoneal space",                 "Reservoir Placement"),
+        ("IPP", "creation of dartos pouch",                          "Pump Placement"),
+        ("IPP", "connecting device",                                 "Tubing Connections and Test"),
+        ("IPP", "dissect to",                                        "Dissect to Endopelvic Fascia"),
+        ("IPP", "cystoscopy to confirm",                             "Cystoscopy Confirmation"),
         # Open ureteral reimplant
-        ("cystotomy and intravesical",                        "Cystotomy/Intravesical Exposure"),
-        ("circumferential ureteral mobilization adequate",    "Ureteral Mobilization"),
-        ("develop a mucosal tunnel",                          "Mucosal Tunnel and Transpose Ureter"),
+        ("O_URET", "cystotomy and intravesical",                     "Cystotomy/Intravesical Exposure"),
+        ("O_URET", "circumferential ureteral mobilization adequate", "Ureteral Mobilization"),
+        ("O_URET", "develop a mucosal tunnel",                       "Mucosal Tunnel and Transpose Ureter"),
         # Orchiopexy (inguinal/scrotal)
-        ("mobilize the spermatic cord",                       "Mobilize Spermatic Cord/Testis"),
-        ("dissect hernia sac to",                             "Dissect/Ligate Hernia Sac"),
-        ("create tunnel and",                                 "Deliver Testis to the Scrotum"),
+        ("O_ORCHI", "mobilize the spermatic cord",                   "Mobilize Spermatic Cord/Testis"),
+        ("O_ORCHI", "dissect hernia sac to",                         "Dissect/Ligate Hernia Sac"),
+        ("O_ORCHI", "create tunnel and",                             "Deliver Testis to the Scrotum"),
         # RAL Pyeloplasty
-        ("identify crossing vessel",                          "ID Crossing Vessel/Narrowed Segment"),
-        ("transpose ureter over",                             "Transpose or Excise Ureter"),
+        ("R_PYELO", "identify crossing vessel",                      "ID Crossing Vessel/Narrowed Segment"),
+        ("R_PYELO", "transpose ureter over",                         "Transpose or Excise Ureter"),
         # RAL Radical/Simple Nephrectomy
-        ("identify plane between",                            "ID Upper Pole/Adrenal Plane"),
+        ("R_NEPH", "identify plane between",                         "ID Upper Pole/Adrenal Plane"),
         # RAL Simple Prostatectomy
-        ("cystotomy and identify ureteral orifices",          "Cystotomy and ID Ureteral Orifices"),
-        ("initial incision and develop the correct plane",    "Initial Incision/Plane Development"),
-        ("identify distal extent of the dissection",          "ID Distal Extent of the Dissection"),
+        ("URALSP", "cystotomy and identify ureteral orifices",       "Cystotomy and ID Ureteral Orifices"),
+        ("URALSP", "initial incision and develop the correct plane", "Initial Incision/Plane Development"),
+        ("URALSP", "identify distal extent of the dissection",       "ID Distal Extent of the Dissection"),
         # Robotic Bedsiding
-        ("exchanging robotic instruments",                    "Exchange Instruments"),
-        ("spatial understanding of the surgical field",       "Spatial Understanding"),
+        ("R_BED", "exchanging robotic instruments",                  "Exchange Instruments"),
+        ("R_BED", "spatial understanding of the surgical field",     "Spatial Understanding"),
         # Vasectomy
-        ("dissection and exposure of suitable segment of vas deferens", "Dissection and Exposure of Vas"),
+        ("VASX", "dissection and exposure of suitable segment of vas deferens", "Dissection and Exposure of Vas"),
     ]
     for _s in ordered_steps:
         if isinstance(_s, str):
             _lname = _s.strip().lower()
-            for _prefix, _override in _STEP_HEADER_PREFIX_OVERRIDES:
-                if _lname.startswith(_prefix):
+            for _proc_id, _prefix, _override in _STEP_HEADER_PREFIX_OVERRIDES:
+                if selected_proc == _proc_id and _lname.startswith(_prefix):
                     _step_display[_s] = _override
                     break
 
