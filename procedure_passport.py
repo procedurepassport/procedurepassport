@@ -2606,6 +2606,10 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         ("transpose ureter over",                             "Transpose or Excise Ureter"),
         # RAL Radical/Simple Nephrectomy
         ("identify plane between",                            "ID Upper Pole/Adrenal Plane"),
+        # RAL Simple Prostatectomy
+        ("cystotomy and identify ureteral orifices",          "Cystotomy and ID Ureteral Orifices"),
+        ("initial incision and develop the correct plane",    "Initial Incision/Plane Development"),
+        ("identify distal extent of the dissection",          "ID Distal Extent of the Dissection"),
     ]
     for _s in ordered_steps:
         if isinstance(_s, str):
