@@ -2605,7 +2605,7 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         ("identify crossing vessel",                          "ID Crossing Vessel/Narrowed Segment"),
         ("transpose ureter over",                             "Transpose or Excise Ureter"),
         # RAL Radical/Simple Nephrectomy
-        ("identify plan between",                             "ID Upper Pole/Adrenal Plane"),
+        ("identify plane between",                            "ID Upper Pole/Adrenal Plane"),
     ]
     for _s in ordered_steps:
         if isinstance(_s, str):
