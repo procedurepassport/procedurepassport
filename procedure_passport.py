@@ -2566,33 +2566,42 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             if "foreskin" in _lname and "phimosis" in _lname:
                 _step_display[_s] = "Foreskin/Phimosis Reduced"
 
-    # Same idea for the inflatable penile prosthesis procedure's own
-    # steps — several of its full names are long enough to still be
-    # unreadable once rotated into this table's narrow step columns.
-    # Matched against the START of each full step name (case-
-    # insensitively) rather than the whole thing, since that's the
-    # part that actually identifies which step it is — the rest of the
-    # wording can vary without breaking the match. Only what's shown
-    # in this header changes; the full step name (pivot table column,
-    # ratings, legend, Excel export, etc.) is untouched everywhere else.
-    _IPP_STEP_HEADER_OVERRIDES = [
-        ("patient positioning and sterile prep",          "Patient Positioning/Prep"),
-        ("incision, dissection",                          "Exposure of Corporal Bodies"),
-        ("placement of stay sutures for future",          "Placement of Stay Sutures"),
-        ("sizing and selection of cylinder and rear tip", "Cylinder Sizing and Selection"),
-        ("insertion of distal portion",                   "Distal Placement with Keith Needle"),
-        ("insertion of proximal",                         "Proximal Insertion"),
-        ("securing cylinders",                            "Tunica Closure"),
-        ("dissection of preperitoneal space",             "Reservoir Placement"),
-        ("creation of dartos pouch",                      "Pump Placement"),
-        ("connecting device",                             "Tubing Connections and Test"),
-        ("dissect to",                                     "Dissect to Endopelvic Fascia"),
-        ("cystoscopy to confirm",                          "Cystoscopy Confirmation"),
+    # Same idea for a handful of other procedures' own steps — several
+    # of their full names are long enough to still be unreadable once
+    # rotated into this table's narrow step columns. Matched against
+    # the START of each full step name (case-insensitively) rather
+    # than the whole thing, since that's the part that actually
+    # identifies which step it is — the rest of the wording can vary
+    # without breaking the match. Only what's shown in this header
+    # changes; the full step name (pivot table column, ratings,
+    # legend, Excel export, etc.) is untouched everywhere else. One
+    # shared list/loop across procedures is fine — `ordered_steps`
+    # here is always just the currently selected procedure's own
+    # steps, so there's no cross-procedure collision risk even though
+    # entries below span several different procedures.
+    _STEP_HEADER_PREFIX_OVERRIDES = [
+        # Inflatable penile prosthesis
+        ("patient positioning and sterile prep",              "Patient Positioning/Prep"),
+        ("incision, dissection",                              "Exposure of Corporal Bodies"),
+        ("placement of stay sutures for future",              "Placement of Stay Sutures"),
+        ("sizing and selection of cylinder and rear tip",     "Cylinder Sizing and Selection"),
+        ("insertion of distal portion",                       "Distal Placement with Keith Needle"),
+        ("insertion of proximal",                             "Proximal Insertion"),
+        ("securing cylinders",                                "Tunica Closure"),
+        ("dissection of preperitoneal space",                 "Reservoir Placement"),
+        ("creation of dartos pouch",                          "Pump Placement"),
+        ("connecting device",                                 "Tubing Connections and Test"),
+        ("dissect to",                                        "Dissect to Endopelvic Fascia"),
+        ("cystoscopy to confirm",                             "Cystoscopy Confirmation"),
+        # Open ureteral reimplant
+        ("cystotomy and intravesical",                        "Cystotomy/Intravesical Exposure"),
+        ("circumferential ureteral mobilization adequate",    "Ureteral Mobilization Adequate for Reimplantation"),
+        ("develop a mucosal tunnel",                          "Mucosal Tunnel and Transpose Ureter"),
     ]
     for _s in ordered_steps:
         if isinstance(_s, str):
             _lname = _s.strip().lower()
-            for _prefix, _override in _IPP_STEP_HEADER_OVERRIDES:
+            for _prefix, _override in _STEP_HEADER_PREFIX_OVERRIDES:
                 if _lname.startswith(_prefix):
                     _step_display[_s] = _override
                     break
