@@ -2551,6 +2551,21 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         else:
             for _m in _members:
                 _step_display[_m] = _m
+
+    # Manual header shortening for one specific step whose full name
+    # (mentioning both "foreskin" and "phimosis") is still too long to
+    # read once rotated into this table's narrow step columns, even
+    # after _fmt_step_hdr's own parenthetical-stripping above. Matched
+    # case-insensitively against the full step name — only what's
+    # shown in this header changes; the full name (pivot table column,
+    # ratings, legends, Excel export, etc.) is untouched everywhere
+    # else, same as _fmt_step_hdr's own shortening above.
+    for _s in ordered_steps:
+        if isinstance(_s, str):
+            _lname = _s.lower()
+            if "foreskin" in _lname and "phimosis" in _lname:
+                _step_display[_s] = "Foreskin/Phimosis Reduced"
+
     ordered_steps_display = [_step_display[s] for s in ordered_steps]
 
     def _is_na(val) -> bool:
