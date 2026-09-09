@@ -1872,6 +1872,31 @@ def render_robo_type_picker(value_key: str, default: str = "Xi") -> str:
     return st.session_state[value_key]
 
 
+def render_robo_filter(key_prefix: str) -> set:
+    """Renders "Filter by robot:" and three independent Xi/SP/DV5
+    checkboxes above a resident's progress heatmap — unlike
+    render_robo_type_picker's checkbox trio above (a single-select),
+    any combination of these can be checked at once. Returns the set
+    of currently checked labels; empty (nothing checked, the default)
+    means "no filter" — every case row shows, same as before this
+    filter existed.
+
+    `key_prefix` keys each checkbox's own session_state entry to
+    whichever resident+procedure this heatmap is currently showing, so
+    switching to a different one starts from a fresh, unchecked filter
+    rather than carrying one over from whatever was last picked."""
+    _labels = ["Xi", "SP", "DV5"]
+    _widget_keys = {label: f"{key_prefix}_robo_filter_{label}" for label in _labels}
+    with st.container(key="robo_filter_row"):
+        _label_col, *_cb_cols = st.columns(1 + len(_labels))
+        with _label_col:
+            st.markdown("**Filter by robot:**")
+        for _col, label in zip(_cb_cols, _labels):
+            with _col:
+                st.checkbox(label, key=_widget_keys[label])
+    return {label for label, k in _widget_keys.items() if st.session_state.get(k)}
+
+
 def show_gs_error(exc: Exception) -> None:
     st.error(
         "⚠️ **Could not reach Google Sheets.** "
@@ -2463,6 +2488,35 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
     else:
         proc_data["robo_type"] = proc_data["robo_type"].fillna("")
 
+    proc_display_name = procs_map.get(selected_proc, selected_proc)
+    # One deliberate break point (see header_break_before): stays on one
+    # line when it fits, and if it doesn't, wraps with "Progress Heatmap"
+    # intact on the second line rather than splitting the procedure name
+    # or "Progress"/"Heatmap" from each other.
+    _heatmap_heading = header_break_before(f"{proc_display_name} —", heading_suffix)
+    with st.container(key="heatmap_heading_row"):
+        if show_heading:
+            st.markdown(f"### {_heatmap_heading}\nMost recent cases at the top.")
+        else:
+            st.markdown("Most recent cases at the top.")
+        st.caption("*across all procedures")
+
+    # Moved up ahead of the pivot below (rather than staying right where
+    # it's shown, further down) so a robot filter can actually narrow
+    # `proc_data` before pivot_table ever sees it — the # Assessed/Most
+    # Recent/Best summary rows (built from that same pivot further down)
+    # end up reflecting the filtered subset too, not just the visible
+    # case rows. Only shown for a robotic procedure — every other
+    # procedure's Robot System column is blank for every case, so
+    # there's nothing to filter by.
+    if _is_robotic_procedure(proc_display_name):
+        _robo_selected = render_robo_filter(key_prefix=f"{filename_stub}_{selected_proc}")
+        if _robo_selected:
+            proc_data = proc_data[proc_data["robo_type"].isin(_robo_selected)]
+            if proc_data.empty:
+                st.info("No cases match the selected robot filter.")
+                return
+
     ordered_steps = (
         steps_df[steps_df["procedure_id"] == selected_proc]
         .sort_values("step_order")["step_name"]
@@ -2580,19 +2634,6 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
         pivot = pivot.drop(columns=[_case_prep_step])
         ordered_steps = [s for s in ordered_steps if s != _case_prep_step]
         ordered_steps_display = [_step_display[s] for s in ordered_steps]
-
-    proc_display_name = procs_map.get(selected_proc, selected_proc)
-    # One deliberate break point (see header_break_before): stays on one
-    # line when it fits, and if it doesn't, wraps with "Progress Heatmap"
-    # intact on the second line rather than splitting the procedure name
-    # or "Progress"/"Heatmap" from each other.
-    _heatmap_heading = header_break_before(f"{proc_display_name} —", heading_suffix)
-    with st.container(key="heatmap_heading_row"):
-        if show_heading:
-            st.markdown(f"### {_heatmap_heading}\nMost recent cases at the top.")
-        else:
-            st.markdown("Most recent cases at the top.")
-        st.caption("*across all procedures")
 
     pivot_sorted = pivot.sort_values("date", ascending=False)
 
@@ -4044,6 +4085,35 @@ button p {
     /* Now that this selector is properly isolated from the checkboxes'
        own labels (see the comment above), this transform only ever
        repositions "Robot:" itself. */
+    transform: translateY(11px);
+}
+/* Robot filter row above the progress heatmap ("Filter by robot:" plus
+   the Xi/SP/DV5 checkboxes, see render_robo_filter) — identical
+   shrink-to-content/tight-gap/vertical-centering treatment as the
+   Robot picker row above, just scoped to this row's own key. */
+.st-key-robo_filter_row [data-testid="stHorizontalBlock"] {
+    flex-wrap: nowrap !important;
+    gap: 0.5rem !important;
+    align-items: center !important;
+}
+.st-key-robo_filter_row [data-testid="stColumn"] {
+    min-width: 0 !important;
+    flex: 0 0 auto !important;
+    width: auto !important;
+}
+.st-key-robo_filter_row [data-testid="stColumn"]:has([data-testid="stMarkdownContainer"]):not(:has([data-testid="stCheckbox"])) {
+    display: flex;
+    align-items: center;
+    height: 2.5rem;
+}
+.st-key-robo_filter_row [data-testid="stColumn"]:has([data-testid="stMarkdownContainer"]):not(:has([data-testid="stCheckbox"]))
+    [data-testid="stMarkdownContainer"] {
+    margin-bottom: 0 !important;
+}
+.st-key-robo_filter_row [data-testid="stColumn"]:has([data-testid="stMarkdownContainer"]):not(:has([data-testid="stCheckbox"]))
+    [data-testid="stMarkdownContainer"] p {
+    white-space: nowrap;
+    margin: 0;
     transform: translateY(11px);
 }
 /* "On mobile: tap the >> icon..." tip: shrink padding, and match the text
