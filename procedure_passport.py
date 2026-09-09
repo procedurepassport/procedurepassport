@@ -247,6 +247,34 @@ SHEET_RESIDENTS  = "residents"
 # column list, or a write-back drops whatever isn't in its own narrower
 # list, silently wiping this field for every OTHER resident.
 RESIDENT_COLS = ["email", "name", "specialty_id", "created_at", "last_seen_evaluations_at"]
+# Demo/test resident accounts (mock cases seeded for QA, not a real
+# trainee) that should never appear in an attending's own resident
+# pickers — see _exclude_example_residents(). Matched case-
+# insensitively wherever it's used.
+EXAMPLE_RESIDENT_EMAILS = {"example@ohsu.edu"}
+
+
+def _exclude_example_residents(residents_df: pd.DataFrame) -> pd.DataFrame:
+    """Drops EXAMPLE_RESIDENT_EMAILS rows from a residents-like DataFrame
+    (must have an "email" column) — used to keep demo/test accounts out
+    of an attending's own resident pickers, without touching how they
+    show up for the resident themself, in admin's resident management,
+    or anywhere else that isn't specifically an attending choosing who
+    to evaluate/review."""
+    _norm_email = residents_df["email"].astype(str).str.strip().str.lower()
+    return residents_df[~_norm_email.isin(EXAMPLE_RESIDENT_EMAILS)]
+
+
+def _exclude_example_resident_cases(cases_df: pd.DataFrame) -> pd.DataFrame:
+    """Same idea as _exclude_example_residents(), for a cases-like
+    DataFrame (must have a "resident_email" column) — used to keep a
+    demo/test resident's mock cases out of an attending's own
+    "Complete Evaluation History" (including its "show all
+    evaluations, every attending" mode)."""
+    _norm_email = cases_df["resident_email"].astype(str).str.strip().str.lower()
+    return cases_df[~_norm_email.isin(EXAMPLE_RESIDENT_EMAILS)]
+
+
 SHEET_ATTENDINGS = "attendings"
 SHEET_PROCEDURES = "procedures"
 SHEET_STEPS      = "steps"
@@ -2061,6 +2089,7 @@ def _build_attending_evaluation_list(attending_id: str | None) -> pd.DataFrame:
     att_cases = cases_df if attending_id is None else cases_df[cases_df["attending_id"].astype(str) == str(attending_id)]
     att_cases = att_cases.copy()
     att_cases = att_cases[att_cases["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment"]
+    att_cases = _exclude_example_resident_cases(att_cases)
     if att_cases.empty:
         return pd.DataFrame(columns=_cols)
 
@@ -6814,7 +6843,7 @@ elif page == "attending_start":
             go_to("attending_home")
         st.stop()
 
-    my_residents = residents_df[residents_df["specialty_id"] == specialty_id]
+    my_residents = _exclude_example_residents(residents_df[residents_df["specialty_id"] == specialty_id])
     procs = proc_df[proc_df["specialty_id"] == specialty_id]
 
     if my_residents.empty:
@@ -6955,10 +6984,10 @@ elif page == "attending_resident_dashboard":
     confirmed_cases = cases_df[
         cases_df["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment"
     ]
-    my_residents = residents_df[
+    my_residents = _exclude_example_residents(residents_df[
         (residents_df["specialty_id"] == specialty_id)
         & (residents_df["email"].isin(set(confirmed_cases["resident_email"])))
-    ]
+    ])
     if my_residents.empty:
         st.warning("⚠️ No residents with recorded cases in your specialty yet.")
         if st.button("⬅️ Back to Home", key="att_dash_no_res"):
