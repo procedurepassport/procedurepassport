@@ -3255,11 +3255,18 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
             # "# Assessed" row's count cells (e.g. "16*") are real text
             # in a fixed-size square box (see _wrap_assessed_row_counts)
             # every other row's step cells use for a color swatch only
-            # — shrink each one's font-size (no floor: fitting on one
-            # line takes priority over legibility at any particular
-            # size) until it fits without overflowing its cell, rather
-            # than wrapping to a second line and growing the row taller
-            # than its own fixed height.
+            # — shrink font-size (no floor: fitting on one line takes
+            # priority over legibility at any particular size) until
+            # every cell fits without overflowing its own square,
+            # rather than wrapping to a second line and growing the
+            # row taller than its own fixed height.
+            #
+            # One shared size across the whole row, not each cell sized
+            # to its own content — every cell's own required size is
+            # computed first (same per-cell math as before), then the
+            # SMALLEST of those (whichever count needed the most
+            # shrinking) is applied to all of them, so e.g. "3" doesn't
+            # render bigger than "128*" right next to it.
             st.iframe(
                 """
                 <script>
@@ -3283,19 +3290,23 @@ def _render_resident_heatmap(merged: pd.DataFrame, steps_df: pd.DataFrame, procs
                         return w;
                     }
                     function fitAll() {
+                        var minSize = maxPx;
+                        var required = [];
                         spans.forEach(function(el) {
                             var td = el.closest('td');
                             if (!td) return;
                             var containerWidth = td.clientWidth - 8; // 4px padding each side
                             if (containerWidth <= 0) return;
-                            var text = el.textContent;
                             el.style.whiteSpace = 'nowrap';
-                            var fullWidth = measureWidth(text, maxPx, el);
-                            if (fullWidth <= containerWidth) {
-                                el.style.fontSize = maxPx + 'px';
-                                return;
-                            }
-                            el.style.fontSize = Math.max(1, maxPx * (containerWidth / fullWidth) * 0.96) + 'px';
+                            var fullWidth = measureWidth(el.textContent, maxPx, el);
+                            var size = fullWidth <= containerWidth
+                                ? maxPx
+                                : Math.max(1, maxPx * (containerWidth / fullWidth) * 0.96);
+                            required.push({el: el, size: size});
+                            if (size < minSize) minSize = size;
+                        });
+                        required.forEach(function(entry) {
+                            entry.el.style.fontSize = minSize + 'px';
                         });
                     }
                     fitAll();
