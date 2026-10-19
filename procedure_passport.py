@@ -4477,6 +4477,30 @@ button p {
 )
 
 # ─────────────────────────────────────────────
+# DEMO LOGIN  (?demo=1 link — drops straight into the example@ohsu.edu
+# demo resident account, skipping the email/password screen entirely)
+# ─────────────────────────────────────────────
+if (
+    query_params.get("demo") == "1"
+    and st.session_state["page"] == "login"
+    and not st.session_state.get("_demo_routed")
+):
+    st.session_state["_demo_routed"] = True
+    try:
+        residents = read_sheet_df(SHEET_RESIDENTS, expected_cols=RESIDENT_COLS)
+        residents_lower = residents["email"].str.strip().str.lower()
+        demo_row = residents.loc[residents_lower == "example@ohsu.edu"]
+        if not demo_row.empty:
+            row = demo_row.iloc[0]
+            st.session_state.update(
+                resident=row["email"], resident_name=row["name"],
+                specialty_id=row["specialty_id"], role="resident", page="home",
+            )
+            st.rerun()
+    except ConnectionError as exc:
+        show_gs_error(exc)
+
+# ─────────────────────────────────────────────
 # PAGE ROUTER
 # ─────────────────────────────────────────────
 page = st.session_state["page"]
