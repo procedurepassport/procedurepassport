@@ -4286,11 +4286,17 @@ button p {
 /* ...except on the example@ohsu.edu demo account, where the "this is an
    example account" banner (demo_account_banner) renders first instead and
    is a real, visible element — pulling mobile_tip up into it by that same
-   -36px would overlap the two rather than eating into empty header
-   padding. More specific than the rule above, so it wins whenever the
-   banner is present anywhere earlier among the siblings. */
-.st-key-demo_account_banner ~ .st-key-mobile_tip {
-    margin-top: 0;
+   -36px overlapped the two rather than eating into empty header padding.
+   A plain `.st-key-demo_account_banner ~ .st-key-mobile_tip` selector
+   doesn't match here: st.container(key=...)'s key class lands on an
+   inner div, not on the stLayoutWrapper that's the actual flow-level
+   sibling, so the two key classes themselves are never siblings of each
+   other (same pattern as the other stLayoutWrapper rules below). Select
+   on the real sibling wrappers instead, and !important to beat the
+   plain rule above on specificity ties. */
+[data-testid="stLayoutWrapper"]:has(> .st-key-demo_account_banner)
+    ~ [data-testid="stLayoutWrapper"]:has(> .st-key-mobile_tip) .st-key-mobile_tip {
+    margin-top: 0 !important;
 }
 .st-key-mobile_tip [data-testid="stAlertContainer"] {
     padding-top: 0.35rem;
