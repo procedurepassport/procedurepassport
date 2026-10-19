@@ -4541,6 +4541,19 @@ if st.session_state.get("_scroll_top_page") != page:
         height=1,
     )
 
+# Flagged on every page the demo resident sees — its attendings,
+# evaluations, and comments are all seeded/fake, not real trainee data.
+if (
+    st.session_state.get("role") == "resident"
+    and str(st.session_state.get("resident", "")).strip().lower() in EXAMPLE_RESIDENT_EMAILS
+):
+    st.warning(
+        "🧪 **This is an example account.** The attendings, evaluations, and "
+        "comments shown here are all fake/hypothetical, created to "
+        "demonstrate the app — not real trainee data.",
+        icon="⚠️",
+    )
+
 
 # ════════════════════════════════════════════════════════════
 # PAGE: LOGIN
