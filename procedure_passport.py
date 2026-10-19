@@ -4275,12 +4275,22 @@ button p {
 /* "On mobile: tap the >> icon..." tip: shrink padding, and match the text
    size to "Daily Preparation" and similar field labels (0.75x --pp-substep-font)
    so it's part of the same live, width-responsive size hierarchy instead
-   of a fixed size of its own. It's now the first element on its page, so
+   of a fixed size of its own. It's normally the first visible element on
+   its page (any scroll-to-top iframe before it is 1px and invisible), so
    pull it up out of Streamlit's default ~96px block-container top padding
    (reserved so content clears the sticky header) — scoped to this
    container only, so it doesn't touch top spacing on any other page. */
 .st-key-mobile_tip {
     margin-top: -36px;
+}
+/* ...except on the example@ohsu.edu demo account, where the "this is an
+   example account" banner (demo_account_banner) renders first instead and
+   is a real, visible element — pulling mobile_tip up into it by that same
+   -36px would overlap the two rather than eating into empty header
+   padding. More specific than the rule above, so it wins whenever the
+   banner is present anywhere earlier among the siblings. */
+.st-key-demo_account_banner ~ .st-key-mobile_tip {
+    margin-top: 0;
 }
 .st-key-mobile_tip [data-testid="stAlertContainer"] {
     padding-top: 0.35rem;
@@ -4543,16 +4553,20 @@ if st.session_state.get("_scroll_top_page") != page:
 
 # Flagged on every page the demo resident sees — its attendings,
 # evaluations, and comments are all seeded/fake, not real trainee data.
+# Rendered in its own keyed container (like mobile_tip below) so the CSS
+# can cancel mobile_tip's negative top margin when this banner precedes
+# it — see .st-key-demo_account_banner ~ .st-key-mobile_tip.
 if (
     st.session_state.get("role") == "resident"
     and str(st.session_state.get("resident", "")).strip().lower() in EXAMPLE_RESIDENT_EMAILS
 ):
-    st.warning(
-        "🧪 **This is an example account.** The attendings, evaluations, and "
-        "comments shown here are all fake/hypothetical, created to "
-        "demonstrate the app — not real trainee data.",
-        icon="⚠️",
-    )
+    with st.container(key="demo_account_banner"):
+        st.warning(
+            "🧪 **This is an example account.** The attendings, evaluations, and "
+            "comments shown here are all fake/hypothetical, created to "
+            "demonstrate the app — not real trainee data.",
+            icon="⚠️",
+        )
 
 
 # ════════════════════════════════════════════════════════════
