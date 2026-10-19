@@ -2031,13 +2031,16 @@ def _build_comments_html(row) -> str:
     return "<br><br>".join(parts)
 
 
-def _build_resident_comments_df(resident_email: str) -> pd.DataFrame:
+def _build_resident_comments_df(resident_email: str, attending_ids_filter: set | None = None) -> pd.DataFrame:
     """Attending-confirmed cases with a comment (improve/how/notes) for one
     resident, as a Date/Procedure/Attending/Comments/Comments_html table
     sorted newest first. Self-assessments are excluded — same as the
     heatmap, these are the resident's own unverified entry, not an
     attending-confirmed one. Empty DataFrame (with those columns) if there's
-    nothing to show."""
+    nothing to show.
+
+    attending_ids_filter: see _build_resident_case_matrix — same demo-
+    attending-only restriction, same None-means-unfiltered default."""
     _cols = ["Date", "Procedure", "Attending", "Comments", "Comments_html"]
     cases_df = read_sheet_df(
         SHEET_CASES,
@@ -2054,6 +2057,8 @@ def _build_resident_comments_df(resident_email: str) -> pd.DataFrame:
 
     res_cases = cases_df[cases_df["resident_email"] == resident_email].copy()
     res_cases = res_cases[res_cases["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment"]
+    if attending_ids_filter is not None:
+        res_cases = res_cases[res_cases["attending_id"].astype(str).isin(attending_ids_filter)]
     res_cases["notes"]   = res_cases["notes"].fillna("").astype(str)
     res_cases["improve"] = res_cases["improve"].fillna("").astype(str)
     res_cases["how"]     = res_cases["how"].fillna("").astype(str)
@@ -2137,11 +2142,11 @@ def _build_attending_evaluation_list(attending_id: str | None, include_example: 
     performed it — backs that page's "Show all evaluations" toggle.
 
     include_example=True restricts the result to ONLY demo-resident
-    cases instead of excluding them — passed only when the demo
-    "Example Attending" is viewing its own history, so it never sees a
-    real resident's case even defensively (never for "Show all
-    evaluations", which should always reflect the real system
-    regardless of who's viewing)."""
+    cases instead of excluding them — passed whenever the viewer is the
+    demo "Example Attending" (own history or its own "Show all"), so
+    that account can never see a real resident's case, even via "Show
+    all evaluations". A real attending's own "Show all" is unaffected
+    (include_example=False), and still reflects the real system."""
     _cols = ["case_id", "Date", "Procedure", "Resident", "_date_sort"]
     cases_df = read_sheet_df(SHEET_CASES, expected_cols=_CASE_COLS)
     cases_df["case_id"] = _norm_id(cases_df["case_id"])
@@ -2428,10 +2433,18 @@ def _render_comments_html_table(merged: pd.DataFrame, show_proc: bool, show_att:
     )
 
 
-def _build_resident_case_matrix(resident_email: str):
+def _build_resident_case_matrix(resident_email: str, attending_ids_filter: set | None = None):
     """Every attending-confirmed case for one resident, joined down to
     per-step rating rows (self-assessments and steps left "Not Assessed"
     excluded, same as the resident's own Cumulative Dashboard).
+
+    attending_ids_filter, when given, keeps only cases whose attending_id
+    is in that set — used so the demo "Example Attending" viewing a demo
+    resident's heatmap only ever sees that resident's demo-attending
+    cases, never one from a real attending (the original example@ohsu.edu
+    resident has plenty of those from before this demo attending existed).
+    None (the default, used by a resident viewing their own heatmap)
+    applies no such filter — a resident sees every evaluation of them.
 
     Returns (merged, steps_df, procs_map); `merged` is empty when there's
     no case or no meaningful rating yet — callers should treat that as
@@ -2470,6 +2483,8 @@ def _build_resident_case_matrix(resident_email: str):
         if not cid or cid == "nan":
             continue
         aid = str(row.get("attending_id", ""))
+        if attending_ids_filter is not None and aid not in attending_ids_filter:
+            continue
         resident_cases[cid] = {
             "case_id":             cid,
             "date":                str(row.get("date", "")),
@@ -7216,11 +7231,16 @@ elif page == "attending_resident_dashboard":
         st.stop()
 
     resident_email = res_map[resident_choice]
+    # The demo "Example Attending" only ever sees its own demo attendings'
+    # evaluations of a demo resident — never a real attending's (the
+    # original example@ohsu.edu resident has plenty of those from before
+    # this demo attending existed).
+    _att_ids_filter = EXAMPLE_ATTENDING_IDS if _is_example_attending() else None
 
     # Fetched once here and reused below at the heatmap section — same
     # data, no need to ask for it twice.
     try:
-        case_matrix, steps_df, procs_map = _build_resident_case_matrix(resident_email)
+        case_matrix, steps_df, procs_map = _build_resident_case_matrix(resident_email, _att_ids_filter)
     except ConnectionError as exc:
         show_gs_error(exc)
         st.stop()
@@ -7280,7 +7300,7 @@ elif page == "attending_resident_dashboard":
     st.markdown("---")
 
     try:
-        all_comments_df = _build_resident_comments_df(resident_email)
+        all_comments_df = _build_resident_comments_df(resident_email, _att_ids_filter)
     except ConnectionError as exc:
         show_gs_error(exc)
         st.stop()
@@ -7371,10 +7391,12 @@ elif page == "attending_eval_history":
     try:
         _att_eval_history_df = _build_attending_evaluation_list(
             None if _show_all_evals else attending_id,
-            # Only the demo attending's own history includes its demo
-            # residents — "Show all evaluations" always reflects the
-            # real system, even when the demo attending is the viewer.
-            include_example=(not _show_all_evals) and _is_example_attending(),
+            # The demo "Example Attending" is walled off from real data
+            # entirely — "Show all evaluations" for that account means
+            # "every demo attending's evaluations of a demo resident",
+            # never the real system. Every real attending's own "show
+            # all" is unaffected, exactly as before.
+            include_example=_is_example_attending(),
         )
     except ConnectionError as exc:
         show_gs_error(exc)
