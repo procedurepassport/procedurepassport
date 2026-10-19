@@ -250,8 +250,13 @@ RESIDENT_COLS = ["email", "name", "specialty_id", "created_at", "last_seen_evalu
 # Demo/test resident accounts (mock cases seeded for QA, not a real
 # trainee) that should never appear in an attending's own resident
 # pickers — see _exclude_example_residents(). Matched case-
-# insensitively wherever it's used.
-EXAMPLE_RESIDENT_EMAILS = {"example@ohsu.edu"}
+# insensitively wherever it's used. The original example@ohsu.edu plus
+# the 10 "Example Resident N" accounts seeded alongside the example
+# attending (see EXAMPLE_ATTENDING_EMAILS below) — they exist purely so
+# that account has residents to evaluate.
+EXAMPLE_RESIDENT_EMAILS = {"example@ohsu.edu"} | {
+    f"example.resident{i}@ohsu.edu" for i in range(1, 11)
+}
 
 
 def _exclude_example_residents(residents_df: pd.DataFrame) -> pd.DataFrame:
@@ -273,6 +278,35 @@ def _exclude_example_resident_cases(cases_df: pd.DataFrame) -> pd.DataFrame:
     evaluations, every attending" mode)."""
     _norm_email = cases_df["resident_email"].astype(str).str.strip().str.lower()
     return cases_df[~_norm_email.isin(EXAMPLE_RESIDENT_EMAILS)]
+
+
+# Demo/test attending account ("Example Attending", login-capable, see
+# the ?demo_attending=1 link) plus 9 background "Example Attending N"
+# accounts with no login — seeded so the demo resident(s) above have
+# evaluations from a believable spread of attendings. Mirrors
+# EXAMPLE_RESIDENT_EMAILS/_exclude_example_residents, but keyed by
+# attending_id rather than email since the background accounts have no
+# email at all.
+EXAMPLE_ATTENDING_EMAILS = {"example.attending@ohsu.edu"}
+EXAMPLE_ATTENDING_IDS = {"A_UR_EXAMPLE_ATTENDING"} | {
+    f"A_UR_EXAMPLE_ATTENDING_{i}" for i in range(2, 11)
+}
+
+
+def _exclude_example_attendings(attendings_df: pd.DataFrame) -> pd.DataFrame:
+    """Drops EXAMPLE_ATTENDING_IDS rows from an attendings-like DataFrame
+    (must have an "attending_id" column) — used to keep the demo
+    attendings out of a real resident's own attending picker."""
+    _ids = attendings_df["attending_id"].astype(str).str.strip()
+    return attendings_df[~_ids.isin(EXAMPLE_ATTENDING_IDS)]
+
+
+def _is_example_attending() -> bool:
+    """True when the logged-in attending is the demo "Example Attending"
+    account — used to let *that* account see/evaluate the demo residents
+    its own history is built from, while every real attending still has
+    them filtered out via _exclude_example_residents()."""
+    return str(st.session_state.get("attending_login_email", "")).strip().lower() in EXAMPLE_ATTENDING_EMAILS
 
 
 SHEET_ATTENDINGS = "attendings"
@@ -2070,7 +2104,7 @@ def _build_resident_evaluation_list(resident_email: str) -> pd.DataFrame:
     return merged[_cols].reset_index(drop=True)
 
 
-def _build_attending_evaluation_list(attending_id: str | None) -> pd.DataFrame:
+def _build_attending_evaluation_list(attending_id: str | None, include_example: bool = False) -> pd.DataFrame:
     """One row per case this attending has evaluated (directly, or was
     present for via "Assessed Together") — every entry on the
     attending's own "Complete Evaluation History" page, across every
@@ -2080,7 +2114,12 @@ def _build_attending_evaluation_list(attending_id: str | None) -> pd.DataFrame:
 
     attending_id=None skips that filter entirely, returning every
     confirmed evaluation in the system regardless of which attending
-    performed it — backs that page's "Show all evaluations" toggle."""
+    performed it — backs that page's "Show all evaluations" toggle.
+
+    include_example=True keeps demo-resident cases in the result —
+    passed only when the demo "Example Attending" is viewing its own
+    history (never for "Show all evaluations", which should always
+    reflect the real system regardless of who's viewing)."""
     _cols = ["case_id", "Date", "Procedure", "Resident", "_date_sort"]
     cases_df = read_sheet_df(SHEET_CASES, expected_cols=_CASE_COLS)
     cases_df["case_id"] = _norm_id(cases_df["case_id"])
@@ -2089,7 +2128,8 @@ def _build_attending_evaluation_list(attending_id: str | None) -> pd.DataFrame:
     att_cases = cases_df if attending_id is None else cases_df[cases_df["attending_id"].astype(str) == str(attending_id)]
     att_cases = att_cases.copy()
     att_cases = att_cases[att_cases["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment"]
-    att_cases = _exclude_example_resident_cases(att_cases)
+    if not include_example:
+        att_cases = _exclude_example_resident_cases(att_cases)
     if att_cases.empty:
         return pd.DataFrame(columns=_cols)
 
@@ -4517,6 +4557,34 @@ if (
         show_gs_error(exc)
 
 # ─────────────────────────────────────────────
+# DEMO ATTENDING LOGIN  (?demo_attending=1 link — drops straight into
+# the "Example Attending" demo account, same idea as ?demo=1 above)
+# ─────────────────────────────────────────────
+if (
+    query_params.get("demo_attending") == "1"
+    and st.session_state["page"] == "login"
+    and not st.session_state.get("_demo_attending_routed")
+):
+    st.session_state["_demo_attending_routed"] = True
+    try:
+        attendings = _read_attendings_df()
+        attendings_lower = attendings["email"].fillna("").str.strip().str.lower()
+        demo_row = attendings.loc[attendings_lower == "example.attending@ohsu.edu"]
+        if not demo_row.empty:
+            row = demo_row.iloc[0]
+            st.session_state.update(
+                role="attending",
+                attending_login_email=row["email"],
+                attending_login_name=row["attending_name"],
+                attending_login_id=row["attending_id"],
+                attending_login_specialty_id=row["specialty_id"],
+                page="attending_home",
+            )
+            st.rerun()
+    except ConnectionError as exc:
+        show_gs_error(exc)
+
+# ─────────────────────────────────────────────
 # PAGE ROUTER
 # ─────────────────────────────────────────────
 page = st.session_state["page"]
@@ -4557,20 +4625,23 @@ if st.session_state.get("_scroll_top_page") != page:
         height=1,
     )
 
-# Flagged on every page the demo resident sees — its attendings,
-# evaluations, and comments are all seeded/fake, not real trainee data.
-# Rendered in its own keyed container (like mobile_tip below) so the CSS
-# can cancel mobile_tip's negative top margin when this banner precedes
-# it — see .st-key-demo_account_banner ~ .st-key-mobile_tip.
-if (
+# Flagged on every page either demo account sees — its attendings/
+# residents, evaluations, and comments are all seeded/fake, not real
+# trainee or faculty data. Rendered in its own keyed container (like
+# mobile_tip below) so the CSS can cancel mobile_tip's negative top
+# margin when this banner precedes it — see
+# .st-key-demo_account_banner ~ .st-key-mobile_tip.
+_is_demo_resident = (
     st.session_state.get("role") == "resident"
     and str(st.session_state.get("resident", "")).strip().lower() in EXAMPLE_RESIDENT_EMAILS
-):
+)
+_is_demo_attending = st.session_state.get("role") == "attending" and _is_example_attending()
+if _is_demo_resident or _is_demo_attending:
     with st.container(key="demo_account_banner"):
         st.warning(
-            "🧪 **This is an example account.** The attendings, evaluations, and "
-            "comments shown here are all fake/hypothetical, created to "
-            "demonstrate the app — not real trainee data.",
+            "🧪 **This is an example account.** The attendings, residents, "
+            "evaluations, and comments shown here are all fake/hypothetical, "
+            "created to demonstrate the app — not real trainee or faculty data.",
             icon="⚠️",
         )
 
@@ -6041,7 +6112,7 @@ elif page == "start":
             st.stop()
 
     procs = proc_df[proc_df["specialty_id"] == specialty_id]
-    atnds = atnd_df[atnd_df["specialty_id"] == specialty_id]
+    atnds = _exclude_example_attendings(atnd_df[atnd_df["specialty_id"] == specialty_id])
 
     if procs.empty:
         st.warning("⚠️ No procedures configured for this specialty.")
@@ -6943,7 +7014,11 @@ elif page == "attending_start":
             go_to("attending_home")
         st.stop()
 
-    my_residents = _exclude_example_residents(residents_df[residents_df["specialty_id"] == specialty_id])
+    my_residents = residents_df[residents_df["specialty_id"] == specialty_id]
+    # The demo "Example Attending" account needs to see the demo residents
+    # it evaluates — every real attending still has them filtered out.
+    if not _is_example_attending():
+        my_residents = _exclude_example_residents(my_residents)
     procs = proc_df[proc_df["specialty_id"] == specialty_id]
 
     if my_residents.empty:
@@ -7084,10 +7159,14 @@ elif page == "attending_resident_dashboard":
     confirmed_cases = cases_df[
         cases_df["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment"
     ]
-    my_residents = _exclude_example_residents(residents_df[
+    my_residents = residents_df[
         (residents_df["specialty_id"] == specialty_id)
         & (residents_df["email"].isin(set(confirmed_cases["resident_email"])))
-    ])
+    ]
+    # The demo "Example Attending" account needs to see the demo residents
+    # it evaluates — every real attending still has them filtered out.
+    if not _is_example_attending():
+        my_residents = _exclude_example_residents(my_residents)
     if my_residents.empty:
         st.warning("⚠️ No residents with recorded cases in your specialty yet.")
         if st.button("⬅️ Back to Home", key="att_dash_no_res"):
@@ -7263,7 +7342,13 @@ elif page == "attending_eval_history":
         st.session_state["att_eval_hist_date_nonce"] = st.session_state.get("att_eval_hist_date_nonce", 0) + 1
 
     try:
-        _att_eval_history_df = _build_attending_evaluation_list(None if _show_all_evals else attending_id)
+        _att_eval_history_df = _build_attending_evaluation_list(
+            None if _show_all_evals else attending_id,
+            # Only the demo attending's own history includes its demo
+            # residents — "Show all evaluations" always reflects the
+            # real system, even when the demo attending is the viewer.
+            include_example=(not _show_all_evals) and _is_example_attending(),
+        )
     except ConnectionError as exc:
         show_gs_error(exc)
         if st.button("⬅️ Back to Home"):
