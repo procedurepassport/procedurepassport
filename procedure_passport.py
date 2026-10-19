@@ -270,6 +270,15 @@ def _exclude_example_residents(residents_df: pd.DataFrame) -> pd.DataFrame:
     return residents_df[~_norm_email.isin(EXAMPLE_RESIDENT_EMAILS)]
 
 
+def _only_example_residents(residents_df: pd.DataFrame) -> pd.DataFrame:
+    """Opposite of _exclude_example_residents() — keeps ONLY
+    EXAMPLE_RESIDENT_EMAILS rows. Used to restrict the demo "Example
+    Attending" account to its own demo residents, so it never has
+    access to any real resident's data."""
+    _norm_email = residents_df["email"].astype(str).str.strip().str.lower()
+    return residents_df[_norm_email.isin(EXAMPLE_RESIDENT_EMAILS)]
+
+
 def _exclude_example_resident_cases(cases_df: pd.DataFrame) -> pd.DataFrame:
     """Same idea as _exclude_example_residents(), for a cases-like
     DataFrame (must have a "resident_email" column) — used to keep a
@@ -278,6 +287,17 @@ def _exclude_example_resident_cases(cases_df: pd.DataFrame) -> pd.DataFrame:
     evaluations, every attending" mode)."""
     _norm_email = cases_df["resident_email"].astype(str).str.strip().str.lower()
     return cases_df[~_norm_email.isin(EXAMPLE_RESIDENT_EMAILS)]
+
+
+def _only_example_resident_cases(cases_df: pd.DataFrame) -> pd.DataFrame:
+    """Opposite of _exclude_example_resident_cases() — keeps ONLY
+    EXAMPLE_RESIDENT_EMAILS rows. Used so the demo "Example Attending"
+    account's own evaluation history can never include a real
+    resident's case, even defensively (in practice every case tagged
+    with its attending_id is already a demo resident's, since that's
+    the only kind it ever evaluates)."""
+    _norm_email = cases_df["resident_email"].astype(str).str.strip().str.lower()
+    return cases_df[_norm_email.isin(EXAMPLE_RESIDENT_EMAILS)]
 
 
 # Demo/test attending account ("Example Attending", login-capable, see
@@ -2116,10 +2136,12 @@ def _build_attending_evaluation_list(attending_id: str | None, include_example: 
     confirmed evaluation in the system regardless of which attending
     performed it — backs that page's "Show all evaluations" toggle.
 
-    include_example=True keeps demo-resident cases in the result —
-    passed only when the demo "Example Attending" is viewing its own
-    history (never for "Show all evaluations", which should always
-    reflect the real system regardless of who's viewing)."""
+    include_example=True restricts the result to ONLY demo-resident
+    cases instead of excluding them — passed only when the demo
+    "Example Attending" is viewing its own history, so it never sees a
+    real resident's case even defensively (never for "Show all
+    evaluations", which should always reflect the real system
+    regardless of who's viewing)."""
     _cols = ["case_id", "Date", "Procedure", "Resident", "_date_sort"]
     cases_df = read_sheet_df(SHEET_CASES, expected_cols=_CASE_COLS)
     cases_df["case_id"] = _norm_id(cases_df["case_id"])
@@ -2128,8 +2150,7 @@ def _build_attending_evaluation_list(attending_id: str | None, include_example: 
     att_cases = cases_df if attending_id is None else cases_df[cases_df["attending_id"].astype(str) == str(attending_id)]
     att_cases = att_cases.copy()
     att_cases = att_cases[att_cases["assessment_type"].fillna("").astype(str).str.strip() != "Self-Assessment"]
-    if not include_example:
-        att_cases = _exclude_example_resident_cases(att_cases)
+    att_cases = _only_example_resident_cases(att_cases) if include_example else _exclude_example_resident_cases(att_cases)
     if att_cases.empty:
         return pd.DataFrame(columns=_cols)
 
@@ -7015,9 +7036,12 @@ elif page == "attending_start":
         st.stop()
 
     my_residents = residents_df[residents_df["specialty_id"] == specialty_id]
-    # The demo "Example Attending" account needs to see the demo residents
-    # it evaluates — every real attending still has them filtered out.
-    if not _is_example_attending():
+    # The demo "Example Attending" account is restricted to its own demo
+    # residents only — never any real resident's data. Every real
+    # attending instead has the demo residents filtered out, as before.
+    if _is_example_attending():
+        my_residents = _only_example_residents(my_residents)
+    else:
         my_residents = _exclude_example_residents(my_residents)
     procs = proc_df[proc_df["specialty_id"] == specialty_id]
 
@@ -7163,9 +7187,12 @@ elif page == "attending_resident_dashboard":
         (residents_df["specialty_id"] == specialty_id)
         & (residents_df["email"].isin(set(confirmed_cases["resident_email"])))
     ]
-    # The demo "Example Attending" account needs to see the demo residents
-    # it evaluates — every real attending still has them filtered out.
-    if not _is_example_attending():
+    # The demo "Example Attending" account is restricted to its own demo
+    # residents only — never any real resident's data. Every real
+    # attending instead has the demo residents filtered out, as before.
+    if _is_example_attending():
+        my_residents = _only_example_residents(my_residents)
+    else:
         my_residents = _exclude_example_residents(my_residents)
     if my_residents.empty:
         st.warning("⚠️ No residents with recorded cases in your specialty yet.")
